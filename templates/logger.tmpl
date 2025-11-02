@@ -1,0 +1,47 @@
+package logger
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"time"
+)
+
+// Logger provides structured logging capabilities
+type Logger struct {
+	infoLog  *log.Logger
+	errorLog *log.Logger
+}
+
+// New creates a new Logger instance
+func New() *Logger {
+	return &Logger{
+		infoLog:  log.New(os.Stdout, "[INFO] ", log.Ldate|log.Ltime|log.Lshortfile),
+		errorLog: log.New(os.Stderr, "[ERROR] ", log.Ldate|log.Ltime|log.Lshortfile),
+	}
+}
+
+// Info logs an informational message
+func (l *Logger) Info(message string) {
+	l.infoLog.Output(2, message)
+}
+
+// Error logs an error message
+func (l *Logger) Error(message string) {
+	l.errorLog.Output(2, message)
+}
+
+// Infof logs a formatted informational message
+func (l *Logger) Infof(format string, args ...interface{}) {
+	l.infoLog.Output(2, fmt.Sprintf(format, args...))
+}
+
+// Errorf logs a formatted error message
+func (l *Logger) Errorf(format string, args ...interface{}) {
+	l.errorLog.Output(2, fmt.Sprintf(format, args...))
+}
+
+// WithTimestamp adds a timestamp to a message
+func WithTimestamp(message string) string {
+	return fmt.Sprintf("[%s] %s", time.Now().Format(time.RFC3339), message)
+}

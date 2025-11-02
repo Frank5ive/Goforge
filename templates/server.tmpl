@@ -1,0 +1,98 @@
+package server
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+	{{if .IncludeLogger}}
+	"{{.GetModuleName}}/logger"
+	{{end}}
+)
+
+// Server represents the HTTP server
+type Server struct {
+	httpServer *http.Server
+	port       int
+	{{if .IncludeLogger}}logger     *logger.Logger{{end}}
+}
+
+// New creates a new Server instance
+func New(port int{{if .IncludeLogger}}, log *logger.Logger{{end}}) *Server {
+	return &Server{
+		port: port,
+		{{if .IncludeLogger}}logger: log,{{end}}
+	}
+}
+
+// RegisterRoutes sets up the HTTP routes with middleware
+func (s *Server) RegisterRoutes(healthHandler http.HandlerFunc{{if .IncludeLogger}}, log *logger.Logger{{end}}) {
+	mux := http.NewServeMux()
+
+	// Health check endpoint
+	mux.HandleFunc("/health", healthHandler)
+
+	// Apply middleware
+	var handler http.Handler = mux
+	{{if .IncludeLogger}}handler = loggingMiddleware(handler, log)
+	{{end}}handler = recoveryMiddleware(handler{{if .IncludeLogger}}, log{{end}})
+
+	s.httpServer = &http.Server{
+		Addr:         fmt.Sprintf(":%d", s.port),
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+}
+
+// Start begins listening for HTTP requests
+func (s *Server) Start() error {
+	return s.httpServer.ListenAndServe()
+}
+
+// Shutdown gracefully stops the server
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.httpServer.Shutdown(ctx)
+}
+
+// recoveryMiddleware recovers from panics and returns 500
+func recoveryMiddleware(next http.Handler{{if .IncludeLogger}}, log *logger.Logger{{end}}) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				{{if .IncludeLogger}}log.Error(fmt.Sprintf("Panic recovered: %v", err))
+				{{end}}w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal Server Error"))
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+{{if .IncludeLogger}}// loggingMiddleware logs HTTP requests
+func loggingMiddleware(next http.Handler, log *logger.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		
+		// Wrap response writer to capture status code
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		
+		next.ServeHTTP(wrapped, r)
+		
+		duration := time.Since(start)
+		log.Info(fmt.Sprintf("%s %s - %d (%v)", r.Method, r.URL.Path, wrapped.statusCode, duration))
+	})
+}
+
+// responseWriter wraps http.ResponseWriter to capture status code
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+{{end}}

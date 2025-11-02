@@ -1,0 +1,192 @@
+# {{.AppName}}
+
+A production-ready HTTP server built with Go, featuring clean architecture and best practices.
+
+## 🚀 Features
+
+- ✅ Health check endpoint
+- ✅ Graceful shutdown
+- ✅ HTTP request/response logging{{if .IncludeLogger}}
+- ✅ Structured logging{{end}}
+- ✅ Panic recovery middleware
+- ✅ Configurable timeouts{{if .IncludeDocker}}
+- ✅ Docker support{{end}}
+
+## 📋 Prerequisites
+
+- Go 1.21 or higher{{if .IncludeDocker}}
+- Docker (optional){{end}}
+
+## 🛠️ Installation
+
+```bash
+# Clone or navigate to the project
+cd {{.AppName}}
+
+# Download dependencies
+go mod download
+
+# Build the application
+go build -o server .
+```
+
+## 🏃 Running
+
+### Local Development
+
+```bash
+# Run directly
+go run main.go
+
+# Or run the built binary
+./server
+```
+
+The server will start on port **{{.Port}}**.
+{{if .IncludeDocker}}
+### Docker
+
+```bash
+# Build the Docker image
+docker build -t {{.AppName}}:latest .
+
+# Run the container
+docker run -p {{.Port}}:{{.Port}} {{.AppName}}:latest
+```
+{{end}}
+## 📡 API Endpoints
+
+### Health Check
+
+Check if the server is running and healthy.
+
+```bash
+GET /health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-01T12:00:00Z",
+  "service": "{{.AppName}}"
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:{{.Port}}/health
+```
+
+## 🏗️ Project Structure
+
+```
+{{.AppName}}/
+├── main.go              # Application entry point
+├── go.mod               # Go module file
+├── handlers/            # HTTP request handlers
+│   └── health.go        # Health check handler
+├── server/              # Server setup and configuration
+│   ├── server.go        # HTTP server with graceful shutdown
+│   └── middleware.go    # HTTP middleware{{if .IncludeLogger}}
+├── logger/              # Logging utilities
+│   └── logger.go        # Structured logger{{end}}{{if .IncludeDocker}}
+└── Dockerfile           # Docker configuration{{end}}
+```
+
+## 🔧 Configuration
+
+The server can be configured through environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Server port | {{.Port}} |
+
+## 🧪 Testing
+
+```bash
+# Run tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+```
+
+## 📝 Adding New Endpoints
+
+1. Create a new handler in `handlers/` directory:
+
+```go
+package handlers
+
+import "net/http"
+
+func NewMyHandler() http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("Hello, World!"))
+    }
+}
+```
+
+2. Register the handler in `main.go`:
+
+```go
+mux.HandleFunc("/my-endpoint", handlers.NewMyHandler())
+```
+
+## 🔐 Security
+
+- Request timeouts configured (15s read, 15s write, 60s idle)
+- Panic recovery middleware
+- Method validation on endpoints
+
+## 🚦 Health Checks
+
+The `/health` endpoint returns:
+- **200 OK** when the service is healthy
+- JSON response with status and timestamp
+
+## 📊 Monitoring
+{{if .IncludeLogger}}
+The server includes structured logging for:
+- Server startup/shutdown events
+- HTTP requests (method, path, status, duration)
+- Error conditions and panics
+{{else}}
+Consider adding logging for production monitoring.
+{{end}}
+## 🐛 Troubleshooting
+
+### Port already in use
+```bash
+# Find process using the port
+lsof -i :{{.Port}}
+
+# Kill the process
+kill -9 <PID>
+```
+
+### Build errors
+```bash
+# Clean and rebuild
+go clean
+go mod tidy
+go build
+```
+
+## 📄 License
+
+MIT License - feel free to use this project as you wish.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📮 Support
+
+For issues and questions, please open an issue in the repository.
+
+---
+
+**Built with ❤️ using Go**

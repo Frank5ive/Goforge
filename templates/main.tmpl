@@ -1,0 +1,69 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"{{.GetModuleName}}/handlers"
+	"{{.GetModuleName}}/server"
+	{{if .IncludeLogger}}"{{.GetModuleName}}/logger"{{end}}
+)
+
+func main() {
+	{{if .IncludeLogger}}// Initialize logger
+	log := logger.New()
+	log.Info("Starting {{.AppName}} server...")
+	{{else}}// Starting server
+	fmt.Println("Starting {{.AppName}} server...")
+	{{end}}
+
+	// Create server
+	srv := server.New({{.Port}}{{if .IncludeLogger}}, log{{end}})
+
+	// Register routes
+	srv.RegisterRoutes(handlers.NewHealthHandler(){{if .IncludeLogger}}, log{{end}})
+
+	// Start server in a goroutine
+	go func() {
+		{{if .IncludeLogger}}log.Info(fmt.Sprintf("Server listening on port %d", {{.Port}}))
+		log.Info(fmt.Sprintf("Health endpoint available at http://localhost:%d/health", {{.Port}}))
+		{{else}}fmt.Printf("Server listening on port %d\n", {{.Port}})
+		fmt.Printf("Health endpoint available at http://localhost:%d/health\n", {{.Port}})
+		{{end}}
+		
+		if err := srv.Start(); err != nil {
+			{{if .IncludeLogger}}log.Error(fmt.Sprintf("Server failed to start: %v", err))
+			{{else}}fmt.Printf("Server failed to start: %v\n", err)
+			{{end}}
+			os.Exit(1)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	{{if .IncludeLogger}}log.Info("Shutting down server...")
+	{{else}}fmt.Println("Shutting down server...")
+	{{end}}
+
+	// Graceful shutdown with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		{{if .IncludeLogger}}log.Error(fmt.Sprintf("Server forced to shutdown: %v", err))
+		{{else}}fmt.Printf("Server forced to shutdown: %v\n", err)
+		{{end}}
+		os.Exit(1)
+	}
+
+	{{if .IncludeLogger}}log.Info("Server exited gracefully")
+	{{else}}fmt.Println("Server exited gracefully")
+	{{end}}
+}
