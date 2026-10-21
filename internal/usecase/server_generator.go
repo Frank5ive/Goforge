@@ -8,6 +8,35 @@ import (
 	"github.com/Frank5ive/goforge/internal/domain"
 )
 
+// projectFile describes one file in a generated project.
+type projectFile struct {
+	// template is the name of the template that renders the file.
+	template string
+	// path is the file's location relative to the project root, slash-separated.
+	path string
+	// include reports whether the file is generated for a configuration.
+	include func(config *domain.ServerConfig) bool
+}
+
+func always(*domain.ServerConfig) bool       { return true }
+func withLogger(c *domain.ServerConfig) bool { return c.IncludeLogger }
+func withDocker(c *domain.ServerConfig) bool { return c.IncludeDocker }
+func withReadme(c *domain.ServerConfig) bool { return c.IncludeReadme }
+
+// projectFiles lists every file GoForge can generate, in generation order.
+// Adding a file to generated projects means adding a template and a line here.
+var projectFiles = []projectFile{
+	{template: "main.tmpl", path: "main.go", include: always},
+	{template: "gomod.tmpl", path: "go.mod", include: always},
+	{template: "server.tmpl", path: "server/server.go", include: always},
+	{template: "middleware.tmpl", path: "server/middleware.go", include: always},
+	{template: "handler.tmpl", path: "handlers/health.go", include: always},
+	{template: "logger.tmpl", path: "logger/logger.go", include: withLogger},
+	{template: "dockerfile.tmpl", path: "Dockerfile", include: withDocker},
+	{template: "readme.tmpl", path: "README.md", include: withReadme},
+	{template: "gitignore.tmpl", path: ".gitignore", include: always},
+}
+
 // ServerGeneratorUsecase orchestrates the server generation process.
 // It implements the domain.ServerGenerator interface.
 type ServerGeneratorUsecase struct {
@@ -28,14 +57,13 @@ func NewServerGeneratorUsecase(
 }
 
 // Generate implements the domain.ServerGenerator interface.
-// It orchestrates the entire server generation process.
+// It validates the configuration, then renders and writes every project file.
+// If any file fails, the partially generated project directory is removed.
 func (u *ServerGeneratorUsecase) Generate(config *domain.ServerConfig) error {
-	// Step 1: Validate configuration
 	if err := config.Validate(); err != nil {
 		return domain.NewGenerationError("validation", "configuration validation failed", err)
 	}
 
-	// Step 2: Check if project already exists
 	projectPath := config.GetProjectPath()
 	if u.fileWriter.FileExists(projectPath) {
 		return domain.NewGenerationError(
@@ -45,86 +73,36 @@ func (u *ServerGeneratorUsecase) Generate(config *domain.ServerConfig) error {
 		)
 	}
 
-	// Step 3: Create project directory structure
-	if err := u.createProjectStructure(config); err != nil {
-		return domain.NewGenerationError("create_structure", "failed to create project structure", err)
+	if err := u.fileWriter.CreateDirectory(projectPath); err != nil {
+		return domain.NewGenerationError("create_structure", "failed to create project directory", err)
 	}
 
-	// Step 4: Generate main.go
-	if err := u.generateMainFile(config); err != nil {
-		return domain.NewGenerationError("generate_main", "failed to generate main.go", err)
-	}
-
-	// Step 5: Generate server.go
-	if err := u.generateServerFile(config); err != nil {
-		return domain.NewGenerationError("generate_server", "failed to generate server.go", err)
-	}
-
-	// Step 6: Generate health handler
-	if err := u.generateHealthHandler(config); err != nil {
-		return domain.NewGenerationError("generate_handler", "failed to generate health handler", err)
-	}
-
-	// Step 7: Generate go.mod
-	if err := u.generateGoMod(config); err != nil {
-		return domain.NewGenerationError("generate_gomod", "failed to generate go.mod", err)
-	}
-
-	// Step 8: Generate logger if requested
-	if config.IncludeLogger {
-		if err := u.generateLogger(config); err != nil {
-			return domain.NewGenerationError("generate_logger", "failed to generate logger", err)
+	for _, file := range projectFiles {
+		if !file.include(config) {
+			continue
 		}
-	}
 
-	// Step 9: Generate middleware
-	if err := u.generateMiddleware(config); err != nil {
-		return domain.NewGenerationError("generate_middleware", "failed to generate middleware", err)
-	}
-
-	// Step 10: Generate Dockerfile if requested
-	if config.IncludeDocker {
-		if err := u.generateDockerfile(config); err != nil {
-			return domain.NewGenerationError("generate_dockerfile", "failed to generate Dockerfile", err)
+		if err := u.generateFile(config, file); err != nil {
+			genErr := domain.NewGenerationError("generate_files", fmt.Sprintf("failed to generate %s", file.path), err)
+			if cleanupErr := u.fileWriter.RemoveAll(projectPath); cleanupErr != nil {
+				genErr.Message += fmt.Sprintf(" (cleanup of %s also failed: %v)", projectPath, cleanupErr)
+			}
+			return genErr
 		}
-	}
-
-	// Step 11: Generate README if requested
-	if config.IncludeReadme {
-		if err := u.generateReadme(config); err != nil {
-			return domain.NewGenerationError("generate_readme", "failed to generate README", err)
-		}
-	}
-
-	// Step 12: Generate .gitignore
-	if err := u.generateGitignore(config); err != nil {
-		return domain.NewGenerationError("generate_gitignore", "failed to generate .gitignore", err)
 	}
 
 	return nil
 }
 
-// createProjectStructure creates the directory structure for the project.
-func (u *ServerGeneratorUsecase) createProjectStructure(config *domain.ServerConfig) error {
-	projectPath := config.GetProjectPath()
-
-	directories := []string{
-		projectPath,
-		filepath.Join(projectPath, "handlers"),
-		filepath.Join(projectPath, "server"),
+// generateFile renders a single project file and writes it under the project root.
+func (u *ServerGeneratorUsecase) generateFile(config *domain.ServerConfig, file projectFile) error {
+	content, err := u.templateRenderer.Render(file.template, config)
+	if err != nil {
+		return err
 	}
 
-	if config.IncludeLogger {
-		directories = append(directories, filepath.Join(projectPath, "logger"))
-	}
-
-	for _, dir := range directories {
-		if err := u.fileWriter.CreateDirectory(dir); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
-		}
-	}
-
-	return nil
+	path := filepath.Join(config.GetProjectPath(), filepath.FromSlash(file.path))
+	return u.writeFile(path, content)
 }
 
 // writeFile writes generated content to path. Go source is run through gofmt first,
@@ -139,103 +117,4 @@ func (u *ServerGeneratorUsecase) writeFile(path string, content string) error {
 	}
 
 	return u.fileWriter.WriteFile(path, content)
-}
-
-// generateMainFile generates the main.go file.
-func (u *ServerGeneratorUsecase) generateMainFile(config *domain.ServerConfig) error {
-	content, err := u.templateRenderer.Render("main.tmpl", config)
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(config.GetProjectPath(), "main.go")
-	return u.writeFile(path, content)
-}
-
-// generateServerFile generates the server.go file.
-func (u *ServerGeneratorUsecase) generateServerFile(config *domain.ServerConfig) error {
-	content, err := u.templateRenderer.Render("server.tmpl", config)
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(config.GetProjectPath(), "server", "server.go")
-	return u.writeFile(path, content)
-}
-
-// generateHealthHandler generates the health check handler.
-func (u *ServerGeneratorUsecase) generateHealthHandler(config *domain.ServerConfig) error {
-	content, err := u.templateRenderer.Render("handler.tmpl", config)
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(config.GetProjectPath(), "handlers", "health.go")
-	return u.writeFile(path, content)
-}
-
-// generateGoMod generates the go.mod file.
-func (u *ServerGeneratorUsecase) generateGoMod(config *domain.ServerConfig) error {
-	content, err := u.templateRenderer.Render("gomod.tmpl", config)
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(config.GetProjectPath(), "go.mod")
-	return u.writeFile(path, content)
-}
-
-// generateLogger generates the logger package.
-func (u *ServerGeneratorUsecase) generateLogger(config *domain.ServerConfig) error {
-	content, err := u.templateRenderer.Render("logger.tmpl", config)
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(config.GetProjectPath(), "logger", "logger.go")
-	return u.writeFile(path, content)
-}
-
-// generateMiddleware generates the middleware file.
-func (u *ServerGeneratorUsecase) generateMiddleware(config *domain.ServerConfig) error {
-	content, err := u.templateRenderer.Render("middleware.tmpl", config)
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(config.GetProjectPath(), "server", "middleware.go")
-	return u.writeFile(path, content)
-}
-
-// generateDockerfile generates the Dockerfile.
-func (u *ServerGeneratorUsecase) generateDockerfile(config *domain.ServerConfig) error {
-	content, err := u.templateRenderer.Render("dockerfile.tmpl", config)
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(config.GetProjectPath(), "Dockerfile")
-	return u.writeFile(path, content)
-}
-
-// generateReadme generates the README.md file.
-func (u *ServerGeneratorUsecase) generateReadme(config *domain.ServerConfig) error {
-	content, err := u.templateRenderer.Render("readme.tmpl", config)
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(config.GetProjectPath(), "README.md")
-	return u.writeFile(path, content)
-}
-
-// generateGitignore generates the .gitignore file.
-func (u *ServerGeneratorUsecase) generateGitignore(config *domain.ServerConfig) error {
-	content, err := u.templateRenderer.Render("gitignore.tmpl", config)
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(config.GetProjectPath(), ".gitignore")
-	return u.writeFile(path, content)
 }

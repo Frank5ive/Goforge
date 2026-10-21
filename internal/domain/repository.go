@@ -22,4 +22,8 @@ type FileWriter interface {
 
 	// FileExists checks if a file or directory exists at the path.
 	FileExists(path string) bool
+
+	// RemoveAll removes a path and everything under it.
+	// It is used to clean up a partially generated project after a failure.
+	RemoveAll(path string) error
 }

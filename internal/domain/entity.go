@@ -10,7 +10,10 @@ import (
 // ServerConfig represents the configuration for a generated server project.
 // It encapsulates all user preferences and settings for server generation.
 type ServerConfig struct {
-	AppName       string
+	AppName string
+	// ModulePath is the Go module path (e.g. "github.com/acme/my-api").
+	// When empty, AppName is used as the module path.
+	ModulePath    string
 	Port          int
 	OutputDir     string
 	IncludeLogger bool
@@ -22,6 +25,10 @@ type ServerConfig struct {
 // It ensures the configuration meets domain requirements before generation.
 func (c *ServerConfig) Validate() error {
 	if err := c.validateAppName(); err != nil {
+		return err
+	}
+
+	if err := c.validateModulePath(); err != nil {
 		return err
 	}
 
@@ -71,6 +78,33 @@ func (c *ServerConfig) validateAppName() error {
 	return nil
 }
 
+// modulePathPattern matches slash-separated path elements made of the characters
+// Go allows in module paths: letters, digits, '.', '-', '_' and '~'.
+var modulePathPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$`)
+
+// validateModulePath ensures an explicit module path is a valid Go module path.
+func (c *ServerConfig) validateModulePath() error {
+	if c.ModulePath == "" {
+		return nil
+	}
+	return ValidateModulePath(c.ModulePath)
+}
+
+// ValidateModulePath reports whether path is a valid Go module path.
+func ValidateModulePath(path string) error {
+	if !modulePathPattern.MatchString(path) {
+		return NewValidationErrorWithField("module", fmt.Sprintf("invalid module path %q: use slash-separated elements of letters, digits, '.', '-', '_' or '~' (e.g. github.com/acme/my-api)", path))
+	}
+
+	for _, element := range strings.Split(path, "/") {
+		if strings.HasPrefix(element, ".") || strings.HasSuffix(element, ".") {
+			return NewValidationErrorWithField("module", fmt.Sprintf("invalid module path %q: path elements cannot start or end with a dot", path))
+		}
+	}
+
+	return nil
+}
+
 // validatePort ensures the port number is within valid range.
 func (c *ServerConfig) validatePort() error {
 	if c.Port < 1024 {
@@ -93,10 +127,13 @@ func (c *ServerConfig) validateOutputDir() error {
 	return nil
 }
 
-// GetModuleName returns the Go module name based on app name.
-// This follows Go module naming conventions.
+// GetModuleName returns the Go module path for the generated project:
+// the explicit ModulePath if set, otherwise the app name.
 func (c *ServerConfig) GetModuleName() string {
-	return fmt.Sprintf("github.com/yourorg/%s", c.AppName)
+	if c.ModulePath != "" {
+		return c.ModulePath
+	}
+	return c.AppName
 }
 
 // GetProjectPath returns the full path where the project will be generated.

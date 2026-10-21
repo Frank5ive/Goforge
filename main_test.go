@@ -33,15 +33,29 @@ func TestGeneratedProjects(t *testing.T) {
 		t.Skip("go toolchain not found in PATH")
 	}
 
-	container := di.BuildContainerWithEmbed(TemplatesFS, "templates")
+	templates, err := fs.Sub(TemplatesFS, "templates")
+	if err != nil {
+		t.Fatalf("Failed to open embedded templates: %v", err)
+	}
+	container, err := di.BuildContainer(templates, di.Options{})
+	if err != nil {
+		t.Fatalf("Failed to build container: %v", err)
+	}
 
 	for _, includeLogger := range []bool{true, false} {
 		for _, includeDocker := range []bool{true, false} {
 			for _, includeReadme := range []bool{true, false} {
 				name := fmt.Sprintf("logger=%t/docker=%t/readme=%t", includeLogger, includeDocker, includeReadme)
 				t.Run(name, func(t *testing.T) {
+					// Alternate between an explicit module path and the default (the app name)
+					modulePath := ""
+					if includeReadme {
+						modulePath = "github.com/acme/test-api"
+					}
+
 					config := &domain.ServerConfig{
 						AppName:       "test-api",
+						ModulePath:    modulePath,
 						Port:          8080,
 						OutputDir:     t.TempDir(),
 						IncludeLogger: includeLogger,

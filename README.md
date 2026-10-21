@@ -88,19 +88,21 @@ go build -o goforge .
 ### Generate Your First Server
 
 ```bash
-# Interactive mode (recommended for first time)
-goforge generate --name=my-api --port=8080
+# Interactive mode: prompts for the module path and features
+goforge generate --name=my-api
 
-# Non-interactive mode (perfect for CI/CD)
-goforge generate --name=my-api --port=8080 --yes
+# Non-interactive mode (scripts and CI)
+goforge generate --name=my-api --module=github.com/you/my-api --yes
+
+# Preview the files without writing anything
+goforge generate --name=my-api --dry-run --yes
 ```
 
 ### Run Your Server
 
 ```bash
 cd my-api
-go mod download
-go run main.go
+go run .
 ```
 
 Your server is now running at `http://localhost:8080` 🎉
@@ -134,18 +136,26 @@ goforge generate [flags]
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--name` | `-n` | `myapp` | Name of the application |
-| `--port` | `-p` | `8080` | Port number for the server |
-| `--output` | `-o` | `.` | Output directory |
-| `--yes` | | `false` | Skip interactive prompts |
+| `--name` | `-n` | `myapp` | Name of the application (also the project directory) |
+| `--module` | `-m` | app name | Go module path, e.g. `github.com/acme/my-api` |
+| `--port` | `-p` | `8080` | Default port (the `PORT` env var overrides it at runtime) |
+| `--output` | `-o` | `.` | Directory to create the project in |
+| `--logger` | | `true` | Include request logging |
+| `--docker` | | `true` | Include a Dockerfile |
+| `--readme` | | `true` | Include a README.md |
+| `--yes` | `-y` | `false` | Skip prompts and use flag values and defaults |
+| `--dry-run` | | `false` | List the files that would be created without writing anything |
+| `--git` | | `false` | Run `git init` in the new project |
 
 #### Interactive Prompts
 
-When running without `--yes`, GoForge will ask:
+When running in a terminal without `--yes`, GoForge asks for anything not already set by flag:
 
-1. **Include logger?** - Adds a leveled logger and request logging middleware
-2. **Generate Dockerfile?** - Creates production-ready Docker image
-3. **Generate README.md?** - Auto-generates documentation
+1. **Go module path** - Leave empty to use the app name
+2. **Features** - Toggle request logging, Dockerfile, and README
+
+Prompts need a terminal. In scripts and CI, pass `--yes` and set options with flags.
+If generation fails partway, GoForge removes the partially created project directory.
 
 ### Examples
 
@@ -155,17 +165,16 @@ When running without `--yes`, GoForge will ask:
 goforge generate --name=hello-api --port=3000
 ```
 
-#### Production Server with All Features
+#### Minimal Server Without Docker or Logging
 
 ```bash
-goforge generate --name=production-api --port=8080
-# Answer "Yes" to all prompts
+goforge generate --name=worker --logger=false --docker=false --yes
 ```
 
 #### CI/CD Ready
 
 ```bash
-goforge generate --name=ci-api --port=8080 --yes --output=./services
+goforge generate --name=ci-api --module=github.com/acme/ci-api --output=./services --yes --git
 ```
 
 ---
@@ -282,7 +291,7 @@ go test -short ./...
 
 - **Language**: Go 1.24+
 - **CLI Framework**: Cobra
-- **Interactive Prompts**: Survey
+- **Interactive Prompts**: Huh
 - **Architecture**: Clean Architecture
 - **Testing**: Go testing package
 - **Template Engine**: Go text/template
@@ -320,6 +329,8 @@ goforge/
 ├── templates/             # Go server templates
 └── main.go               # Entry point
 ```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how generation works and how to add templates or options.
 
 ---
 
@@ -369,7 +380,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 - Inspired by [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) by Uncle Bob
 - Built with [Cobra](https://github.com/spf13/cobra) CLI framework
-- Uses [Survey](https://github.com/AlecAivazis/survey) for interactive prompts
+- Uses [Huh](https://github.com/charmbracelet/huh) for interactive prompts
 - The Go gopher was designed by [Renée French](https://reneefrench.blogspot.com/) and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The pixel-art gopher in GoForge's terminal banner is adapted from it.
 
 ---

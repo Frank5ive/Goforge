@@ -10,8 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The first public release will be tagged `v0.1.0`.
 
 ### Added
-- `goforge generate` command with interactive prompts and a non-interactive `--yes` mode
+- `goforge generate` command with interactive prompts (module path and a feature
+  multi-select) and a non-interactive `--yes` mode
 - `--name`, `--port`, and `--output` flags; app names may contain hyphens (e.g. `my-api`)
+- `--module` to set the Go module path (defaults to the app name)
+- `--logger`, `--docker`, and `--readme` flags; options set by flag are not prompted for
+- `--dry-run` to list the files that would be created without writing anything
+- `--git` to run `git init` in the new project
+- Generated files are listed after generation
+- A partially generated project is removed if generation fails
+- Errors go to stderr with exit code 1; prompts fail fast with guidance when stdin is
+  not a terminal
 - Generated server with:
   - `/health` endpoint returning JSON
   - Graceful shutdown on SIGINT/SIGTERM with a 30s drain timeout

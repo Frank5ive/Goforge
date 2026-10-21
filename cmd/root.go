@@ -48,4 +48,7 @@ func Execute() error {
 
 func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	// main prints returned errors once, to stderr
+	rootCmd.SilenceErrors = true
+	rootCmd.AddCommand(newGenerateCmd())
 }

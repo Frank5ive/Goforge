@@ -150,9 +150,12 @@ goforge/
 * **DI** → All layers
 * **CLI/Main** → All layers
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how generation works, and for step-by-step
+guides to adding a template or a new option.
+
 ## Questions?
 
-Feel free to open an issue with your question or reach out via email.
+Feel free to open an issue with your question.
 
 ## License
 
