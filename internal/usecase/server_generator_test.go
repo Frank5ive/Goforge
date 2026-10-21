@@ -131,6 +131,7 @@ func TestServerGeneratorUsecase_Generate_Success(t *testing.T) {
 	config.IncludeLogger = true
 	config.IncludeDocker = true
 	config.IncludeReadme = true
+	config.IncludeCI = true
 
 	if err := usecase.Generate(config); err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -166,7 +167,7 @@ func TestServerGeneratorUsecase_Generate_WithoutOptionalFeatures(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	for _, optional := range []string{"logger/logger.go", "Dockerfile", "README.md"} {
+	for _, optional := range []string{"logger/logger.go", "logger/logger_test.go", "Dockerfile", ".dockerignore", "README.md", ".github/workflows/ci.yml"} {
 		if _, exists := writer.FilesWritten[projectFilePath(optional)]; exists {
 			t.Errorf("%s should not be generated when its option is disabled", optional)
 		}

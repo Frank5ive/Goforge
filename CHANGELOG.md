@@ -21,20 +21,26 @@ The first public release will be tagged `v0.1.0`.
 - A partially generated project is removed if generation fails
 - Errors go to stderr with exit code 1; prompts fail fast with guidance when stdin is
   not a terminal
-- Generated server with:
-  - `/health` endpoint returning JSON
+- Generated server, using only the Go standard library, with:
+  - `GET /health` endpoint returning JSON
   - Graceful shutdown on SIGINT/SIGTERM with a 30s drain timeout
-  - Panic recovery middleware and HTTP read/write/idle timeouts
+  - Go 1.22+ routing patterns in `server/routes.go`
+  - Request ID middleware (`X-Request-ID`) and panic recovery with stack traces
+  - HTTP read, write, idle, and read-header timeouts
   - `PORT` environment variable override
-  - Optional logger with request logging middleware
-  - Optional multi-stage Dockerfile with a health check
+  - Handler and middleware tests, a Makefile, and a golangci-lint v2 config
+  - Optional structured logging with `log/slog` (`LOG_LEVEL`, `LOG_FORMAT`) and request logs
+  - Optional multi-stage Dockerfile running as a non-root user, with a health check
+  - Optional GitHub Actions CI workflow (`--ci`)
   - Optional README
   - `.gitignore`
 - Generated Go code is always gofmt-formatted
 - Templates embedded in the binary (single-file distribution)
 - Terminal banner with a pixel-art Go gopher and wordmark; adapts to terminal width,
   respects `NO_COLOR`, and is skipped when output is piped
-- End-to-end test that generates, vets, builds, runs, and shuts down every option combination
+- End-to-end test that generates every option combination and checks each one is
+  gofmt-clean, passes `go vet` and its own tests, builds, serves `/health`, and shuts
+  down gracefully
 
 ## Security
 

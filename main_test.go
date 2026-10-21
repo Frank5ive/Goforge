@@ -23,8 +23,8 @@ import (
 
 // TestGeneratedProjects generates a project for every combination of optional
 // features using the real embedded templates (the same ones shipped in the binary),
-// then verifies each project is gofmt-clean, passes go vet, builds, serves /health,
-// and shuts down gracefully on SIGTERM.
+// then verifies each project is gofmt-clean, passes go vet and its own tests, builds,
+// serves /health, and shuts down gracefully on SIGTERM.
 func TestGeneratedProjects(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping end-to-end generation test in short mode")
@@ -37,56 +37,69 @@ func TestGeneratedProjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open embedded templates: %v", err)
 	}
-	container, err := di.BuildContainer(templates, di.Options{})
-	if err != nil {
-		t.Fatalf("Failed to build container: %v", err)
-	}
 
-	for _, includeLogger := range []bool{true, false} {
-		for _, includeDocker := range []bool{true, false} {
-			for _, includeReadme := range []bool{true, false} {
-				name := fmt.Sprintf("logger=%t/docker=%t/readme=%t", includeLogger, includeDocker, includeReadme)
-				t.Run(name, func(t *testing.T) {
-					// Alternate between an explicit module path and the default (the app name)
-					modulePath := ""
-					if includeReadme {
-						modulePath = "github.com/acme/test-api"
-					}
+	// Every combination of the four optional features
+	for mask := 0; mask < 16; mask++ {
+		includeLogger, includeDocker := mask&1 != 0, mask&2 != 0
+		includeReadme, includeCI := mask&4 != 0, mask&8 != 0
 
-					config := &domain.ServerConfig{
-						AppName:       "test-api",
-						ModulePath:    modulePath,
-						Port:          8080,
-						OutputDir:     t.TempDir(),
-						IncludeLogger: includeLogger,
-						IncludeDocker: includeDocker,
-						IncludeReadme: includeReadme,
-					}
+		name := fmt.Sprintf("logger=%t/docker=%t/readme=%t/ci=%t", includeLogger, includeDocker, includeReadme, includeCI)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-					if err := container.ServerGeneratorUsecase.Generate(config); err != nil {
-						t.Fatalf("Failed to generate server: %v", err)
-					}
-
-					projectPath := config.GetProjectPath()
-					assertFileExists(t, filepath.Join(projectPath, "main.go"), true)
-					assertFileExists(t, filepath.Join(projectPath, "go.mod"), true)
-					assertFileExists(t, filepath.Join(projectPath, ".gitignore"), true)
-					assertFileExists(t, filepath.Join(projectPath, "server", "server.go"), true)
-					assertFileExists(t, filepath.Join(projectPath, "handlers", "health.go"), true)
-					assertFileExists(t, filepath.Join(projectPath, "logger", "logger.go"), includeLogger)
-					assertFileExists(t, filepath.Join(projectPath, "Dockerfile"), includeDocker)
-					assertFileExists(t, filepath.Join(projectPath, "README.md"), includeReadme)
-
-					assertGofmtClean(t, projectPath)
-					runGo(t, projectPath, "vet", "./...")
-
-					binary := filepath.Join(t.TempDir(), "server-under-test")
-					runGo(t, projectPath, "build", "-o", binary, ".")
-
-					assertServerLifecycle(t, binary, config.AppName)
-				})
+			// Alternate between an explicit module path and the default (the app name)
+			modulePath := ""
+			if includeReadme {
+				modulePath = "github.com/acme/test-api"
 			}
-		}
+
+			config := &domain.ServerConfig{
+				AppName:       "test-api",
+				ModulePath:    modulePath,
+				Port:          8080,
+				OutputDir:     t.TempDir(),
+				IncludeLogger: includeLogger,
+				IncludeDocker: includeDocker,
+				IncludeReadme: includeReadme,
+				IncludeCI:     includeCI,
+			}
+
+			// Each subtest gets its own container, since they run in parallel
+			container, err := di.BuildContainer(templates, di.Options{})
+			if err != nil {
+				t.Fatalf("Failed to build container: %v", err)
+			}
+			if err := container.ServerGeneratorUsecase.Generate(config); err != nil {
+				t.Fatalf("Failed to generate server: %v", err)
+			}
+
+			projectPath := config.GetProjectPath()
+			for _, file := range []string{
+				"main.go", "go.mod", ".gitignore", "Makefile", ".golangci.yml",
+				"server/server.go", "server/routes.go", "server/middleware.go", "server/server_test.go",
+				"handlers/health.go", "handlers/respond.go", "handlers/health_test.go",
+			} {
+				assertFileExists(t, filepath.Join(projectPath, file), true)
+			}
+			assertFileExists(t, filepath.Join(projectPath, "logger", "logger.go"), includeLogger)
+			assertFileExists(t, filepath.Join(projectPath, "logger", "logger_test.go"), includeLogger)
+			assertFileExists(t, filepath.Join(projectPath, "Dockerfile"), includeDocker)
+			assertFileExists(t, filepath.Join(projectPath, ".dockerignore"), includeDocker)
+			assertFileExists(t, filepath.Join(projectPath, "README.md"), includeReadme)
+			assertFileExists(t, filepath.Join(projectPath, ".github", "workflows", "ci.yml"), includeCI)
+
+			assertGofmtClean(t, projectPath)
+			runGo(t, projectPath, "vet", "./...")
+			runGo(t, projectPath, "test", "./...")
+
+			binary := filepath.Join(t.TempDir(), "server-under-test")
+			if runtime.GOOS == "windows" {
+				binary += ".exe"
+			}
+			runGo(t, projectPath, "build", "-o", binary, ".")
+
+			assertServerLifecycle(t, binary, config.AppName)
+		})
 	}
 }
 
@@ -161,7 +174,7 @@ func assertServerLifecycle(t *testing.T, binary, appName string) {
 		t.Fatalf("Server did not exit within 10s of SIGTERM\nServer output:\n%s", output.String())
 	}
 
-	if !strings.Contains(output.String(), "Server exited gracefully") {
+	if !strings.Contains(output.String(), "server exited gracefully") {
 		t.Errorf("Expected graceful shutdown message\nServer output:\n%s", output.String())
 	}
 }

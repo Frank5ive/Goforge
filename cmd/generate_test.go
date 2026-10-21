@@ -106,7 +106,7 @@ func TestGenerate_NoPromptWhenAllOptionsSetByFlag(t *testing.T) {
 	dir := t.TempDir()
 
 	output, err := runGenerateCmd(t, "--name", "all-flags", "--output", dir,
-		"--module", "example.com/all-flags", "--logger=false", "--docker=false", "--readme=false")
+		"--module", "example.com/all-flags", "--logger=false", "--docker=false", "--readme=false", "--ci=false")
 	if err != nil {
 		t.Fatalf("Expected no prompt when every option is set by flag, got: %v\n%s", err, output)
 	}

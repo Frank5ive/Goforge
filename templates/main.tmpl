@@ -1,16 +1,17 @@
+// Command {{.AppName}} runs the {{.AppName}} HTTP server.
 package main
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
 	"time"
-
-	"{{.GetModuleName}}/handlers"
 {{- if .IncludeLogger}}
+
 	"{{.GetModuleName}}/logger"
 {{- end}}
 	"{{.GetModuleName}}/server"
@@ -19,78 +20,65 @@ import (
 // defaultPort is used when the PORT environment variable is not set.
 const defaultPort = {{.Port}}
 
+// shutdownTimeout is how long in-flight requests get to finish on shutdown.
+const shutdownTimeout = 30 * time.Second
+
 func main() {
 {{- if .IncludeLogger}}
 	log := logger.New()
+{{- else}}
+	log := slog.Default()
 {{- end}}
 
-	port, err := portFromEnv()
-	if err != nil {
-{{- if .IncludeLogger}}
-		log.Errorf("Invalid configuration: %v", err)
-{{- else}}
-		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
-{{- end}}
+	if err := run(log); err != nil {
+		log.Error("server error", "error", err)
 		os.Exit(1)
 	}
+}
 
-	srv := server.New(port{{if .IncludeLogger}}, log{{end}})
-	srv.RegisterRoutes(handlers.NewHealthHandler())
+// run starts the server and blocks until it fails or receives SIGINT/SIGTERM,
+// then shuts it down gracefully.
+func run(log *slog.Logger) error {
+	port, err := portFromEnv()
+	if err != nil {
+		return err
+	}
+
+	srv := server.New(port, log)
 
 	// Stop on Ctrl+C or SIGTERM (sent by Docker and Kubernetes)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Run the server in the background so main can wait for a shutdown signal
+	// Run the server in the background so run can wait for a shutdown signal
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- srv.Start()
 	}()
 
-{{- if .IncludeLogger}}
-	log.Infof("Starting {{.AppName}} on port %d", port)
-	log.Infof("Health endpoint available at http://localhost:%d/health", port)
-{{- else}}
-	fmt.Printf("Starting {{.AppName}} on port %d\n", port)
-	fmt.Printf("Health endpoint available at http://localhost:%d/health\n", port)
-{{- end}}
+	log.Info("server started",
+		"app", "{{.AppName}}",
+		"port", port,
+		"health", fmt.Sprintf("http://localhost:%d/health", port))
 
 	select {
 	case err := <-serverErr:
-		// Start only returns before Shutdown when the server could not run (e.g. port in use)
-{{- if .IncludeLogger}}
-		log.Errorf("Server failed: %v", err)
-{{- else}}
-		fmt.Fprintf(os.Stderr, "Server failed: %v\n", err)
-{{- end}}
-		os.Exit(1)
+		// Start only returns before shutdown when the server could not run (e.g. port in use)
+		return err
 	case <-ctx.Done():
 	}
 
-{{- if .IncludeLogger}}
-	log.Info("Shutting down server...")
-{{- else}}
-	fmt.Println("Shutting down server...")
-{{- end}}
+	log.Info("shutting down", "timeout", shutdownTimeout)
 
-	// Give in-flight requests up to 30 seconds to finish
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-{{- if .IncludeLogger}}
-		log.Errorf("Graceful shutdown failed: %v", err)
-{{- else}}
-		fmt.Fprintf(os.Stderr, "Graceful shutdown failed: %v\n", err)
-{{- end}}
-		os.Exit(1)
+		return fmt.Errorf("graceful shutdown failed: %w", err)
 	}
 
-{{- if .IncludeLogger}}
-	log.Info("Server exited gracefully")
-{{- else}}
-	fmt.Println("Server exited gracefully")
-{{- end}}
+	log.Info("server exited gracefully")
+	return nil
 }
 
 // portFromEnv returns the PORT environment variable, or defaultPort if it is unset.

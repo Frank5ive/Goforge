@@ -1,39 +1,25 @@
+// Package handlers contains the HTTP handlers for {{.AppName}}.
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 )
 
-// HealthResponse represents the health check response
+// HealthResponse is the body returned by the health endpoint.
 type HealthResponse struct {
 	Status    string    `json:"status"`
 	Timestamp time.Time `json:"timestamp"`
 	Service   string    `json:"service"`
 }
 
-// NewHealthHandler creates a new health check handler
-func NewHealthHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Only allow GET requests
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		response := HealthResponse{
+// Health returns a handler that reports the service as healthy.
+func Health(service string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, HealthResponse{
 			Status:    "healthy",
-			Timestamp: time.Now(),
-			Service:   "{{.AppName}}",
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-			return
-		}
+			Timestamp: time.Now().UTC(),
+			Service:   service,
+		})
 	}
 }

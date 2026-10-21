@@ -19,6 +19,7 @@ type ServerConfig struct {
 	IncludeLogger bool
 	IncludeDocker bool
 	IncludeReadme bool
+	IncludeCI     bool
 }
 
 // Validate performs business rule validation on the ServerConfig.

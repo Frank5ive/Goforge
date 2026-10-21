@@ -22,6 +22,7 @@ func always(*domain.ServerConfig) bool       { return true }
 func withLogger(c *domain.ServerConfig) bool { return c.IncludeLogger }
 func withDocker(c *domain.ServerConfig) bool { return c.IncludeDocker }
 func withReadme(c *domain.ServerConfig) bool { return c.IncludeReadme }
+func withCI(c *domain.ServerConfig) bool     { return c.IncludeCI }
 
 // projectFiles lists every file GoForge can generate, in generation order.
 // Adding a file to generated projects means adding a template and a line here.
@@ -29,10 +30,19 @@ var projectFiles = []projectFile{
 	{template: "main.tmpl", path: "main.go", include: always},
 	{template: "gomod.tmpl", path: "go.mod", include: always},
 	{template: "server.tmpl", path: "server/server.go", include: always},
+	{template: "routes.tmpl", path: "server/routes.go", include: always},
 	{template: "middleware.tmpl", path: "server/middleware.go", include: always},
+	{template: "server_test.tmpl", path: "server/server_test.go", include: always},
 	{template: "handler.tmpl", path: "handlers/health.go", include: always},
+	{template: "respond.tmpl", path: "handlers/respond.go", include: always},
+	{template: "health_test.tmpl", path: "handlers/health_test.go", include: always},
 	{template: "logger.tmpl", path: "logger/logger.go", include: withLogger},
+	{template: "logger_test.tmpl", path: "logger/logger_test.go", include: withLogger},
+	{template: "makefile.tmpl", path: "Makefile", include: always},
+	{template: "golangci.tmpl", path: ".golangci.yml", include: always},
+	{template: "ci.tmpl", path: ".github/workflows/ci.yml", include: withCI},
 	{template: "dockerfile.tmpl", path: "Dockerfile", include: withDocker},
+	{template: "dockerignore.tmpl", path: ".dockerignore", include: withDocker},
 	{template: "readme.tmpl", path: "README.md", include: withReadme},
 	{template: "gitignore.tmpl", path: ".gitignore", include: always},
 }

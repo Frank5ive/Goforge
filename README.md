@@ -22,33 +22,35 @@
 
 ## 🎯 What is GoForge?
 
-GoForge is a CLI tool that generates production-ready Go HTTP servers with health checks, graceful shutdown, middleware, and Docker support. Stop copying boilerplate code and start forging quality servers instantly.
+GoForge is a CLI tool that generates production-ready Go HTTP servers using only the standard library: structured logging with `log/slog`, Go 1.22+ routing, graceful shutdown, tests, linting, CI, and a hardened Dockerfile. Stop copying boilerplate code and start forging quality servers instantly.
 
 ### Why GoForge?
 
-✅ **Production Ready** - Graceful shutdown, health checks, panic recovery, timeouts  
-✅ **Zero Configuration** - Works immediately after installation  
-✅ **Verified Output** - Every option combination is generated, compiled, vetted, and booted by the test suite  
-✅ **Docker Support** - Optional Dockerfile generation  
-✅ **Request Logging** - Optional logger with per-request method, path, status, and duration  
+✅ **Production Ready** - Graceful shutdown, request IDs, panic recovery, and timeouts  
+✅ **Zero Dependencies** - Generated servers use only the Go standard library  
+✅ **Tested and Linted** - Generated projects ship with tests and pass their own golangci-lint config  
+✅ **Verified Output** - Every option combination is generated, linted, tested, built, and booted by GoForge's test suite  
+✅ **Ready for CI/CD** - Optional GitHub Actions workflow and non-root Docker image  
 
 ---
 
 ## 🚀 Features
 
 ### Core Features
-- 🧱 **Clear Structure** - Separate `handlers`, `server`, and `logger` packages
-- 🔌 **Health Endpoint** - Built-in `/health` endpoint with JSON response
+- 🔌 **Health Endpoint** - `GET /health` with a JSON response
 - 🛑 **Graceful Shutdown** - Handles SIGINT/SIGTERM and drains in-flight requests
-- ⚙️ **12-Factor Config** - Port can be overridden with the `PORT` environment variable
-- ⚡ **Fast Generation** - Creates projects in under 1 second
-- 📦 **Single Binary** - No external dependencies, templates embedded
+- 🧭 **Modern Routing** - Go 1.22+ `http.ServeMux` patterns like `GET /users/{id}`, with automatic 405s
+- 🪪 **Request IDs** - Every response carries an `X-Request-ID`; incoming IDs are reused for tracing
+- 🧯 **Panic Recovery** - Panics become 500s and are logged with a stack trace
+- ⏱️ **Timeouts** - Read, write, idle, and read-header timeouts
+- ⚙️ **12-Factor Config** - `PORT` (and `LOG_LEVEL`/`LOG_FORMAT` with logging) from the environment
+- 🧪 **Tests and Tooling** - Handler and middleware tests, a Makefile, and a golangci-lint config
 
 ### Optional Features
-- 📝 **Request Logging** - Logs method, path, status, and duration for every request
-- 🐳 **Docker Support** - Multi-stage Dockerfile for production
-- 📖 **Documentation** - Auto-generated README with usage examples
-- 🔧 **Middleware** - Panic recovery and request logging
+- 📝 **Structured Logging** - `log/slog` in text or JSON, with one log line per request
+- 🐳 **Docker** - Multi-stage build, non-root user, health check, and `.dockerignore`
+- 🤖 **GitHub Actions CI** - Vet, race-enabled tests, lint, and Docker build
+- 📖 **README** - Documentation for the generated project
 
 ---
 
@@ -183,18 +185,25 @@ goforge generate --name=ci-api --module=github.com/acme/ci-api --output=./servic
 
 ```
 my-api/
-├── main.go                 # Application entry point
-├── go.mod                  # Go module file
-├── .gitignore             # Git ignore patterns
-├── Dockerfile             # Docker configuration (optional)
-├── README.md              # Project documentation (optional)
-├── handlers/              # HTTP request handlers
-│   └── health.go         # Health check endpoint
-├── server/                # Server configuration
-│   ├── server.go         # HTTP server with graceful shutdown
-│   └── middleware.go     # HTTP middleware
-└── logger/                # Logging utilities (optional)
-    └── logger.go         # Structured logger
+├── main.go                    # Entry point: config, startup, graceful shutdown
+├── server/
+│   ├── server.go              # HTTP server and middleware chain
+│   ├── routes.go              # Route registration (add endpoints here)
+│   ├── middleware.go          # Request ID, panic recovery, request logging
+│   └── server_test.go
+├── handlers/
+│   ├── health.go              # GET /health
+│   ├── respond.go             # JSON response helper
+│   └── health_test.go
+├── logger/                    # slog setup from LOG_LEVEL / LOG_FORMAT (optional)
+├── Makefile                   # run, build, test, cover, lint, docker-build, ...
+├── .golangci.yml              # golangci-lint v2 config
+├── .github/workflows/ci.yml   # GitHub Actions CI (optional)
+├── Dockerfile                 # Multi-stage, non-root (optional)
+├── .dockerignore              # (optional)
+├── README.md                  # (optional)
+├── .gitignore
+└── go.mod
 ```
 
 ---

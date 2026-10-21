@@ -1,6 +1,7 @@
 package di
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,29 +10,26 @@ import (
 	"github.com/Frank5ive/goforge/internal/domain"
 )
 
-// minimalTemplates returns templates that produce a small but valid project.
-func minimalTemplates() fstest.MapFS {
-	templates := map[string]string{
-		"main.tmpl":       "package main\n\nfunc main() {}\n",
-		"server.tmpl":     "package server\n",
-		"middleware.tmpl": "package server\n",
-		"handler.tmpl":    "package handlers\n",
-		"gomod.tmpl":      "module {{.GetModuleName}}\n",
-		"logger.tmpl":     "package logger\n",
-		"dockerfile.tmpl": "EXPOSE {{.Port}}\n",
-		"readme.tmpl":     "# {{.AppName}}\n",
-		"gitignore.tmpl":  "*.log\n",
+// minimalTemplates returns a placeholder for every real template, so generation
+// exercises the full file list without depending on template contents. The
+// placeholder is valid Go, which also passes for non-Go files.
+func minimalTemplates(t *testing.T) fstest.MapFS {
+	t.Helper()
+
+	names, err := fs.Glob(os.DirFS(filepath.Join("..", "..", "templates")), "*.tmpl")
+	if err != nil || len(names) == 0 {
+		t.Fatalf("Failed to list real templates: %v", err)
 	}
 
 	fsys := fstest.MapFS{}
-	for name, content := range templates {
-		fsys[name] = &fstest.MapFile{Data: []byte(content)}
+	for _, name := range names {
+		fsys[name] = &fstest.MapFile{Data: []byte("package placeholder\n")}
 	}
 	return fsys
 }
 
 func TestBuildContainer(t *testing.T) {
-	container, err := BuildContainer(minimalTemplates(), Options{})
+	container, err := BuildContainer(minimalTemplates(t), Options{})
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -56,7 +54,7 @@ func TestBuildContainer_NoTemplates(t *testing.T) {
 }
 
 func TestBuildContainer_GeneratesAndRecordsFiles(t *testing.T) {
-	container, err := BuildContainer(minimalTemplates(), Options{})
+	container, err := BuildContainer(minimalTemplates(t), Options{})
 	if err != nil {
 		t.Fatalf("Failed to build container: %v", err)
 	}
@@ -77,7 +75,7 @@ func TestBuildContainer_GeneratesAndRecordsFiles(t *testing.T) {
 }
 
 func TestBuildContainer_DryRun(t *testing.T) {
-	container, err := BuildContainer(minimalTemplates(), Options{DryRun: true})
+	container, err := BuildContainer(minimalTemplates(t), Options{DryRun: true})
 	if err != nil {
 		t.Fatalf("Failed to build container: %v", err)
 	}

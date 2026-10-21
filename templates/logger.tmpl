@@ -1,47 +1,35 @@
+// Package logger configures structured logging from the environment.
 package logger
 
 import (
-	"fmt"
-	"log"
+	"log/slog"
 	"os"
-	"time"
+	"strings"
 )
 
-// Logger provides leveled (INFO/ERROR) logging
-type Logger struct {
-	infoLog  *log.Logger
-	errorLog *log.Logger
-}
+// New returns a structured logger configured by environment variables and
+// installs it as the slog default:
+//
+//	LOG_LEVEL   debug, info, warn, or error (default: info)
+//	LOG_FORMAT  text or json (default: text; use json in production)
+func New() *slog.Logger {
+	opts := &slog.HandlerOptions{Level: levelFromEnv()}
 
-// New creates a new Logger instance
-func New() *Logger {
-	return &Logger{
-		infoLog:  log.New(os.Stdout, "[INFO] ", log.Ldate|log.Ltime|log.Lshortfile),
-		errorLog: log.New(os.Stderr, "[ERROR] ", log.Ldate|log.Ltime|log.Lshortfile),
+	var handler slog.Handler = slog.NewTextHandler(os.Stdout, opts)
+	if strings.EqualFold(os.Getenv("LOG_FORMAT"), "json") {
+		handler = slog.NewJSONHandler(os.Stdout, opts)
 	}
+
+	log := slog.New(handler)
+	slog.SetDefault(log)
+	return log
 }
 
-// Info logs an informational message
-func (l *Logger) Info(message string) {
-	l.infoLog.Output(2, message)
-}
-
-// Error logs an error message
-func (l *Logger) Error(message string) {
-	l.errorLog.Output(2, message)
-}
-
-// Infof logs a formatted informational message
-func (l *Logger) Infof(format string, args ...interface{}) {
-	l.infoLog.Output(2, fmt.Sprintf(format, args...))
-}
-
-// Errorf logs a formatted error message
-func (l *Logger) Errorf(format string, args ...interface{}) {
-	l.errorLog.Output(2, fmt.Sprintf(format, args...))
-}
-
-// WithTimestamp adds a timestamp to a message
-func WithTimestamp(message string) string {
-	return fmt.Sprintf("[%s] %s", time.Now().Format(time.RFC3339), message)
+// levelFromEnv parses LOG_LEVEL, falling back to info when unset or invalid.
+func levelFromEnv() slog.Level {
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(os.Getenv("LOG_LEVEL"))); err != nil {
+		return slog.LevelInfo
+	}
+	return level
 }

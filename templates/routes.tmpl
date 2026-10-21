@@ -1,0 +1,16 @@
+package server
+
+import (
+	"net/http"
+
+	"{{.GetModuleName}}/handlers"
+)
+
+// registerRoutes maps request patterns to handlers. Add new endpoints here.
+//
+// Patterns use Go 1.22+ routing: "GET /users/{id}" matches only GET (and HEAD),
+// and handlers read path values with r.PathValue("id"). Requests with the wrong
+// method get 405 Method Not Allowed automatically.
+func registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /health", handlers.Health("{{.AppName}}"))
+}

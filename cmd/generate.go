@@ -38,6 +38,7 @@ type generateOptions struct {
 	logger bool
 	docker bool
 	readme bool
+	ci     bool
 
 	yes     bool
 	dryRun  bool
@@ -55,6 +56,7 @@ var features = []feature{
 	{flag: "logger", label: "Request logging", value: func(o *generateOptions) *bool { return &o.logger }},
 	{flag: "docker", label: "Dockerfile", value: func(o *generateOptions) *bool { return &o.docker }},
 	{flag: "readme", label: "README.md", value: func(o *generateOptions) *bool { return &o.readme }},
+	{flag: "ci", label: "GitHub Actions CI", value: func(o *generateOptions) *bool { return &o.ci }},
 }
 
 func newGenerateCmd() *cobra.Command {
@@ -70,7 +72,9 @@ The generated server will include:
   - Graceful shutdown
   - Configurable port (flag default, PORT environment variable at runtime)
   - Panic recovery middleware and HTTP timeouts
-  - Optional request logging, Dockerfile, and README
+  - Request ID and panic recovery middleware
+  - Tests, a Makefile, and a golangci-lint config
+  - Optional request logging, Dockerfile, README, and GitHub Actions CI
 
 Features not set by flag are asked for interactively, unless --yes is given.`,
 		Example: `  goforge generate --name=my-api --module=github.com/acme/my-api
@@ -93,6 +97,7 @@ Features not set by flag are asked for interactively, unless --yes is given.`,
 	flags.BoolVar(&opts.logger, "logger", true, "Include request logging")
 	flags.BoolVar(&opts.docker, "docker", true, "Include a Dockerfile")
 	flags.BoolVar(&opts.readme, "readme", true, "Include a README.md")
+	flags.BoolVar(&opts.ci, "ci", true, "Include a GitHub Actions CI workflow")
 	flags.BoolVarP(&opts.yes, "yes", "y", false, "Skip prompts and use flag values and defaults")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show the files that would be created without writing anything")
 	flags.BoolVar(&opts.initGit, "git", false, "Initialize a git repository in the new project")
@@ -119,6 +124,7 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 		IncludeLogger: opts.logger,
 		IncludeDocker: opts.docker,
 		IncludeReadme: opts.readme,
+		IncludeCI:     opts.ci,
 	}
 
 	displayConfig(out, config)
@@ -158,7 +164,7 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 }
 
 // errNotInteractive is returned when prompts are needed but stdin is not a terminal.
-var errNotInteractive = errors.New("interactive prompts need a terminal; use --yes and set options with flags (--module, --logger, --docker, --readme)")
+var errNotInteractive = errors.New("interactive prompts need a terminal; use --yes and set options with flags (--module, --logger, --docker, --readme, --ci)")
 
 // promptForOptions asks for the module path and features that were not set by flag.
 func promptForOptions(cmd *cobra.Command, opts *generateOptions) error {
@@ -234,6 +240,7 @@ func displayConfig(out io.Writer, config *domain.ServerConfig) {
 	fmt.Fprintf(out, "   • Request logging: %s\n", getBoolIcon(config.IncludeLogger))
 	fmt.Fprintf(out, "   • Dockerfile: %s\n", getBoolIcon(config.IncludeDocker))
 	fmt.Fprintf(out, "   • README: %s\n", getBoolIcon(config.IncludeReadme))
+	fmt.Fprintf(out, "   • GitHub Actions CI: %s\n", getBoolIcon(config.IncludeCI))
 	fmt.Fprintln(out)
 }
 
