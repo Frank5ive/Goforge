@@ -294,7 +294,7 @@ func TestFileSystemWriter_Permissions(t *testing.T) {
 
 	mode := info.Mode()
 	expectedMode := os.FileMode(0644)
-	
+
 	// Check if permissions match (masking out type bits)
 	if mode.Perm() != expectedMode {
 		t.Errorf("Expected file permissions %o, got %o", expectedMode, mode.Perm())
@@ -314,7 +314,7 @@ func TestFileSystemWriter_Permissions(t *testing.T) {
 
 	dirMode := dirInfo.Mode()
 	expectedDirMode := os.FileMode(0755)
-	
+
 	if dirMode.Perm() != expectedDirMode {
 		t.Errorf("Expected directory permissions %o, got %o", expectedDirMode, dirMode.Perm())
 	}

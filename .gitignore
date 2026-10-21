@@ -21,7 +21,6 @@ go.work
 
 # Build output
 goforge
-minicli1
 dist/
 build/
 

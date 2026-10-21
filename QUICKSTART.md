@@ -88,16 +88,16 @@ go vet ./...
 
 ## 🎯 Features Generated
 
-- ✅ Clean Architecture
 - ✅ Health endpoint (`/health`)
 - ✅ Graceful shutdown
+- ✅ `PORT` environment variable override
 - ✅ Request logging (optional)
 - ✅ Panic recovery middleware
 - ✅ Configurable timeouts
 - ✅ Docker support (optional)
 - ✅ README with usage (optional)
 
-## 🏗️ Architecture Layers
+## 🏗️ GoForge Architecture Layers
 
 1. **Domain** - Business entities & interfaces
 2. **Usecase** - Application logic

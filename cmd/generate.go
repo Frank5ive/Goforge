@@ -20,25 +20,25 @@ func SetTemplatesFS(fs embed.FS) {
 }
 
 var (
-	appName       string
-	port          int
-	outputDir     string
+	appName        string
+	port           int
+	outputDir      string
 	nonInteractive bool
 )
 
 var generateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "Generate a new Go HTTP server",
-	Long: `Generate a production-ready Go HTTP server with clean architecture.
+	Long: `Generate a production-ready Go HTTP server.
 
 The generated server will include:
   - Health check endpoint
   - Graceful shutdown
-  - Configurable port
-  - Clean architecture structure
-  - Optional logging and middleware`,
-	Example: `  minicli1 generate --name=myapp --port=8080
-  minicli1 generate -n userservice -p 3000`,
+  - Configurable port (flag default, PORT environment variable at runtime)
+  - Panic recovery middleware and HTTP timeouts
+  - Optional request logging, Dockerfile, and README`,
+	Example: `  goforge generate --name=my-api --port=8080
+  goforge generate -n user-service -p 3000 -o ./services --yes`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runGenerate(); err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -52,24 +52,25 @@ func init() {
 	generateCmd.Flags().IntVarP(&port, "port", "p", 8080, "Port number for the server")
 	generateCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Output directory for generated project")
 	generateCmd.Flags().BoolVar(&nonInteractive, "yes", false, "Skip interactive prompts and use defaults")
-	
+
 	rootCmd.AddCommand(generateCmd)
 }
 
 func runGenerate() error {
+	printBanner(os.Stdout)
 	fmt.Println("🎯 Starting server generation...")
 	fmt.Printf("📦 Project name: %s\n", appName)
 	fmt.Printf("🔌 Port: %d\n", port)
-	
+
 	// Interactive feature selection
 	config, err := promptForFeatures()
 	if err != nil {
 		return fmt.Errorf("failed to get user preferences: %w", err)
 	}
-	
+
 	// Display configuration
 	displayConfig(config)
-	
+
 	// Build DI container with embedded templates
 	fmt.Println("🔧 Initializing dependencies...")
 	container := di.BuildContainerWithEmbed(templatesFS, "templates")
@@ -83,12 +84,11 @@ func runGenerate() error {
 	// Success message
 	fmt.Println("\n✅ Server generation complete!")
 	fmt.Printf("\n📝 Next steps:\n")
-	fmt.Printf("   cd %s\n", config.AppName)
-	fmt.Printf("   go mod download\n")
-	fmt.Printf("   go run main.go\n")
+	fmt.Printf("   cd %s\n", config.GetProjectPath())
+	fmt.Printf("   go run .\n")
 	fmt.Printf("\n🌐 Your server will be available at: http://localhost:%d\n", config.Port)
 	fmt.Printf("💚 Health endpoint: http://localhost:%d/health\n", config.Port)
-	
+
 	return nil
 }
 
@@ -98,7 +98,7 @@ func promptForFeatures() (*domain.ServerConfig, error) {
 		Port:      port,
 		OutputDir: outputDir,
 	}
-	
+
 	// Use defaults if non-interactive mode
 	if nonInteractive {
 		config.IncludeLogger = true
@@ -106,17 +106,17 @@ func promptForFeatures() (*domain.ServerConfig, error) {
 		config.IncludeReadme = true
 		return config, nil
 	}
-	
+
 	// Logger preference
 	loggerPrompt := &survey.Confirm{
-		Message: "Include structured logger?",
+		Message: "Include logger?",
 		Default: true,
-		Help:    "Adds a simple structured logger for HTTP requests and server events",
+		Help:    "Adds a leveled logger and middleware that logs every HTTP request",
 	}
 	if err := survey.AskOne(loggerPrompt, &config.IncludeLogger); err != nil {
 		return nil, err
 	}
-	
+
 	// Docker preference
 	dockerPrompt := &survey.Confirm{
 		Message: "Generate Dockerfile?",
@@ -126,7 +126,7 @@ func promptForFeatures() (*domain.ServerConfig, error) {
 	if err := survey.AskOne(dockerPrompt, &config.IncludeDocker); err != nil {
 		return nil, err
 	}
-	
+
 	// README preference
 	readmePrompt := &survey.Confirm{
 		Message: "Generate README.md?",
@@ -136,7 +136,7 @@ func promptForFeatures() (*domain.ServerConfig, error) {
 	if err := survey.AskOne(readmePrompt, &config.IncludeReadme); err != nil {
 		return nil, err
 	}
-	
+
 	return config, nil
 }
 

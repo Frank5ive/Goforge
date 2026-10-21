@@ -26,7 +26,7 @@ If applicable, add screenshots to help explain your problem.
 ## 💻 Environment
 - **OS**: [e.g., Ubuntu 22.04, macOS 13, Windows 11]
 - **Go Version**: [e.g., 1.21.3]
-- **GoForge Version**: [e.g., 1.0.0]
+- **GoForge Version**: [output of `goforge --version`]
 - **Installation Method**: [source/binary/go install]
 
 ## 📝 Additional Context

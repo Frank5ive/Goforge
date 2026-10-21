@@ -4,7 +4,7 @@
 
 **Forge production-ready Go HTTP servers in seconds**
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Clean Architecture](https://img.shields.io/badge/Architecture-Clean-brightgreen.svg)](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -22,30 +22,30 @@
 
 ## 🎯 What is GoForge?
 
-GoForge is a powerful CLI tool that generates production-ready Go HTTP servers following Clean Architecture principles. Stop copying boilerplate code and start forging quality servers instantly.
+GoForge is a CLI tool that generates production-ready Go HTTP servers with health checks, graceful shutdown, middleware, and Docker support. Stop copying boilerplate code and start forging quality servers instantly.
 
 ### Why GoForge?
 
-✅ **Clean Architecture** - Domain-driven design out of the box  
-✅ **Production Ready** - Graceful shutdown, health checks, middleware  
+✅ **Production Ready** - Graceful shutdown, health checks, panic recovery, timeouts  
 ✅ **Zero Configuration** - Works immediately after installation  
-✅ **Fully Tested** - 80%+ test coverage on generated code  
+✅ **Verified Output** - Every option combination is generated, compiled, vetted, and booted by the test suite  
 ✅ **Docker Support** - Optional Dockerfile generation  
-✅ **Structured Logging** - Built-in logging capabilities  
+✅ **Request Logging** - Optional logger with per-request method, path, status, and duration  
 
 ---
 
 ## 🚀 Features
 
 ### Core Features
-- 🏗️ **Clean Architecture** - Proper separation of concerns (Domain, Usecase, Infrastructure)
+- 🧱 **Clear Structure** - Separate `handlers`, `server`, and `logger` packages
 - 🔌 **Health Endpoint** - Built-in `/health` endpoint with JSON response
-- 🛑 **Graceful Shutdown** - Proper signal handling and connection draining
+- 🛑 **Graceful Shutdown** - Handles SIGINT/SIGTERM and drains in-flight requests
+- ⚙️ **12-Factor Config** - Port can be overridden with the `PORT` environment variable
 - ⚡ **Fast Generation** - Creates projects in under 1 second
 - 📦 **Single Binary** - No external dependencies, templates embedded
 
 ### Optional Features
-- 📝 **Structured Logging** - Request/response logging with timestamps
+- 📝 **Request Logging** - Logs method, path, status, and duration for every request
 - 🐳 **Docker Support** - Multi-stage Dockerfile for production
 - 📖 **Documentation** - Auto-generated README with usage examples
 - 🔧 **Middleware** - Panic recovery and request logging
@@ -143,7 +143,7 @@ goforge generate [flags]
 
 When running without `--yes`, GoForge will ask:
 
-1. **Include structured logger?** - Adds request/response logging
+1. **Include logger?** - Adds a leveled logger and request logging middleware
 2. **Generate Dockerfile?** - Creates production-ready Docker image
 3. **Generate README.md?** - Auto-generates documentation
 
@@ -190,9 +190,9 @@ my-api/
 
 ---
 
-## 🎨 Architecture
+## 🎨 GoForge Architecture
 
-GoForge generates servers following **Clean Architecture** principles:
+GoForge itself is built following **Clean Architecture** principles:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -262,19 +262,16 @@ curl http://localhost:8080/health
 
 ## 🧪 Testing
 
-The generated server includes a complete testing setup:
+GoForge's test suite generates a project for every combination of options using the
+real embedded templates, then checks that each one is gofmt-clean, passes `go vet`,
+compiles, serves `/health`, and shuts down gracefully on `SIGTERM`.
 
 ```bash
-cd my-api
-
-# Run all tests
+# Full suite, including the end-to-end generation test
 go test ./...
 
-# Run with coverage
-go test -cover ./...
-
-# Verbose output
-go test -v ./...
+# Skip the end-to-end test for a quick run
+go test -short ./...
 ```
 
 ---
@@ -283,7 +280,7 @@ go test -v ./...
 
 ### Project Stack
 
-- **Language**: Go 1.21+
+- **Language**: Go 1.24+
 - **CLI Framework**: Cobra
 - **Interactive Prompts**: Survey
 - **Architecture**: Clean Architecture
@@ -373,6 +370,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 - Inspired by [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) by Uncle Bob
 - Built with [Cobra](https://github.com/spf13/cobra) CLI framework
 - Uses [Survey](https://github.com/AlecAivazis/survey) for interactive prompts
+- The Go gopher was designed by [Renée French](https://reneefrench.blogspot.com/) and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The pixel-art gopher in GoForge's terminal banner is adapted from it.
 
 ---
 
@@ -380,8 +378,6 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 - 🐛 **Issues**: [GitHub Issues](https://github.com/Frank5ive/goforge/issues)
 - 💬 **Discussions**: [GitHub Discussions](https://github.com/Frank5ive/goforge/discussions)
-- 📧 **Email**: [your-email@example.com](mailto:your-email@example.com)
-- 🐦 **Twitter**: [@yourhandle](https://twitter.com/yourhandle)
 
 ---
 
@@ -395,20 +391,19 @@ It helps others discover the project and motivates continued development.
 
 ## 🗺️ Roadmap
 
-### Version 1.0 (Current)
+### v0.1 (Current)
 - ✅ Basic server generation
-- ✅ Clean Architecture
 - ✅ Health endpoints
 - ✅ Docker support
 - ✅ Logging
 
-### Version 1.1 (Planned)
+### Next
 - [ ] Database integration (PostgreSQL, MySQL)
 - [ ] Authentication middleware (JWT)
 - [ ] API documentation generation (Swagger/OpenAPI)
 - [ ] Configuration file support (YAML/TOML)
 
-### Version 2.0 (Future)
+### Future
 - [ ] gRPC server support
 - [ ] GraphQL server support
 - [ ] Kubernetes manifests

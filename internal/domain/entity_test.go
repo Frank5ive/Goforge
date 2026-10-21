@@ -56,12 +56,50 @@ func TestServerConfig_Validate(t *testing.T) {
 		{
 			name: "app name with special characters",
 			config: ServerConfig{
-				AppName:   "my-app",
+				AppName:   "my.app",
 				Port:      8080,
 				OutputDir: "/tmp",
 			},
 			wantErr: true,
 			errMsg:  "must start with a lowercase letter",
+		},
+		{
+			name: "app name with spaces",
+			config: ServerConfig{
+				AppName:   "my app",
+				Port:      8080,
+				OutputDir: "/tmp",
+			},
+			wantErr: true,
+			errMsg:  "must start with a lowercase letter",
+		},
+		{
+			name: "app name ending in hyphen",
+			config: ServerConfig{
+				AppName:   "my-app-",
+				Port:      8080,
+				OutputDir: "/tmp",
+			},
+			wantErr: true,
+			errMsg:  "end with a letter or number",
+		},
+		{
+			name: "valid app name with hyphens",
+			config: ServerConfig{
+				AppName:   "user-service",
+				Port:      8080,
+				OutputDir: "/tmp",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid single letter app name",
+			config: ServerConfig{
+				AppName:   "a",
+				Port:      8080,
+				OutputDir: "/tmp",
+			},
+			wantErr: false,
 		},
 		{
 			name: "app name is reserved keyword",
@@ -134,10 +172,10 @@ func TestServerConfig_GetModuleName(t *testing.T) {
 	config := ServerConfig{
 		AppName: "testapp",
 	}
-	
+
 	expected := "github.com/yourorg/testapp"
 	got := config.GetModuleName()
-	
+
 	if got != expected {
 		t.Errorf("GetModuleName() = %v, want %v", got, expected)
 	}
@@ -148,10 +186,10 @@ func TestServerConfig_GetProjectPath(t *testing.T) {
 		AppName:   "testapp",
 		OutputDir: "/home/user/projects",
 	}
-	
+
 	expected := "/home/user/projects/testapp"
 	got := config.GetProjectPath()
-	
+
 	if got != expected {
 		t.Errorf("GetProjectPath() = %v, want %v", got, expected)
 	}
@@ -188,10 +226,10 @@ func TestValidationError_Error(t *testing.T) {
 func TestGenerationError_Error(t *testing.T) {
 	baseErr := NewValidationError("invalid config")
 	err := NewGenerationError("template_rendering", "failed to render template", baseErr)
-	
+
 	expected := "generation error at step [template_rendering]: failed to render template"
 	got := err.Error()
-	
+
 	if !containsString(got, expected) {
 		t.Errorf("Error() = %v, expected to contain %v", got, expected)
 	}
@@ -199,7 +237,7 @@ func TestGenerationError_Error(t *testing.T) {
 
 // Helper function
 func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || 
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && len(substr) > 0 && indexOf(s, substr) >= 0))
 }
 

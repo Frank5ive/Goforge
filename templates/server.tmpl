@@ -2,40 +2,50 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
-	{{if .IncludeLogger}}
+{{- if .IncludeLogger}}
+
 	"{{.GetModuleName}}/logger"
-	{{end}}
+{{- end}}
 )
 
 // Server represents the HTTP server
 type Server struct {
 	httpServer *http.Server
 	port       int
-	{{if .IncludeLogger}}logger     *logger.Logger{{end}}
+{{- if .IncludeLogger}}
+	logger     *logger.Logger
+{{- end}}
 }
 
 // New creates a new Server instance
 func New(port int{{if .IncludeLogger}}, log *logger.Logger{{end}}) *Server {
 	return &Server{
 		port: port,
-		{{if .IncludeLogger}}logger: log,{{end}}
+{{- if .IncludeLogger}}
+		logger: log,
+{{- end}}
 	}
 }
 
 // RegisterRoutes sets up the HTTP routes with middleware
-func (s *Server) RegisterRoutes(healthHandler http.HandlerFunc{{if .IncludeLogger}}, log *logger.Logger{{end}}) {
+func (s *Server) RegisterRoutes(healthHandler http.HandlerFunc) {
 	mux := http.NewServeMux()
 
 	// Health check endpoint
 	mux.HandleFunc("/health", healthHandler)
 
-	// Apply middleware
+	// Apply middleware (the last one applied runs first)
 	var handler http.Handler = mux
-	{{if .IncludeLogger}}handler = loggingMiddleware(handler, log)
-	{{end}}handler = recoveryMiddleware(handler{{if .IncludeLogger}}, log{{end}})
+{{- if .IncludeLogger}}
+	handler = loggingMiddleware(handler, s.logger)
+	handler = recoveryMiddleware(handler, s.logger)
+{{- else}}
+	handler = recoveryMiddleware(handler)
+{{- end}}
 
 	s.httpServer = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.port),
@@ -46,12 +56,16 @@ func (s *Server) RegisterRoutes(healthHandler http.HandlerFunc{{if .IncludeLogge
 	}
 }
 
-// Start begins listening for HTTP requests
+// Start listens for HTTP requests until the server is shut down.
+// It returns nil after a graceful Shutdown and an error for any other failure.
 func (s *Server) Start() error {
-	return s.httpServer.ListenAndServe()
+	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
-// Shutdown gracefully stops the server
+// Shutdown gracefully stops the server, waiting for in-flight requests to finish
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
@@ -61,27 +75,29 @@ func recoveryMiddleware(next http.Handler{{if .IncludeLogger}}, log *logger.Logg
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				{{if .IncludeLogger}}log.Error(fmt.Sprintf("Panic recovered: %v", err))
-				{{end}}w.WriteHeader(http.StatusInternalServerError)
+{{- if .IncludeLogger}}
+				log.Errorf("Panic recovered: %v", err)
+{{- end}}
+				w.WriteHeader(http.StatusInternalServerError)
 				w.Write([]byte("Internal Server Error"))
 			}
 		}()
 		next.ServeHTTP(w, r)
 	})
 }
+{{- if .IncludeLogger}}
 
-{{if .IncludeLogger}}// loggingMiddleware logs HTTP requests
+// loggingMiddleware logs HTTP requests
 func loggingMiddleware(next http.Handler, log *logger.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		
+
 		// Wrap response writer to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		
+
 		next.ServeHTTP(wrapped, r)
-		
-		duration := time.Since(start)
-		log.Info(fmt.Sprintf("%s %s - %d (%v)", r.Method, r.URL.Path, wrapped.statusCode, duration))
+
+		log.Infof("%s %s - %d (%v)", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start))
 	})
 }
 
@@ -95,4 +111,4 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
 }
-{{end}}
+{{- end}}

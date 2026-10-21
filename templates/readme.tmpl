@@ -5,9 +5,8 @@ A production-ready HTTP server built with Go, featuring clean architecture and b
 ## 🚀 Features
 
 - ✅ Health check endpoint
-- ✅ Graceful shutdown
-- ✅ HTTP request/response logging{{if .IncludeLogger}}
-- ✅ Structured logging{{end}}
+- ✅ Graceful shutdown{{if .IncludeLogger}}
+- ✅ HTTP request logging (method, path, status, duration){{end}}
 - ✅ Panic recovery middleware
 - ✅ Configurable timeouts{{if .IncludeDocker}}
 - ✅ Docker support{{end}}
@@ -27,7 +26,7 @@ cd {{.AppName}}
 go mod download
 
 # Build the application
-go build -o server .
+go build -o bin/{{.AppName}} .
 ```
 
 ## 🏃 Running
@@ -39,10 +38,10 @@ go build -o server .
 go run main.go
 
 # Or run the built binary
-./server
+./bin/{{.AppName}}
 ```
 
-The server will start on port **{{.Port}}**.
+The server will start on port **{{.Port}}** (override it with the `PORT` environment variable).
 {{if .IncludeDocker}}
 ### Docker
 
@@ -90,7 +89,7 @@ curl http://localhost:{{.Port}}/health
 │   ├── server.go        # HTTP server with graceful shutdown
 │   └── middleware.go    # HTTP middleware{{if .IncludeLogger}}
 ├── logger/              # Logging utilities
-│   └── logger.go        # Structured logger{{end}}{{if .IncludeDocker}}
+│   └── logger.go        # Application logger{{end}}{{if .IncludeDocker}}
 └── Dockerfile           # Docker configuration{{end}}
 ```
 
@@ -100,7 +99,7 @@ The server can be configured through environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PORT` | Server port | {{.Port}} |
+| `PORT` | Port the server listens on | {{.Port}} |
 
 ## 🧪 Testing
 
@@ -129,7 +128,7 @@ func NewMyHandler() http.HandlerFunc {
 }
 ```
 
-2. Register the handler in `main.go`:
+2. Register the handler in `RegisterRoutes` in `server/server.go` (import the `handlers` package there):
 
 ```go
 mux.HandleFunc("/my-endpoint", handlers.NewMyHandler())
@@ -149,7 +148,7 @@ The `/health` endpoint returns:
 
 ## 📊 Monitoring
 {{if .IncludeLogger}}
-The server includes structured logging for:
+The server logs:
 - Server startup/shutdown events
 - HTTP requests (method, path, status, duration)
 - Error conditions and panics

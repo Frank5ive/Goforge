@@ -29,11 +29,11 @@ func (m *MockTemplateRenderer) Render(templateName string, data interface{}) (st
 }
 
 type MockFileWriter struct {
-	WriteFileFunc      func(path string, content string) error
+	WriteFileFunc       func(path string, content string) error
 	CreateDirectoryFunc func(path string) error
-	FileExistsFunc     func(path string) bool
-	FilesWritten       map[string]string
-	DirsCreated        []string
+	FileExistsFunc      func(path string) bool
+	FilesWritten        map[string]string
+	DirsCreated         []string
 }
 
 func NewMockFileWriter() *MockFileWriter {
@@ -114,9 +114,9 @@ func TestServerGeneratorUsecase_Generate_Success(t *testing.T) {
 	}
 
 	// Verify files were written
-	expectedFiles := []string{"main.go", "server.go", "health.go", "go.mod", "logger.go", 
+	expectedFiles := []string{"main.go", "server.go", "health.go", "go.mod", "logger.go",
 		"middleware.go", "Dockerfile", "README.md", ".gitignore"}
-	
+
 	if len(writer.FilesWritten) != len(expectedFiles) {
 		t.Errorf("Expected %d files to be written, got %d", len(expectedFiles), len(writer.FilesWritten))
 	}
@@ -124,7 +124,7 @@ func TestServerGeneratorUsecase_Generate_Success(t *testing.T) {
 	// Verify templates were rendered
 	expectedTemplates := []string{"main.tmpl", "server.tmpl", "handler.tmpl", "gomod.tmpl",
 		"logger.tmpl", "middleware.tmpl", "dockerfile.tmpl", "readme.tmpl", "gitignore.tmpl"}
-	
+
 	for _, tmpl := range expectedTemplates {
 		if renderer.CallCount[tmpl] == 0 {
 			t.Errorf("Expected template %s to be rendered", tmpl)
@@ -203,7 +203,7 @@ func TestServerGeneratorUsecase_Generate_InvalidConfig(t *testing.T) {
 func TestServerGeneratorUsecase_Generate_ProjectExists(t *testing.T) {
 	renderer := NewMockTemplateRenderer()
 	writer := NewMockFileWriter()
-	
+
 	// Mock FileExists to return true
 	writer.FileExistsFunc = func(path string) bool {
 		return true
@@ -263,6 +263,43 @@ func TestServerGeneratorUsecase_Generate_TemplateRenderError(t *testing.T) {
 
 	if genErr.Step != "generate_main" {
 		t.Errorf("Expected error at 'generate_main', got '%s'", genErr.Step)
+	}
+}
+
+func TestServerGeneratorUsecase_Generate_InvalidGoOutput(t *testing.T) {
+	renderer := NewMockTemplateRenderer()
+	writer := NewMockFileWriter()
+
+	// Mock template render to produce Go that does not parse
+	renderer.RenderFunc = func(templateName string, data interface{}) (string, error) {
+		return "package main\nfunc main() {", nil
+	}
+
+	usecase := NewServerGeneratorUsecase(renderer, writer)
+
+	config := &domain.ServerConfig{
+		AppName:   "testapp",
+		Port:      8080,
+		OutputDir: "/tmp",
+	}
+
+	err := usecase.Generate(config)
+
+	if err == nil {
+		t.Fatal("Expected error for invalid Go output, got nil")
+	}
+
+	genErr, ok := err.(*domain.GenerationError)
+	if !ok {
+		t.Fatalf("Expected GenerationError, got %T", err)
+	}
+
+	if genErr.Step != "generate_main" {
+		t.Errorf("Expected error at 'generate_main', got '%s'", genErr.Step)
+	}
+
+	if len(writer.FilesWritten) != 0 {
+		t.Errorf("Expected no files to be written, got %d", len(writer.FilesWritten))
 	}
 }
 

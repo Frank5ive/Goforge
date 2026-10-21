@@ -91,7 +91,7 @@ func (r *GoTemplateRenderer) loadTemplates() error {
 
 	for _, fileName := range templateFiles {
 		path := filepath.Join(r.templateDir, fileName)
-		
+
 		tmpl, err := template.ParseFiles(path)
 		if err != nil {
 			return domain.NewTemplateError(
@@ -123,7 +123,7 @@ func (r *GoTemplateRenderer) loadEmbeddedTemplates(subdirectory string) error {
 
 	for _, fileName := range templateFiles {
 		path := filepath.Join(subdirectory, fileName)
-		
+
 		// Read template content from embedded filesystem
 		content, err := fs.ReadFile(*r.embeddedFS, path)
 		if err != nil {

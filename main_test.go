@@ -1,11 +1,19 @@
-package main_test
+package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"go/format"
+	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -13,105 +21,221 @@ import (
 	"github.com/Frank5ive/goforge/internal/domain"
 )
 
-// TestServerGeneratorIntegration performs an end-to-end test of the server generation process.
-func TestServerGeneratorIntegration(t *testing.T) {
-	// Create a temporary directory for the test
-	tempDir, err := os.MkdirTemp("", "server-generator-integration-")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+// TestGeneratedProjects generates a project for every combination of optional
+// features using the real embedded templates (the same ones shipped in the binary),
+// then verifies each project is gofmt-clean, passes go vet, builds, serves /health,
+// and shuts down gracefully on SIGTERM.
+func TestGeneratedProjects(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping end-to-end generation test in short mode")
 	}
-	defer os.RemoveAll(tempDir)
-
-	// Create a templates subdirectory
-	templateDir := filepath.Join(tempDir, "templates")
-	if err := os.Mkdir(templateDir, 0755); err != nil {
-		t.Fatalf("Failed to create templates dir: %v", err)
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not found in PATH")
 	}
 
-	// Create dummy template files
-	createDummyTemplates(t, templateDir)
+	container := di.BuildContainerWithEmbed(TemplatesFS, "templates")
 
-	// Build the DI container
-	container := di.BuildContainer(templateDir)
+	for _, includeLogger := range []bool{true, false} {
+		for _, includeDocker := range []bool{true, false} {
+			for _, includeReadme := range []bool{true, false} {
+				name := fmt.Sprintf("logger=%t/docker=%t/readme=%t", includeLogger, includeDocker, includeReadme)
+				t.Run(name, func(t *testing.T) {
+					config := &domain.ServerConfig{
+						AppName:       "test-api",
+						Port:          8080,
+						OutputDir:     t.TempDir(),
+						IncludeLogger: includeLogger,
+						IncludeDocker: includeDocker,
+						IncludeReadme: includeReadme,
+					}
 
-	// Define the server configuration for the test
-	config := &domain.ServerConfig{
-		AppName:       "testapp",
-		Port:          8081,
-		OutputDir:     tempDir,
-		IncludeLogger: true,
-		IncludeDocker: true,
-		IncludeReadme: true,
-	}
+					if err := container.ServerGeneratorUsecase.Generate(config); err != nil {
+						t.Fatalf("Failed to generate server: %v", err)
+					}
 
-	// Generate the server
-	if err := container.ServerGeneratorUsecase.Generate(config); err != nil {
-		t.Fatalf("Failed to generate server: %v", err)
-	}
+					projectPath := config.GetProjectPath()
+					assertFileExists(t, filepath.Join(projectPath, "main.go"), true)
+					assertFileExists(t, filepath.Join(projectPath, "go.mod"), true)
+					assertFileExists(t, filepath.Join(projectPath, ".gitignore"), true)
+					assertFileExists(t, filepath.Join(projectPath, "server", "server.go"), true)
+					assertFileExists(t, filepath.Join(projectPath, "handlers", "health.go"), true)
+					assertFileExists(t, filepath.Join(projectPath, "logger", "logger.go"), includeLogger)
+					assertFileExists(t, filepath.Join(projectPath, "Dockerfile"), includeDocker)
+					assertFileExists(t, filepath.Join(projectPath, "README.md"), includeReadme)
 
-	// Verify that the project files were created
-	projectPath := config.GetProjectPath()
-	assertFileExists(t, filepath.Join(projectPath, "main.go"))
-	assertFileExists(t, filepath.Join(projectPath, "go.mod"))
-	assertFileExists(t, filepath.Join(projectPath, "server", "server.go"))
-	assertFileExists(t, filepath.Join(projectPath, "handlers", "health.go"))
+					assertGofmtClean(t, projectPath)
+					runGo(t, projectPath, "vet", "./...")
 
-	// Compile the generated server
-	cmd := exec.Command("go", "build", "-o", "testapp_server", ".")
-	cmd.Dir = projectPath
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to build generated server: %v\nOutput: %s", err, string(output))
-	}
+					binary := filepath.Join(t.TempDir(), "server-under-test")
+					runGo(t, projectPath, "build", "-o", binary, ".")
 
-	// Run the generated server
-	serverCmd := exec.Command("./testapp_server")
-	serverCmd.Dir = projectPath
-	if err := serverCmd.Start(); err != nil {
-		t.Fatalf("Failed to start generated server: %v", err)
-	}
-	defer serverCmd.Process.Kill()
-
-	// Wait for the server to start
-	time.Sleep(2 * time.Second)
-
-	// Make a request to the /health endpoint
-	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/health", config.Port))
-	if err != nil {
-		t.Fatalf("Failed to make request to /health endpoint: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Check the status code
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status code %d, got %d", http.StatusOK, resp.StatusCode)
-	}
-}
-
-// createDummyTemplates creates minimal template files for the test.
-func createDummyTemplates(t *testing.T, templateDir string) {
-	templates := map[string]string{
-		"main.tmpl":       `package main; import ("fmt"; "net/http"); func main() { http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintf(w, "OK") }); http.ListenAndServe(":8081", nil) }`,
-		"server.tmpl":     `package server; type Server struct{}`,
-		"handler.tmpl":    `package handlers; import "net/http"; func HealthHandler(w http.ResponseWriter, r *http.Request) {}`,
-		"gomod.tmpl":      `module {{.AppName}}`,
-		"logger.tmpl":     `package logger; func New() {}`,
-		"middleware.tmpl": `package server; import "net/http"; func LoggingMiddleware(next http.Handler) http.Handler { return next }`,
-		"dockerfile.tmpl": `FROM golang:1.19`,
-		"readme.tmpl":     `# {{.AppName}}`,
-		"gitignore.tmpl":  `testapp_server`,
-	}
-
-	for name, content := range templates {
-		filePath := filepath.Join(templateDir, name)
-		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-			t.Fatalf("Failed to write dummy template %s: %v", name, err)
+					assertServerLifecycle(t, binary, config.AppName)
+				})
+			}
 		}
 	}
 }
 
-// assertFileExists checks if a file exists and fails the test if it doesn't.
-func assertFileExists(t *testing.T, path string) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Errorf("Expected file to exist, but it doesn't: %s", path)
+// assertServerLifecycle starts the built server on a free port (via the PORT
+// environment variable), checks /health, then sends SIGTERM and expects a clean exit.
+func assertServerLifecycle(t *testing.T, binary, appName string) {
+	t.Helper()
+
+	port := freePort(t)
+	var output bytes.Buffer
+
+	cmd := exec.Command(binary)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Failed to start generated server: %v", err)
+	}
+
+	// done is closed once the process exits; waitErr is safe to read after that
+	done := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = cmd.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		default:
+			cmd.Process.Kill()
+			<-done
+		}
+	})
+
+	resp := waitForHealth(t, fmt.Sprintf("http://127.0.0.1:%d/health", port), done, &output)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected status code %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Expected Content-Type application/json, got %q", ct)
+	}
+
+	var body struct {
+		Status  string `json:"status"`
+		Service string `json:"service"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("Failed to decode /health response: %v", err)
+	}
+	if body.Status != "healthy" || body.Service != appName {
+		t.Errorf("Unexpected /health body: %+v", body)
+	}
+
+	// Signal-based shutdown is not supported on Windows
+	if runtime.GOOS == "windows" {
+		return
+	}
+
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("Failed to send SIGTERM: %v", err)
+	}
+
+	select {
+	case <-done:
+		if waitErr != nil {
+			t.Fatalf("Expected clean exit after SIGTERM, got %v\nServer output:\n%s", waitErr, output.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("Server did not exit within 10s of SIGTERM\nServer output:\n%s", output.String())
+	}
+
+	if !strings.Contains(output.String(), "Server exited gracefully") {
+		t.Errorf("Expected graceful shutdown message\nServer output:\n%s", output.String())
+	}
+}
+
+// waitForHealth polls the health endpoint until it responds, the server exits, or 10s pass.
+func waitForHealth(t *testing.T, url string, done <-chan struct{}, output *bytes.Buffer) *http.Response {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := http.Get(url)
+		if err == nil {
+			return resp
+		}
+
+		select {
+		case <-done:
+			t.Fatalf("Server exited before becoming ready\nServer output:\n%s", output.String())
+		default:
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("Server not ready after 10s: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// freePort asks the OS for an unused TCP port.
+func freePort(t *testing.T) int {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to find a free port: %v", err)
+	}
+	defer listener.Close()
+
+	return listener.Addr().(*net.TCPAddr).Port
+}
+
+// runGo runs a go subcommand in dir and fails the test with its output on error.
+func runGo(t *testing.T, dir string, args ...string) {
+	t.Helper()
+
+	cmd := exec.Command("go", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go %s failed: %v\nOutput:\n%s", strings.Join(args, " "), err, output)
+	}
+}
+
+// assertGofmtClean fails if any generated .go file is not gofmt-formatted.
+func assertGofmtClean(t *testing.T, root string) {
+	t.Helper()
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".go" {
+			return err
+		}
+
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		formatted, err := format.Source(src)
+		if err != nil {
+			t.Errorf("%s does not parse: %v", path, err)
+			return nil
+		}
+		if !bytes.Equal(src, formatted) {
+			t.Errorf("%s is not gofmt-formatted", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to walk generated project: %v", err)
+	}
+}
+
+// assertFileExists checks whether a file exists, matching the expectation.
+func assertFileExists(t *testing.T, path string, want bool) {
+	t.Helper()
+
+	_, err := os.Stat(path)
+	if exists := err == nil; exists != want {
+		t.Errorf("Expected %s to exist=%t, got exist=%t", path, want, exists)
 	}
 }

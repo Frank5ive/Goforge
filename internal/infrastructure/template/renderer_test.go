@@ -163,7 +163,7 @@ func TestGoTemplateRenderer_Render_InvalidData(t *testing.T) {
 	}
 
 	type emptyData struct{}
-	
+
 	// Go templates error on missing fields by default
 	_, err = renderer.Render("main.tmpl", emptyData{})
 	if err == nil {

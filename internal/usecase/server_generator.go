@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"fmt"
+	"go/format"
 	"path/filepath"
 
 	"github.com/Frank5ive/goforge/internal/domain"
@@ -126,6 +127,20 @@ func (u *ServerGeneratorUsecase) createProjectStructure(config *domain.ServerCon
 	return nil
 }
 
+// writeFile writes generated content to path. Go source is run through gofmt first,
+// so output is formatted regardless of template whitespace and invalid Go is caught here.
+func (u *ServerGeneratorUsecase) writeFile(path string, content string) error {
+	if filepath.Ext(path) == ".go" {
+		formatted, err := format.Source([]byte(content))
+		if err != nil {
+			return fmt.Errorf("generated %s is not valid Go: %w", filepath.Base(path), err)
+		}
+		content = string(formatted)
+	}
+
+	return u.fileWriter.WriteFile(path, content)
+}
+
 // generateMainFile generates the main.go file.
 func (u *ServerGeneratorUsecase) generateMainFile(config *domain.ServerConfig) error {
 	content, err := u.templateRenderer.Render("main.tmpl", config)
@@ -134,7 +149,7 @@ func (u *ServerGeneratorUsecase) generateMainFile(config *domain.ServerConfig) e
 	}
 
 	path := filepath.Join(config.GetProjectPath(), "main.go")
-	return u.fileWriter.WriteFile(path, content)
+	return u.writeFile(path, content)
 }
 
 // generateServerFile generates the server.go file.
@@ -145,7 +160,7 @@ func (u *ServerGeneratorUsecase) generateServerFile(config *domain.ServerConfig)
 	}
 
 	path := filepath.Join(config.GetProjectPath(), "server", "server.go")
-	return u.fileWriter.WriteFile(path, content)
+	return u.writeFile(path, content)
 }
 
 // generateHealthHandler generates the health check handler.
@@ -156,7 +171,7 @@ func (u *ServerGeneratorUsecase) generateHealthHandler(config *domain.ServerConf
 	}
 
 	path := filepath.Join(config.GetProjectPath(), "handlers", "health.go")
-	return u.fileWriter.WriteFile(path, content)
+	return u.writeFile(path, content)
 }
 
 // generateGoMod generates the go.mod file.
@@ -167,7 +182,7 @@ func (u *ServerGeneratorUsecase) generateGoMod(config *domain.ServerConfig) erro
 	}
 
 	path := filepath.Join(config.GetProjectPath(), "go.mod")
-	return u.fileWriter.WriteFile(path, content)
+	return u.writeFile(path, content)
 }
 
 // generateLogger generates the logger package.
@@ -178,7 +193,7 @@ func (u *ServerGeneratorUsecase) generateLogger(config *domain.ServerConfig) err
 	}
 
 	path := filepath.Join(config.GetProjectPath(), "logger", "logger.go")
-	return u.fileWriter.WriteFile(path, content)
+	return u.writeFile(path, content)
 }
 
 // generateMiddleware generates the middleware file.
@@ -189,7 +204,7 @@ func (u *ServerGeneratorUsecase) generateMiddleware(config *domain.ServerConfig)
 	}
 
 	path := filepath.Join(config.GetProjectPath(), "server", "middleware.go")
-	return u.fileWriter.WriteFile(path, content)
+	return u.writeFile(path, content)
 }
 
 // generateDockerfile generates the Dockerfile.
@@ -200,7 +215,7 @@ func (u *ServerGeneratorUsecase) generateDockerfile(config *domain.ServerConfig)
 	}
 
 	path := filepath.Join(config.GetProjectPath(), "Dockerfile")
-	return u.fileWriter.WriteFile(path, content)
+	return u.writeFile(path, content)
 }
 
 // generateReadme generates the README.md file.
@@ -211,7 +226,7 @@ func (u *ServerGeneratorUsecase) generateReadme(config *domain.ServerConfig) err
 	}
 
 	path := filepath.Join(config.GetProjectPath(), "README.md")
-	return u.fileWriter.WriteFile(path, content)
+	return u.writeFile(path, content)
 }
 
 // generateGitignore generates the .gitignore file.
@@ -222,5 +237,5 @@ func (u *ServerGeneratorUsecase) generateGitignore(config *domain.ServerConfig) 
 	}
 
 	path := filepath.Join(config.GetProjectPath(), ".gitignore")
-	return u.fileWriter.WriteFile(path, content)
+	return u.writeFile(path, content)
 }
