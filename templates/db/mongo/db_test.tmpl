@@ -1,6 +1,9 @@
 package db
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDatabaseName(t *testing.T) {
 	tests := []struct {
@@ -10,12 +13,17 @@ func TestDatabaseName(t *testing.T) {
 		{"mongodb://localhost:27017/shop", "shop", "localhost:27017/shop", false},
 		{"mongodb://app:secret@db.example:27017/shop?authSource=admin", "shop", "db.example:27017/shop", false},
 		{"mongodb://localhost:27017", "", "", true},
+		{"mongodb://app:secret%zz@localhost:27017/shop", "", "", true}, // unescaped % in the password
 	}
 
 	for _, tt := range tests {
 		name, where, err := databaseName(tt.uri)
 		if (err != nil) != tt.wantErr || name != tt.name || where != tt.where {
 			t.Errorf("databaseName(%q) = %q, %q, %v", tt.uri, name, where, err)
+		}
+		// Errors end up in logs, so they must never contain the password
+		if err != nil && strings.Contains(err.Error(), "secret") {
+			t.Errorf("databaseName(%q) error %q contains the password", tt.uri, err)
 		}
 	}
 }

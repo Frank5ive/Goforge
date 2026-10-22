@@ -57,7 +57,8 @@ func Close(database *mongo.Database, log *slog.Logger) {
 func databaseName(uri string) (name, where string, err error) {
 	u, err := url.Parse(uri)
 	if err != nil {
-		return "", "", fmt.Errorf("invalid DATABASE_URL: %w", err)
+		// url.Parse's error repeats the URI, password included, so leave it out
+		return "", "", errors.New("invalid DATABASE_URL: it must be a URL such as mongodb://localhost:27017/shop, with special characters in the username and password percent-encoded")
 	}
 	name = strings.TrimPrefix(u.Path, "/")
 	if name == "" {
