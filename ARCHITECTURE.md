@@ -48,3 +48,18 @@ templates/                  text/template sources for generated projects
    in `cmd/generate.go` so it is also offered in the interactive prompt.
 3. Use the field in templates or in a `projectFiles` `include` function, and extend
    the option matrix in `TestGeneratedProjects` if it changes generated Go code.
+
+## The banner and README logo
+
+The terminal banner (`cmd/banner.go`) draws the gopher from the `gopherPixels` grid
+using half-block characters, next to the GOFORGE wordmark. The README logo
+(`docs/logo.svg`) is generated from the same grid and wordmark by
+`renderLogoSVG` in `cmd/logo_test.go`, so the two always match.
+
+After changing the gopher or wordmark, regenerate the logo:
+
+```bash
+go test ./cmd -run TestLogoSVGUpToDate -update-logo
+```
+
+`TestLogoSVGUpToDate` fails if the committed SVG is out of date.

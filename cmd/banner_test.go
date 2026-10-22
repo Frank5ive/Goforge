@@ -29,10 +29,10 @@ func TestRenderBanner(t *testing.T) {
 		wantColor    bool
 		wantLines    int
 	}{
-		{"truecolor wide shows gopher and wordmark", trueColor, 120, "██████╗", true, 7},
-		{"256 color fits 80 columns", color256, 80, "██████╗", true, 7},
-		{"color medium uses compact title with tagline", trueColor, 70, "in seconds", true, 7},
-		{"color narrow drops tagline", trueColor, 60, "GoForge " + displayVersion(), true, 7},
+		{"truecolor wide shows gopher and wordmark", trueColor, 120, "██████╗", true, 8},
+		{"256 color fits 80 columns", color256, 80, "██████╗", true, 8},
+		{"color medium uses compact title with tagline", trueColor, 70, "in seconds", true, 8},
+		{"color narrow drops tagline", trueColor, 60, "GoForge " + displayVersion(), true, 8},
 		{"color very narrow drops gopher", color256, 25, "GoForge " + displayVersion(), true, 1},
 		{"no color wide shows plain wordmark and tagline", noColor, 120, "in seconds", false, 7},
 		{"no color narrow shows plain title", noColor, 40, "GoForge " + displayVersion(), false, 1},

@@ -1,8 +1,6 @@
 <div align="center">
 
-# ⚒️ GoForge
-
-**Forge production-ready Go HTTP servers in seconds**
+<img src="docs/logo.svg" alt="GoForge: a pixel-art Go gopher next to the GOFORGE wordmark, with the tagline 'Forge production-ready Go servers in seconds'" width="100%">
 
 [![CI](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Frank5ive/goforge)](https://github.com/Frank5ive/goforge/releases)
@@ -15,7 +13,7 @@
 [Installation](#-installation) •
 [Quick Start](#-quick-start) •
 [Documentation](#-documentation) •
-[Architecture](#-architecture) •
+[Architecture](#-goforge-architecture) •
 [Contributing](#-contributing)
 
 </div>
@@ -440,6 +438,6 @@ It helps others discover the project and motivates continued development.
 
 **Built with ❤️ by Frank Gondwe**
 
-[⬆ Back to Top](#-goforge)
+[⬆ Back to Top](#top)
 
 </div>

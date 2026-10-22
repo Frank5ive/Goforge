@@ -22,32 +22,37 @@ type rgb struct{ r, g, b uint8 }
 
 // gopherPixels is the pixel-art Go gopher. Each character is one pixel and maps to
 // a color in gopherPalette; '.' is transparent. Two pixel rows share one terminal
-// row via half-block characters, so 14 pixel rows render as 7 lines.
+// row via half-block characters, so 16 pixel rows render as 8 lines.
+// The same pixels are used for the README logo (docs/logo.svg).
 //
 // The Go gopher was designed by Renée French and is licensed under CC BY 4.0.
 var gopherPixels = []string{
 	"..CC........CC..",
+	".CCCC......CCCC.",
 	".CCCCCCCCCCCCCC.",
 	"CCWWWWCCCCWWWWCC",
 	"CWWWWWWCCWWWWWWC",
-	"CWWWKKWCCWKKWWWC",
-	"CWWWKKWCCWKKWWWC",
+	"CWWKKWWCCWWKKWWC",
+	"CWWKKWWCCWWKKWWC",
+	"CWWKKWWCCWWKKWWC",
 	"CCWWWWCTTCWWWWCC",
-	"CCCCCCTNNTCCCCCC",
+	"CPPCCCTNNTCCCPPC",
 	"CCCCCCTTTTCCCCCC",
 	"CCCCCCCWWCCCCCCC",
 	"TTCCCCCCCCCCCCTT",
 	"CCCCCCCCCCCCCCCC",
-	".CCCCCCCCCCCCCC.",
+	".EEEEEEEEEEEEEE.",
 	"..TTT......TTT..",
 }
 
 var gopherPalette = map[byte]rgb{
 	'C': {106, 215, 229}, // gopher blue
+	'E': {79, 191, 212},  // shaded underside
 	'W': {255, 255, 255}, // eyes and teeth
 	'K': {20, 20, 20},    // pupils
 	'T': {246, 210, 162}, // snout, hands, feet
 	'N': {75, 54, 33},    // nose
+	'P': {245, 159, 176}, // cheeks
 }
 
 // wordmarkGo and wordmarkForge spell "GO" and "FORGE" in the ANSI Shadow figlet font.
@@ -132,7 +137,8 @@ func renderBanner(mode colorMode, width int) string {
 	case !showGopher:
 		text = []string{renderTitle(mode)}
 	case width >= gopherWidth+wordmarkWidth:
-		text = renderWordmark(mode)
+		// Start one line down so the wordmark sits beside the head, not the ears
+		text = append([]string{""}, renderWordmark(mode)...)
 	default:
 		text = renderCompactTitle(mode, width-gopherWidth)
 	}
@@ -194,7 +200,7 @@ func renderWordmark(mode colorMode) []string {
 // renderCompactTitle is used beside the gopher when the terminal is too narrow for
 // the wordmark. The tagline is included only if it fits in the available width.
 func renderCompactTitle(mode colorMode, available int) []string {
-	lines := []string{"", "", renderTitle(mode)}
+	lines := []string{"", "", "", renderTitle(mode)}
 	if runeWidth(tagline) <= available {
 		lines = append(lines, paint(mode, mutedGray, tagline))
 	}

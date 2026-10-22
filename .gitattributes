@@ -1,0 +1,3 @@
+# Keep LF line endings on every platform: templates are embedded byte-for-byte,
+# and docs/logo.svg is compared byte-for-byte by TestLogoSVGUpToDate.
+* text=auto eol=lf

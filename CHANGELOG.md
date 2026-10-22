@@ -38,6 +38,7 @@ The first public release will be tagged `v0.1.0`.
 - Templates embedded in the binary (single-file distribution)
 - Terminal banner with a pixel-art Go gopher and wordmark; adapts to terminal width,
   respects `NO_COLOR`, and is skipped when output is piped
+- README logo (`docs/logo.svg`) generated from the same pixel art as the banner
 - End-to-end test that generates every option combination and checks each one is
   gofmt-clean, passes `go vet` and its own tests, builds, serves `/health`, and shuts
   down gracefully
