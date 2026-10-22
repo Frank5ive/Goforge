@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/format"
@@ -591,7 +592,9 @@ func startContainer(t *testing.T, image, port string, env, readyCmd []string) st
 		t.Skip("Docker is not available")
 	}
 
-	args := []string{"run", "-d", "--rm", "-p", "127.0.0.1::" + strings.TrimSuffix(port, "/tcp")}
+	// No --rm: a container that exits early must keep its logs for the failure
+	// message. Cleanup removes it either way.
+	args := []string{"run", "-d", "-p", "127.0.0.1::" + strings.TrimSuffix(port, "/tcp")}
 	for _, e := range env {
 		args = append(args, "-e", e)
 	}
@@ -609,13 +612,24 @@ func startContainer(t *testing.T, image, port string, env, readyCmd []string) st
 	hostPort := strings.TrimSpace(strings.Split(string(out), "\n")[0])
 
 	deadline := time.Now().Add(120 * time.Second)
-	for exec.Command("docker", append([]string{"exec", id}, readyCmd...)...).Run() != nil {
-		if time.Now().After(deadline) {
-			t.Fatalf("%s did not become ready within 120s", image)
+	for {
+		// Bound each probe, so one that hangs can't use up the whole deadline
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		probe, err := exec.CommandContext(ctx, "docker", append([]string{"exec", id}, readyCmd...)...).CombinedOutput()
+		cancel()
+		if err == nil {
+			return hostPort
+		}
+
+		state, _ := exec.Command("docker", "inspect", "-f", "{{.State.Status}} (exit code {{.State.ExitCode}})", id).Output()
+		running := strings.HasPrefix(string(state), "running")
+		if !running || time.Now().After(deadline) {
+			logs, _ := exec.Command("docker", "logs", "--tail", "40", id).CombinedOutput()
+			t.Fatalf("%s did not become ready\ncontainer: %s\nlast probe: %v\n%s\ncontainer logs:\n%s",
+				image, strings.TrimSpace(string(state)), err, probe, logs)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return hostPort
 }
 
 // runGoEnv is runGo with extra environment variables.
