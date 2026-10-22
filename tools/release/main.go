@@ -15,6 +15,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -25,13 +26,14 @@ import (
 const changelogFile = "CHANGELOG.md"
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "release:", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string) error {
+// run executes the command in args, writing its output to out.
+func run(args []string, out io.Writer) error {
 	changelog, err := os.ReadFile(changelogFile)
 	if err != nil {
 		return err
@@ -47,14 +49,14 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("version=%s\ntag=%s\nprerelease=%t\nresume=%t\n", p.Version, p.Tag, p.Prerelease, p.Resume)
+		fmt.Fprintf(out, "version=%s\ntag=%s\nprerelease=%t\nresume=%t\n", p.Version, p.Tag, p.Prerelease, p.Resume)
 		return nil
 	case len(args) == 2 && args[0] == "notes":
 		notes, err := releaseNotes(string(changelog), strings.TrimPrefix(args[1], "v"))
 		if err != nil {
 			return err
 		}
-		fmt.Println(notes)
+		fmt.Fprintln(out, notes)
 		return nil
 	default:
 		return errors.New("usage: release check <branch> <commit> | release notes <version>")
