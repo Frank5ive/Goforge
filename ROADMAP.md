@@ -25,6 +25,8 @@ generated projects; automated, reproducible releases.
 
 ## Phase 4 (v0.2.0): Discoverable and agent-ready
 
+**Status:** released in v0.2.0, except the benchmark and the awesome-go listing, which follow.
+
 **Goal:** an agent or developer looking for a way to build a Go backend finds GoForge, can tell
 within seconds that it fits, and can drive it without a human at the keyboard.
 
