@@ -1,29 +1,131 @@
 name: Release
 
+# Pushing a branch named release/<version>, e.g. release/1.2.0, releases v1.2.0:
+#
+#   1. plan:    tools/release checks the version is valid semver, higher than every
+#               existing release, never released before, and has a CHANGELOG.md
+#               section; the module must be tidy and the GoReleaser config valid
+#   2. ci:      the full CI workflow runs on the release commit
+#   3. publish: a full GoReleaser dry run, then the tag is pushed, the binaries are
+#               uploaded to a draft release, and the draft is published only once
+#               everything is uploaded
+#
+# A failed publish can be re-run: the tag is never moved, and the draft is
+# replaced. See "Releasing" in CONTRIBUTING.md.
 on:
   push:
-    tags: ["v*"]
+    branches: ["release/**"]
 
-permissions:
-  contents: write
+permissions: {}
+
+# One release at a time, and never cancelled halfway through
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  goreleaser:
+  plan:
+    name: Check the release rules
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
         with:
-          # GoReleaser builds the changelog from git history
-          fetch-depth: 0
+          fetch-depth: 0 # every tag, to compare against existing releases
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
-      - name: Test
-        run: go test ./...
-      - uses: goreleaser/goreleaser-action@v7
+          go-version-file: go.mod
+      - name: Check the version
+        id: plan
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: go run ./tools/release check "$BRANCH" "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+      - name: Refuse a version that is already published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
+            echo "::error::$TAG is already released; versions are never released twice"
+            exit 1
+          fi
+      - name: Check go.mod and go.sum are tidy
+        run: go mod tidy -diff
+      - name: Check the GoReleaser config
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          args: check
+
+  ci:
+    name: CI
+    needs: plan
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  publish:
+    name: Publish ${{ needs.plan.outputs.tag }}
+    needs: [plan, ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # GoReleaser and the rules need every tag
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Check the release rules again
+        # Another release may have been published while CI ran
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+        run: go run ./tools/release check "$BRANCH" "$GITHUB_SHA"
+      - name: Write the release notes from CHANGELOG.md
+        run: go run ./tools/release notes "$TAG" > "$RUNNER_TEMP/notes.md"
+      - name: Tag the release commit
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Resuming an unfinished release: $TAG already points at this commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "GoForge $TAG"
+          fi
+      - name: Build everything without publishing
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --skip=publish --release-notes=${{ runner.temp }}/notes.md
+      - name: Push the tag
+        run: git push origin "refs/tags/$TAG"
+      - name: Upload to a draft release
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --release-notes=${{ runner.temp }}/notes.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Publish the release
+        run: |
+          latest=true
+          if [ "$PRERELEASE" = true ]; then latest=false; fi
+          gh release edit "$TAG" --draft=false --latest="$latest"
+      - name: Make the version available to go install
+        # Best effort: the Go module proxy would otherwise fetch it on first use
+        continue-on-error: true
+        # Outside the repository: Go refuses to look up versions of the module it is in
+        working-directory: ${{ runner.temp }}
+        run: GOPROXY=https://proxy.golang.org go list -m "github.com/Frank5ive/goforge@$TAG"

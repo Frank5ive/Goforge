@@ -142,6 +142,7 @@ goforge/
 │   ├── infrastructure/ # External adapters (implements domain interfaces)
 │   └── di/             # Dependency injection
 ├── templates/          # Code generation templates
+├── tools/release/      # Release rules for the Release workflow (not part of the CLI)
 └── main.go            # Entry point
 ```
 
@@ -158,16 +159,41 @@ guides to adding a template or a new option.
 
 ## Releasing
 
-Releases are built and published by GoReleaser when a version tag is pushed:
+Releases are automated: pushing a branch named `release/<version>` publishes that
+version once every check passes.
 
-1. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new version heading
-   and commit.
-2. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
-3. The Release workflow runs the tests, builds binaries for Linux, macOS, and
-   Windows, and publishes them with checksums on the GitHub releases page.
+1. Branch from an up-to-date `master`, named after the version, e.g. `release/1.2.0`
+   (or `release/1.2.0-rc.1` for a prerelease).
+2. In `CHANGELOG.md`, move the `[Unreleased]` entries under a new
+   `## [1.2.0] - YYYY-MM-DD` heading and commit. That section becomes the release notes.
+3. Push the branch: `git push origin release/1.2.0`.
 
-To check the GoReleaser config locally without publishing:
-`goreleaser release --snapshot --clean` (output goes to `dist/`).
+The Release workflow (`.github/workflows/release.yml`) then:
+
+- **checks the rules** (`tools/release`): the version must be valid
+  [semver](https://semver.org), higher than every existing release, never released
+  before, and have a non-empty `CHANGELOG.md` section. `go.mod` must be tidy and the
+  GoReleaser config valid;
+- **runs the full CI workflow** on the release commit (Linux, macOS, Windows, the
+  minimum Go version, lint, and vulnerability checks);
+- **publishes**: a complete GoReleaser dry run, then it tags the commit `v1.2.0`,
+  uploads reproducible binaries for Linux, macOS, and Windows with checksums to a
+  draft release, and publishes the draft only once everything is uploaded.
+  Prereleases are marked as such and never become "latest".
+
+If a check fails, fix it on the branch and push again. If publishing fails partway,
+re-run the workflow: it resumes from the same commit, because a tag is never moved
+and a published version is never replaced. Once a version is published, the next
+release needs a higher version.
+
+Don't push `v*` tags by hand; let the workflow create them.
+
+To check the rules or the build locally:
+
+```bash
+go run ./tools/release check release/1.2.0 "$(git rev-parse HEAD)"
+goreleaser release --snapshot --clean   # output goes to dist/
+```
 
 ## Recording the demo
 
