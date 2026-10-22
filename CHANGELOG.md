@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The first public release will be tagged `v0.1.0`.
+## [0.1.0] - 2026-10-22
 
 ### Added
 - `goforge generate` command with interactive prompts (module path and a feature
@@ -91,4 +91,5 @@ The first public release will be tagged `v0.1.0`.
 
 See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
-[Unreleased]: https://github.com/Frank5ive/goforge/commits/master
+[Unreleased]: https://github.com/Frank5ive/goforge/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Frank5ive/goforge/releases/tag/v0.1.0
