@@ -1,0 +1,76 @@
+// Package {{.Package}} implements the {{.Human}} resource: the {{.Type}} model and its
+// business rules, storage, service, and HTTP handlers.
+package {{.Package}}
+
+import (
+	"context"
+	"errors"
+{{- if .HasRequired}}
+	"strings"
+{{- end}}
+	"time"
+)
+
+// {{.Type}} is a {{.Human}} as stored and returned by the API.
+type {{.Type}} struct {
+	ID string `json:"id"`
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} `json:"{{.JSON}}"`
+{{- end}}
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Input holds the client-editable fields of a {{.Type}}, used to create one or
+// replace one's fields.
+type Input struct {
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} `json:"{{.JSON}}"`
+{{- end}}
+}
+
+// Validate checks the business rules for a {{.Human}} and reports every problem at once.
+func (in Input) Validate() error {
+{{- if .HasRequired}}
+	var problems []string
+{{- range .Fields}}{{if .Required}}
+	if strings.TrimSpace(in.{{.GoName}}) == "" {
+		problems = append(problems, "{{.JSON}} is required")
+	}
+{{- end}}{{end}}
+
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
+	}
+	return nil
+{{- else}}
+	// Add business rules here; return an error describing every invalid field.
+	return nil
+{{- end}}
+}
+
+// apply copies the editable fields from in.
+func (item *{{.Type}}) apply(in Input) {
+{{- range .Fields}}
+	item.{{.GoName}} = in.{{.GoName}}
+{{- end}}
+}
+
+var (
+	// ErrNotFound is returned when no {{.Human}} has the requested ID.
+	ErrNotFound = errors.New("{{.Human}} not found")
+
+	// ErrInvalid wraps validation failures so handlers can respond with 422.
+	ErrInvalid = errors.New("invalid {{.Human}}")
+)
+
+// Repository stores {{.HumanPlural}}. The service depends only on this interface,
+// so the in-memory implementation can be replaced with a database without
+// changing the service or handlers.
+type Repository interface {
+	List(ctx context.Context) ([]{{.Type}}, error)
+	Get(ctx context.Context, id string) ({{.Type}}, error)
+	Create(ctx context.Context, item {{.Type}}) error
+	Update(ctx context.Context, item {{.Type}}) error
+	Delete(ctx context.Context, id string) error
+}

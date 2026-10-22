@@ -115,12 +115,13 @@ func (u *ServerGeneratorUsecase) generateFile(config *domain.ServerConfig, file 
 	}
 
 	path := filepath.Join(config.GetProjectPath(), filepath.FromSlash(file.path))
-	return u.writeFile(path, content)
+	return writeFormatted(u.fileWriter, path, content)
 }
 
-// writeFile writes generated content to path. Go source is run through gofmt first,
-// so output is formatted regardless of template whitespace and invalid Go is caught here.
-func (u *ServerGeneratorUsecase) writeFile(path string, content string) error {
+// writeFormatted writes generated content to path. Go source is run through gofmt
+// first, so output is formatted regardless of template whitespace and invalid Go
+// is caught here.
+func writeFormatted(w domain.FileWriter, path string, content string) error {
 	if filepath.Ext(path) == ".go" {
 		formatted, err := format.Source([]byte(content))
 		if err != nil {
@@ -129,5 +130,5 @@ func (u *ServerGeneratorUsecase) writeFile(path string, content string) error {
 		content = string(formatted)
 	}
 
-	return u.fileWriter.WriteFile(path, content)
+	return w.WriteFile(path, content)
 }

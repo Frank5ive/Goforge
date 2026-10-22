@@ -7,3 +7,10 @@ type ServerGenerator interface {
 	// It returns an error if generation fails at any step.
 	Generate(config *ServerConfig) error
 }
+
+// ResourceGenerator defines the contract for adding a REST resource to an
+// existing generated project.
+type ResourceGenerator interface {
+	// Add generates the resource package and registers its routes.
+	Add(config *ResourceConfig) error
+}

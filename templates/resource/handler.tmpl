@@ -1,0 +1,98 @@
+package {{.Package}}
+
+import (
+	"errors"
+	"net/http"
+
+	"{{.Module}}/handlers"
+)
+
+// RegisterRoutes adds the {{.Human}} endpoints to mux:
+//
+//	GET    {{.Path}}       list {{.HumanPlural}}
+//	POST   {{.Path}}       create a {{.Human}}
+//	GET    {{.Path}}/{id}  get a {{.Human}}
+//	PUT    {{.Path}}/{id}  replace a {{.Human}}'s fields
+//	DELETE {{.Path}}/{id}  delete a {{.Human}}
+func RegisterRoutes(mux *http.ServeMux, svc *Service) {
+	h := &handler{svc: svc}
+
+	mux.HandleFunc("GET {{.Path}}", h.list)
+	mux.HandleFunc("POST {{.Path}}", h.create)
+	mux.HandleFunc("GET {{.Path}}/{id}", h.get)
+	mux.HandleFunc("PUT {{.Path}}/{id}", h.update)
+	mux.HandleFunc("DELETE {{.Path}}/{id}", h.delete)
+}
+
+type handler struct {
+	svc *Service
+}
+
+func (h *handler) list(w http.ResponseWriter, r *http.Request) {
+	items, err := h.svc.List(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	handlers.WriteJSON(w, http.StatusOK, items)
+}
+
+func (h *handler) create(w http.ResponseWriter, r *http.Request) {
+	var in Input
+	if !handlers.DecodeJSON(w, r, &in) {
+		return
+	}
+
+	item, err := h.svc.Create(r.Context(), in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Location", "{{.Path}}/"+item.ID)
+	handlers.WriteJSON(w, http.StatusCreated, item)
+}
+
+func (h *handler) get(w http.ResponseWriter, r *http.Request) {
+	item, err := h.svc.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	handlers.WriteJSON(w, http.StatusOK, item)
+}
+
+func (h *handler) update(w http.ResponseWriter, r *http.Request) {
+	var in Input
+	if !handlers.DecodeJSON(w, r, &in) {
+		return
+	}
+
+	item, err := h.svc.Update(r.Context(), r.PathValue("id"), in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	handlers.WriteJSON(w, http.StatusOK, item)
+}
+
+func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.Delete(r.Context(), r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeServiceError maps service errors to HTTP responses. Unexpected errors
+// return a generic 500 so internal details are not exposed to clients.
+func writeServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		handlers.WriteError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, ErrInvalid):
+		handlers.WriteError(w, http.StatusUnprocessableEntity, err.Error())
+	default:
+		handlers.WriteError(w, http.StatusInternalServerError, "internal server error")
+	}
+}

@@ -18,7 +18,8 @@ type Options struct {
 
 // Container holds the application's dependencies.
 type Container struct {
-	ServerGeneratorUsecase domain.ServerGenerator
+	ServerGeneratorUsecase   domain.ServerGenerator
+	ResourceGeneratorUsecase domain.ResourceGenerator
 
 	// Files records every file written by ServerGeneratorUsecase
 	// (or that would be written, in dry-run mode).
@@ -26,8 +27,8 @@ type Container struct {
 }
 
 // BuildContainer creates and wires the application's dependencies.
-// templates must contain the *.tmpl files at its root, e.g. os.DirFS(dir)
-// or fs.Sub(embedded, "templates").
+// templates is the templates directory, e.g. os.DirFS(dir) or
+// fs.Sub(embedded, "templates"); *.tmpl files are loaded from it recursively.
 func BuildContainer(templates fs.FS, opts Options) (*Container, error) {
 	templateRenderer, err := template.NewGoTemplateRenderer(templates)
 	if err != nil {
@@ -37,7 +38,8 @@ func BuildContainer(templates fs.FS, opts Options) (*Container, error) {
 	files := filesystem.NewRecordingWriter(filesystem.NewFileSystemWriter(), opts.DryRun)
 
 	return &Container{
-		ServerGeneratorUsecase: usecase.NewServerGeneratorUsecase(templateRenderer, files),
-		Files:                  files,
+		ServerGeneratorUsecase:   usecase.NewServerGeneratorUsecase(templateRenderer, files),
+		ResourceGeneratorUsecase: usecase.NewResourceGeneratorUsecase(templateRenderer, files),
+		Files:                    files,
 	}, nil
 }

@@ -99,6 +99,19 @@ trace a request across services; otherwise one is generated.
 └── go.mod
 ```
 
+## Adding a resource
+
+Generate a complete REST resource (model, validation, storage, service, handlers, and
+tests) with [GoForge](https://github.com/Frank5ive/goforge):
+
+```bash
+goforge add resource product --fields "name:string,price:float,in_stock:bool"
+```
+
+This creates a `products/` package with `GET/POST /products` and
+`GET/PUT/DELETE /products/{id}`, and registers the routes in `server/routes.go`.
+Data is stored in memory until you implement `products.Repository` for a database.
+
 ## Adding an endpoint
 
 1. Add a handler in `handlers/`:

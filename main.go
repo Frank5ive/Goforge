@@ -9,7 +9,7 @@ import (
 	"github.com/Frank5ive/goforge/cmd"
 )
 
-//go:embed templates/*.tmpl
+//go:embed templates
 var TemplatesFS embed.FS
 
 func main() {

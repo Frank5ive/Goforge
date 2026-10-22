@@ -267,3 +267,132 @@ func assertFileExists(t *testing.T, path string, want bool) {
 		t.Errorf("Expected %s to exist=%t, got exist=%t", path, want, exists)
 	}
 }
+
+// TestAddResource generates a project, adds resources covering every field type
+// with `goforge add resource`'s usecase, and checks the result is gofmt-clean,
+// passes go vet and its own tests, builds, and serves working CRUD endpoints.
+func TestAddResource(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping end-to-end resource test in short mode")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not found in PATH")
+	}
+
+	templates, err := fs.Sub(TemplatesFS, "templates")
+	if err != nil {
+		t.Fatalf("Failed to open embedded templates: %v", err)
+	}
+	container, err := di.BuildContainer(templates, di.Options{})
+	if err != nil {
+		t.Fatalf("Failed to build container: %v", err)
+	}
+
+	config := &domain.ServerConfig{
+		AppName:       "shop",
+		ModulePath:    "github.com/acme/shop",
+		Port:          8080,
+		OutputDir:     t.TempDir(),
+		IncludeLogger: true,
+	}
+	if err := container.ServerGeneratorUsecase.Generate(config); err != nil {
+		t.Fatalf("Failed to generate server: %v", err)
+	}
+	project := config.GetProjectPath()
+
+	resources := []*domain.ResourceConfig{
+		{Name: "product", Fields: []domain.Field{
+			{Name: "name", Type: domain.FieldString},
+			{Name: "image_url", Type: domain.FieldString, Optional: true},
+			{Name: "stock", Type: domain.FieldInt},
+			{Name: "price", Type: domain.FieldFloat},
+			{Name: "in_stock", Type: domain.FieldBool},
+			{Name: "released_at", Type: domain.FieldTime},
+		}},
+		// No required string fields, so Validate has no rules
+		{Name: "counter", Fields: []domain.Field{{Name: "count", Type: domain.FieldInt}}},
+		// Irregular plural
+		{Name: "person", Plural: "people", Fields: []domain.Field{{Name: "name", Type: domain.FieldString}}},
+	}
+	for _, r := range resources {
+		r.ProjectDir = project
+		if err := container.ResourceGeneratorUsecase.Add(r); err != nil {
+			t.Fatalf("Failed to add resource %s: %v", r.Name, err)
+		}
+	}
+
+	assertGofmtClean(t, project)
+	runGo(t, project, "vet", "./...")
+	runGo(t, project, "test", "./...")
+
+	binary := filepath.Join(t.TempDir(), "shop")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	runGo(t, project, "build", "-o", binary, ".")
+	baseURL := startServer(t, binary)
+
+	body := `{"name":"Gopher plush","image_url":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
+	resp, err := http.Post(baseURL+"/products", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /products: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /products = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+
+	resp, err = http.Get(baseURL + resp.Header.Get("Location"))
+	if err != nil {
+		t.Fatalf("GET created product: %v", err)
+	}
+	defer resp.Body.Close()
+	var product struct {
+		Name  string  `json:"name"`
+		Price float64 `json:"price"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&product); err != nil || product.Name != "Gopher plush" || product.Price != 19.5 {
+		t.Errorf("GET created product = %+v (decode error: %v)", product, err)
+	}
+
+	for _, path := range []string{"/people", "/counters"} {
+		resp, err := http.Get(baseURL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s = %d, want %d", path, resp.StatusCode, http.StatusOK)
+		}
+	}
+}
+
+// startServer runs the binary on a free port until the test ends and returns its base URL.
+func startServer(t *testing.T, binary string) string {
+	t.Helper()
+
+	port := freePort(t)
+	var output bytes.Buffer
+
+	cmd := exec.Command(binary)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-done
+	})
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	waitForHealth(t, baseURL+"/health", done, &output).Body.Close()
+	return baseURL
+}

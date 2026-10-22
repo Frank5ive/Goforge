@@ -12,6 +12,7 @@
 [Features](#-features) •
 [Installation](#-installation) •
 [Quick Start](#-quick-start) •
+[Adding Resources](#-adding-resources) •
 [Documentation](#-documentation) •
 [Architecture](#-goforge-architecture) •
 [Contributing](#-contributing)
@@ -22,11 +23,12 @@
 
 ## 🎯 What is GoForge?
 
-GoForge is a CLI tool that generates production-ready Go HTTP servers using only the standard library: structured logging with `log/slog`, Go 1.22+ routing, graceful shutdown, tests, linting, CI, and a hardened Dockerfile. Stop copying boilerplate code and start forging quality servers instantly.
+GoForge is a CLI tool that generates production-ready Go HTTP servers using only the standard library: structured logging with `log/slog`, Go 1.22+ routing, graceful shutdown, tests, linting, CI, and a hardened Dockerfile. Then it keeps helping: `goforge add resource` adds complete, tested REST resources to your project. Stop copying boilerplate code and start forging quality servers instantly.
 
 ### Why GoForge?
 
 ✅ **Production Ready** - Graceful shutdown, request IDs, panic recovery, and timeouts  
+✅ **Grows With You** - `goforge add resource` generates CRUD endpoints, storage, business logic, and tests  
 ✅ **Zero Dependencies** - Generated servers use only the Go standard library  
 ✅ **Tested and Linted** - Generated projects ship with tests and pass their own golangci-lint config  
 ✅ **Verified Output** - Every option combination is generated, linted, tested, built, and booted by GoForge's test suite  
@@ -128,6 +130,55 @@ curl http://localhost:8080/health
   "service": "my-api"
 }
 ```
+
+---
+
+## 🧩 Adding Resources
+
+Inside a project created by `goforge generate`, add a complete REST resource with one command:
+
+```bash
+goforge add resource product --fields "name:string,price:float,in_stock:bool,image_url:string?"
+```
+
+```
+✅ Added the product resource. Created 6 files:
+   products/product.go         # Product model, Input, validation rules, Repository interface
+   products/memory.go          # Thread-safe in-memory Repository
+   products/service.go         # Business logic: create, get, list, update, delete
+   products/handler.go         # HTTP handlers and route registration
+   products/service_test.go
+   products/handler_test.go
+
+📝 Updated:
+   server/routes.go            # Routes registered automatically
+
+🌐 Endpoints:
+   GET    /products
+   POST   /products
+   GET    /products/{id}
+   PUT    /products/{id}
+   DELETE /products/{id}
+```
+
+Each resource follows Clean Architecture inside its own package: handlers call the service,
+the service holds the business rules, and storage sits behind a `Repository` interface. Swap
+the in-memory repository for a database without touching the service or handlers.
+
+**Fields** are `name:type` pairs. Types: `string`, `int`, `float`, `bool`, and `time`
+(RFC 3339 in JSON). String fields are required unless marked optional with `?`. `id`,
+`created_at`, and `updated_at` are added automatically.
+
+**Responses:** `201` with a `Location` header on create, `204` on delete, `404` for unknown
+IDs, `422` with every failed rule listed (`{"error":"invalid product: name is required"}`),
+and `400` for malformed JSON or unknown fields.
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--fields` | `-f` | `name:string` | Comma-separated `name:type` fields |
+| `--plural` | | derived | Plural for irregular words, e.g. `--plural people` for `person` |
+| `--dir` | `-d` | `.` | Project directory (the one containing `go.mod`) |
+| `--dry-run` | | `false` | Show the files that would be created or changed |
 
 ---
 
@@ -418,16 +469,16 @@ It helps others discover the project and motivates continued development.
 ## 🗺️ Roadmap
 
 ### v0.1 (Current)
-- ✅ Basic server generation
-- ✅ Health endpoints
-- ✅ Docker support
-- ✅ Logging
+- ✅ Server generation with health checks, graceful shutdown, and middleware
+- ✅ Structured logging, tests, linting, CI, and Docker
+- ✅ Environment-based configuration, CORS, and request body limits
+- ✅ `goforge add resource` for tested CRUD resources
 
 ### Next
-- [ ] Database integration (PostgreSQL, MySQL)
+- [ ] Database-backed repositories (`goforge add db postgres`)
 - [ ] Authentication middleware (JWT)
-- [ ] API documentation generation (Swagger/OpenAPI)
-- [ ] Configuration file support (YAML/TOML)
+- [ ] OpenAPI documentation generated from resources
+- [ ] Homebrew tap
 
 ### Future
 - [ ] gRPC server support

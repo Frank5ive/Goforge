@@ -24,6 +24,9 @@ goforge generate --name=my-api --port=8080 --yes
 # Custom output directory
 goforge generate -n api -p 3000 -o ./services
 
+# Add a REST resource (run inside the generated project)
+goforge add resource product --fields "name:string,price:float"
+
 # Show help
 goforge --help
 goforge generate --help
