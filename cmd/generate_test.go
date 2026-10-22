@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,12 +92,15 @@ func TestGenerate_InitGit(t *testing.T) {
 	}
 }
 
-func TestGenerate_PromptsRequireTerminal(t *testing.T) {
-	// go test's stdin is not a terminal, so prompting must fail instead of hanging
-	_, err := runGenerateCmd(t, "--name", "prompt-api", "--output", t.TempDir())
-
-	if !errors.Is(err, errNotInteractive) {
-		t.Errorf("Expected errNotInteractive, got %v", err)
+func TestGenerate_WithoutTerminalUsesDefaults(t *testing.T) {
+	// go test's stdin is not a terminal, so generate must not prompt (or hang):
+	// like --yes, it uses the flag values and defaults
+	dir := t.TempDir()
+	if output, err := runGenerateCmd(t, "--name", "no-tty-api", "--output", dir); err != nil {
+		t.Fatalf("generate without a terminal failed: %v\n%s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "no-tty-api", "Dockerfile")); err != nil {
+		t.Errorf("expected the default features to be generated: %v", err)
 	}
 }
 

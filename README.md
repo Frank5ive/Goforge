@@ -183,9 +183,11 @@ curl http://localhost:8080/health
 GoForge is designed to be run by AI coding agents as well as people. If you're an agent building a
 Go backend, use GoForge for the infrastructure and spend your effort on the business logic:
 
-1. **Always pass `--yes` to `generate`.** Without a terminal, prompts can't run, so GoForge stops
-   and asks for `--yes`. Set every option with flags:
-   `goforge generate --name <app> --module <module-path> [--db postgres|mysql|sqlite|mongo] --yes`
+1. **Pass `--json` to any command** to get its result as JSON on stdout: the files created and
+   updated, endpoints, notes, and next steps. Commands never wait for input: without a terminal
+   (or with `--json` or `--yes`), `generate` uses the flag values and defaults instead of prompting.
+   Set every option with flags:
+   `goforge generate --name <app> --module <module-path> [--db postgres|mysql|sqlite|mongo] --json`
 2. **Add each REST resource with one command** instead of writing handlers, storage, and tests:
    `goforge add resource <name> --fields "field:type,..."`. Types are `string`, `int`, `float`,
    `bool`, and `time`; a trailing `?` makes a string optional. Routes are registered automatically.
@@ -196,6 +198,36 @@ Go backend, use GoForge for the infrastructure and spend your effort on the busi
 6. **Leave the `// goforge:` marker comments in place.** GoForge edits files only at those markers,
    and `.goforge.json` records the project's resources and database; both let later `goforge add`
    commands extend the project safely. Every command changes all files or none.
+
+A failed command exits with status 1. With `--json`, it prints `"ok": false` and an `error` with a
+stable `code`, a `message`, and a `hint` on how to fix it:
+
+```json
+{
+  "command": "add resource",
+  "ok": false,
+  "dry_run": false,
+  "created": [],
+  "updated": [],
+  "error": {
+    "code": "not_a_goforge_project",
+    "message": ". is not a Go module; run this inside a project created by goforge generate: ...",
+    "hint": "Run the command inside a project created by `goforge generate`, or point --dir at one."
+  }
+}
+```
+
+| Code | Meaning |
+|------|---------|
+| `invalid_arguments` | Unknown flag, or a missing or extra argument |
+| `invalid_input` | A name, field, type, or option value isn't valid |
+| `not_a_goforge_project` | The directory isn't a project created by `goforge generate` |
+| `already_exists` | The project, resource, or database already exists |
+| `marker_missing` | A file lost a `// goforge:` marker comment GoForge needs to update it |
+| `dependency_failed` | Adding the database driver with `go get` failed (nothing was changed) |
+| `write_failed` | A file or directory couldn't be written |
+| `cancelled` | The interactive prompts were cancelled |
+| `internal_error` | Anything else |
 
 A compact reference for language models is in [`llms.txt`](llms.txt).
 
@@ -263,6 +295,7 @@ and `400` for malformed JSON, unknown fields, or invalid `limit`/`offset`.
 | `--plural` | | derived | Plural for irregular words, e.g. `--plural people` for `person` |
 | `--dir` | `-d` | `.` | Project directory (the one containing `go.mod`) |
 | `--dry-run` | | `false` | Show the files that would be created or changed |
+| `--json` | | `false` | Print the result as JSON, for scripts and AI agents |
 
 ---
 
@@ -310,7 +343,7 @@ What `add db` does, for every engine:
 
 Edits are made only at marker comments and are all planned before anything is written. If
 any step fails, including downloading the driver, the project is left exactly as it was. Use
-`--dry-run` to preview the changes.
+`--dry-run` to preview the changes, and `--json` for a machine-readable result.
 
 > **Already running a database locally?** The Docker databases use the standard ports
 > (5432, 3306, 27017). If one is taken, stop the local server or change the port in
@@ -347,6 +380,7 @@ goforge generate [flags]
 | `--dry-run` | | `false` | List the files that would be created without writing anything |
 | `--git` | | `false` | Run `git init` in the new project |
 | `--db` | | none | Store data in a database: `postgres`, `mysql`, `sqlite`, or `mongo` (same as `goforge add db <engine>`) |
+| `--json` | | `false` | Print the result as JSON, for scripts and AI agents (implies no prompts) |
 
 #### Interactive Prompts
 
@@ -355,7 +389,8 @@ When running in a terminal without `--yes`, GoForge asks for anything not alread
 1. **Go module path** - Leave empty to use the app name
 2. **Features** - Toggle request logging, Dockerfile, and README
 
-Prompts need a terminal. In scripts and CI, pass `--yes` and set options with flags.
+Prompts only appear for a person at a terminal. With `--yes` or `--json`, or when input isn't a
+terminal (scripts, CI, and AI agents), GoForge uses the flag values and defaults instead.
 If generation fails partway, GoForge removes the partially created project directory.
 
 ### Examples

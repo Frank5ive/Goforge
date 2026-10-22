@@ -1,6 +1,80 @@
 package domain
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// Error codes identify a failure for programs, such as an AI agent reading
+// `goforge --json` output. They are stable: new codes may be added, but an
+// existing code keeps its meaning.
+const (
+	// CodeInvalidInput: a name, field, flag value, or option is not valid.
+	CodeInvalidInput = "invalid_input"
+	// CodeNotAProject: the directory is not a project created by goforge generate.
+	CodeNotAProject = "not_a_goforge_project"
+	// CodeAlreadyExists: the project, resource, or database already exists.
+	CodeAlreadyExists = "already_exists"
+	// CodeMarkerMissing: a file was edited and lost a // goforge: marker comment
+	// that GoForge needs to update it.
+	CodeMarkerMissing = "marker_missing"
+	// CodeDependencyFailed: adding a Go module dependency failed.
+	CodeDependencyFailed = "dependency_failed"
+	// CodeWriteFailed: a file or directory could not be written.
+	CodeWriteFailed = "write_failed"
+	// CodeInternal: anything else.
+	CodeInternal = "internal_error"
+)
+
+// CodedError gives err an error code, and optionally a hint on how to fix it,
+// without changing its message.
+type CodedError struct {
+	Code string
+	Hint string
+	Err  error
+}
+
+func (e *CodedError) Error() string { return e.Err.Error() }
+
+func (e *CodedError) Unwrap() error { return e.Err }
+
+// WithCode returns err with the given error code.
+func WithCode(code string, err error) error {
+	return &CodedError{Code: code, Err: err}
+}
+
+// WithHint returns err with the given error code and a hint for fixing it.
+func WithHint(code, hint string, err error) error {
+	return &CodedError{Code: code, Hint: hint, Err: err}
+}
+
+// ErrorHint returns the hint attached to err with WithHint, or "".
+func ErrorHint(err error) string {
+	var coded *CodedError
+	if errors.As(err, &coded) {
+		return coded.Hint
+	}
+	return ""
+}
+
+// ErrorCode returns err's error code: the outermost code attached with WithCode,
+// otherwise one inferred from the error's type, otherwise CodeInternal.
+func ErrorCode(err error) string {
+	var coded *CodedError
+	if errors.As(err, &coded) {
+		return coded.Code
+	}
+	var validation *ValidationError
+	var generation *GenerationError
+	if errors.As(err, &validation) || (errors.As(err, &generation) && generation.Step == "validation") {
+		return CodeInvalidInput
+	}
+	var fsErr *FileSystemError
+	if errors.As(err, &fsErr) {
+		return CodeWriteFailed
+	}
+	return CodeInternal
+}
 
 // DomainError represents a base error type for domain-specific errors.
 type DomainError struct {
@@ -55,11 +129,13 @@ type GenerationError struct {
 	Err     error
 }
 
+// Error returns the message and cause. The step is for programs (see ErrorCode),
+// so it is left out.
 func (e *GenerationError) Error() string {
 	if e.Err != nil {
-		return fmt.Sprintf("generation error at step [%s]: %s: %v", e.Step, e.Message, e.Err)
+		return fmt.Sprintf("%s: %v", e.Message, e.Err)
 	}
-	return fmt.Sprintf("generation error at step [%s]: %s", e.Step, e.Message)
+	return e.Message
 }
 
 func (e *GenerationError) Unwrap() error {

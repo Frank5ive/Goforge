@@ -80,11 +80,11 @@ func (u *ServerGeneratorUsecase) Generate(config *domain.ServerConfig) error {
 
 	projectPath := config.GetProjectPath()
 	if u.fileWriter.FileExists(projectPath) {
-		return domain.NewGenerationError(
+		return domain.WithCode(domain.CodeAlreadyExists, domain.NewGenerationError(
 			"directory_check",
 			fmt.Sprintf("project directory already exists: %s", projectPath),
 			nil,
-		)
+		))
 	}
 
 	if err := u.fileWriter.CreateDirectory(projectPath); err != nil {

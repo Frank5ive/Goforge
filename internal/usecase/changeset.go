@@ -30,7 +30,7 @@ func newChangeset(writer domain.FileWriter) *changeset {
 // create queues a new file. It fails if the file already exists.
 func (c *changeset) create(path, content string) error {
 	if c.writer.FileExists(path) {
-		return fmt.Errorf("%s already exists", path)
+		return domain.WithCode(domain.CodeAlreadyExists, fmt.Errorf("%s already exists", path))
 	}
 	if _, queued := c.creates[path]; !queued {
 		c.order = append(c.order, path)

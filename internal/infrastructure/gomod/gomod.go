@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/Frank5ive/goforge/internal/domain"
 )
 
 // Manager implements domain.ModuleManager by running the go command in the
@@ -26,7 +28,7 @@ func (m *Manager) Require(dir, module, version string) error {
 		return nil
 	}
 	if _, err := exec.LookPath("go"); err != nil {
-		return fmt.Errorf("the go command is needed to add %s: %w", module, err)
+		return domain.WithCode(domain.CodeDependencyFailed, fmt.Errorf("the go command is needed to add %s: %w", module, err))
 	}
 
 	for _, args := range [][]string{{"get", module + "@" + version}, {"mod", "tidy"}} {
@@ -34,7 +36,7 @@ func (m *Manager) Require(dir, module, version string) error {
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "GOWORK=off")
 		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("go %s: %w\n%s", strings.Join(args, " "), err, output)
+			return domain.WithCode(domain.CodeDependencyFailed, fmt.Errorf("go %s: %w\n%s", strings.Join(args, " "), err, output))
 		}
 	}
 	return nil

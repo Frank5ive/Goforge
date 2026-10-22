@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every log line written during a request carries its request ID; `handlers.Logger(ctx)` gives
   application code the same logger
 - Panics return a JSON error with the request ID instead of a plain-text 500
+- `--json` on `generate`, `add resource`, and `add db`: the result (files created and updated,
+  endpoints, notes, and next steps) as JSON on stdout, for scripts and AI agents
+- Failed commands report a stable error code (such as `not_a_goforge_project` or
+  `marker_missing`) and a hint on how to fix the problem, in text and in JSON
+
+### Changed
+- `generate` no longer fails without a terminal: when input isn't a terminal (or with `--json`),
+  it uses the flag values and defaults, as with `--yes`
+- Error messages no longer start with "generation error at step [...]"
+- `goforge --help` describes every command
 
 ## [0.1.0] - 2026-10-22
 
