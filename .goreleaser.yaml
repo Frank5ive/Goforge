@@ -13,6 +13,8 @@ builds:
     goarch: [amd64, arm64]
     flags:
       - -trimpath
+    # Reproducible binaries: file times come from the commit, not the build machine
+    mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
       - -s -w -X github.com/Frank5ive/goforge/cmd.version={{ .Version }}
 
@@ -29,10 +31,15 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# The Release workflow passes the version's CHANGELOG.md section as the notes
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
+  disable: true
+
+release:
+  # Uploaded as a draft; the Release workflow publishes it once every asset is
+  # there, so a release never appears half-uploaded
+  draft: true
+  # A re-run replaces the draft an unfinished run left behind
+  replace_existing_draft: true
+  # v1.2.0-rc.1 and similar are marked as prereleases
+  prerelease: auto
