@@ -1,11 +1,11 @@
 module github.com/Frank5ive/goforge
 
-go 1.24.1
+go 1.26.0
 
 require (
 	github.com/charmbracelet/huh v1.0.0
 	github.com/spf13/cobra v1.10.1
-	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
+	golang.org/x/term v0.47.0
 )
 
 require (
@@ -35,6 +35,6 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.15.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 )
