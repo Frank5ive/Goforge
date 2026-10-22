@@ -1,0 +1,134 @@
+package {{.Package}}
+
+import (
+	"errors"
+	"fmt"
+	"testing"
+	"time"
+)
+
+// testItem returns a {{.Human}} with a predictable ID and timestamps; n orders them.
+func testItem(n int) {{.Type}} {
+	created := time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC)
+	item := {{.Type}}{ID: fmt.Sprintf("item-%d", n), CreatedAt: created, UpdatedAt: created}
+	item.apply(validInput())
+	return item
+}
+
+// testRepository checks the behavior every Repository implementation must have,
+// so the in-memory and database implementations behave the same. newRepo returns
+// an empty repository for each subtest.
+func testRepository(t *testing.T, newRepo func(t *testing.T) Repository) {
+	t.Helper()
+
+	t.Run("create and get", func(t *testing.T) {
+		repo := newRepo(t)
+		item := testItem(1)
+		if err := repo.Create(t.Context(), item); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+
+		got, err := repo.Get(t.Context(), item.ID)
+		if err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+		if got != item {
+			t.Errorf("Get() = %+v, want %+v", got, item)
+		}
+	})
+
+	t.Run("get missing", func(t *testing.T) {
+		if _, err := newRepo(t).Get(t.Context(), "missing"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Get() error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("update", func(t *testing.T) {
+		repo := newRepo(t)
+		item := testItem(1)
+		if err := repo.Create(t.Context(), item); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+
+		item.apply(updatedInput())
+		item.UpdatedAt = item.UpdatedAt.Add(time.Hour)
+		if err := repo.Update(t.Context(), item); err != nil {
+			t.Fatalf("Update() error = %v", err)
+		}
+
+		got, err := repo.Get(t.Context(), item.ID)
+		if err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+		if got != item {
+			t.Errorf("Get() after Update() = %+v, want %+v", got, item)
+		}
+	})
+
+	t.Run("update missing", func(t *testing.T) {
+		if err := newRepo(t).Update(t.Context(), testItem(1)); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Update() error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		repo := newRepo(t)
+		item := testItem(1)
+		if err := repo.Create(t.Context(), item); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+
+		if err := repo.Delete(t.Context(), item.ID); err != nil {
+			t.Fatalf("Delete() error = %v", err)
+		}
+		if _, err := repo.Get(t.Context(), item.ID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Get() after Delete() error = %v, want ErrNotFound", err)
+		}
+		if err := repo.Delete(t.Context(), item.ID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("second Delete() error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("list paginates oldest first", func(t *testing.T) {
+		repo := newRepo(t)
+		// Created out of order, so the repository must sort by created_at
+		for _, n := range []int{3, 1, 2} {
+			if err := repo.Create(t.Context(), testItem(n)); err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+		}
+
+		tests := []struct {
+			limit, offset int
+			wantIDs       []string
+		}{
+			{2, 0, []string{"item-1", "item-2"}},
+			{2, 2, []string{"item-3"}},
+			{2, 5, nil},
+		}
+		for _, tt := range tests {
+			items, total, err := repo.List(t.Context(), tt.limit, tt.offset)
+			if err != nil {
+				t.Fatalf("List(%d, %d) error = %v", tt.limit, tt.offset, err)
+			}
+			if total != 3 {
+				t.Errorf("List(%d, %d) total = %d, want 3", tt.limit, tt.offset, total)
+			}
+			if items == nil {
+				t.Errorf("List(%d, %d) returned nil; want an empty slice so JSON shows []", tt.limit, tt.offset)
+			}
+			if len(items) != len(tt.wantIDs) {
+				t.Fatalf("List(%d, %d) returned %d items, want %d", tt.limit, tt.offset, len(items), len(tt.wantIDs))
+			}
+			for i, item := range items {
+				if item.ID != tt.wantIDs[i] {
+					t.Errorf("List(%d, %d)[%d] = %s, want %s", tt.limit, tt.offset, i, item.ID, tt.wantIDs[i])
+				}
+			}
+		}
+	})
+}
+
+func TestMemoryRepository(t *testing.T) {
+	testRepository(t, func(*testing.T) Repository { return NewMemoryRepository() })
+}

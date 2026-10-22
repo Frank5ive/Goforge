@@ -27,7 +27,6 @@ func TestRoutes(t *testing.T) {
 		want   int
 	}{
 		{"health", http.MethodGet, "/health", http.StatusOK},
-		{"readiness", http.MethodGet, "/readyz", http.StatusOK},
 		{"health HEAD", http.MethodHead, "/health", http.StatusOK},
 		{"health wrong method", http.MethodPost, "/health", http.StatusMethodNotAllowed},
 		{"unknown path", http.MethodGet, "/does-not-exist", http.StatusNotFound},
@@ -43,6 +42,16 @@ func TestRoutes(t *testing.T) {
 				t.Errorf("%s %s = %d, want %d", tt.method, tt.path, rec.Code, tt.want)
 			}
 		})
+	}
+}
+
+func TestReadinessRouteIsRegistered(t *testing.T) {
+	rec := httptest.NewRecorder()
+	testHandler().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil))
+
+	// 200 or 503 depending on the dependencies; handlers.Ready is tested separately
+	if rec.Code != http.StatusOK && rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("GET /readyz = %d, want 200 or 503", rec.Code)
 	}
 }
 

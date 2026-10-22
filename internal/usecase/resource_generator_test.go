@@ -51,7 +51,7 @@ func TestResourceGenerator_Add(t *testing.T) {
 	}
 
 	pkgDir := filepath.Join("/proj", "blogposts")
-	for _, name := range []string{"blog_post.go", "memory.go", "service.go", "handler.go", "service_test.go", "handler_test.go", "requests.http"} {
+	for _, name := range []string{"blog_post.go", "memory.go", "service.go", "handler.go", "service_test.go", "handler_test.go", "repository_test.go", "requests.http"} {
 		if _, ok := writer.FilesWritten[filepath.Join(pkgDir, name)]; !ok {
 			t.Errorf("Expected %s to be written", name)
 		}
@@ -159,7 +159,7 @@ func TestResourceGenerator_Add_WritesNothingWhenInvalid(t *testing.T) {
 }
 
 func TestRegisterResource(t *testing.T) {
-	routes, err := registerResource(testRoutes, "example.com/app", "products")
+	routes, err := registerResource(testRoutes, "example.com/app", "products", "products.NewMemoryRepository()")
 	if err != nil {
 		t.Fatalf("registerResource() error = %v", err)
 	}
@@ -177,15 +177,15 @@ func TestRegisterResource(t *testing.T) {
 		t.Errorf("expected registration above the marker:\n%s", routes)
 	}
 
-	if _, err := registerResource(routes, "example.com/app", "products"); err == nil {
+	if _, err := registerResource(routes, "example.com/app", "products", "products.NewMemoryRepository()"); err == nil {
 		t.Error("registering the same resource twice should fail")
 	}
 
-	again, err := registerResource(routes, "example.com/app", "categories")
+	again, err := registerResource(routes, "example.com/app", "categories", "categories.NewPostgresRepository(deps.DB)")
 	if err != nil {
 		t.Fatalf("registering a second resource: %v", err)
 	}
-	if !strings.Contains(again, "products.RegisterRoutes") || !strings.Contains(again, "categories.RegisterRoutes") {
+	if !strings.Contains(again, "products.RegisterRoutes") || !strings.Contains(again, "categories.NewService(categories.NewPostgresRepository(deps.DB))") {
 		t.Errorf("expected both resources to be registered:\n%s", again)
 	}
 }
@@ -268,5 +268,33 @@ func TestResourceGenerator_Add_StartsManifestForOlderProjects(t *testing.T) {
 	manifest := writer.FilesWritten[filepath.Join("/proj", ".goforge.json")]
 	if !strings.Contains(manifest, `"module": "example.com/app"`) || !strings.Contains(manifest, `"name": "blog_post"`) {
 		t.Errorf("expected a new manifest with the module and resource, got:\n%s", manifest)
+	}
+}
+
+func TestAddSQL(t *testing.T) {
+	data := newResourceData(&domain.ResourceConfig{
+		Name: "order",
+		Fields: []domain.Field{
+			{Name: "user", Type: domain.FieldString},
+			{Name: "total", Type: domain.FieldFloat},
+		},
+	}, "example.com/app")
+
+	want := map[string]string{
+		"Table":       `"orders"`,
+		"Columns":     `"id", "user", "total", "created_at", "updated_at"`,
+		"InsertQuery": `INSERT INTO "orders" ("id", "user", "total", "created_at", "updated_at") VALUES ($1, $2, $3, $4, $5)`,
+		"UpdateQuery": `UPDATE "orders" SET "user" = $2, "total" = $3, "updated_at" = $4 WHERE "id" = $1`,
+	}
+	got := map[string]string{
+		"Table": data.Table, "Columns": data.Columns, "InsertQuery": data.InsertQuery, "UpdateQuery": data.UpdateQuery,
+	}
+	for key := range want {
+		if got[key] != want[key] {
+			t.Errorf("%s = %s\nwant %s", key, got[key], want[key])
+		}
+	}
+	if data.Fields[1].SQLType != "double precision" {
+		t.Errorf("float SQL type = %q, want double precision", data.Fields[1].SQLType)
 	}
 }

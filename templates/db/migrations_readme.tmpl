@@ -1,0 +1,9 @@
+# Migrations
+
+SQL files in this directory are embedded in the binary and applied in file name order
+when the server starts (see `db.Migrate`). Each file runs once, in its own transaction,
+and is recorded in the `schema_migrations` table.
+
+- Name new files `<timestamp>_<description>.sql`, e.g. `20260301120000_add_products_sku.sql`,
+  so they sort after existing ones. `goforge add resource` creates one per resource.
+- Never edit a migration that has already been applied anywhere; add a new one instead.

@@ -1,0 +1,25 @@
+package db_test
+
+import (
+	"log/slog"
+	"testing"
+
+	"{{.Module}}/db"
+	"{{.Module}}/db/dbtest"
+)
+
+func TestMigrateIsIdempotent(t *testing.T) {
+	pool := dbtest.Pool(t) // already migrated once
+
+	if err := db.Migrate(t.Context(), pool, slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatalf("running migrations a second time: %v", err)
+	}
+
+	var count int
+	if err := pool.QueryRow(t.Context(), "SELECT count(*) FROM schema_migrations").Scan(&count); err != nil {
+		t.Fatalf("reading schema_migrations: %v", err)
+	}
+	if count == 0 {
+		t.Log("no migrations yet; add a resource to create one")
+	}
+}

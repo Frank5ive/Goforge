@@ -1,0 +1,48 @@
+// Package db connects to PostgreSQL and applies the schema migrations in
+// db/migrations.
+package db
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// connectTimeout bounds how long Connect waits for the database to answer.
+const connectTimeout = 10 * time.Second
+
+// Connect opens a connection pool to the PostgreSQL database at url, checks that
+// it is reachable, and applies any pending migrations.
+//
+// Pool settings can be tuned in the URL, e.g. ?pool_max_conns=20.
+func Connect(ctx context.Context, url string, log *slog.Logger) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, fmt.Errorf("invalid DATABASE_URL: %w", err)
+	}
+	// Describe the database without the password, for logs and errors
+	where := fmt.Sprintf("%s:%d/%s", cfg.ConnConfig.Host, cfg.ConnConfig.Port, cfg.ConnConfig.Database)
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating the connection pool for %s: %w", where, err)
+	}
+
+	pingCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("cannot reach PostgreSQL at %s (is it running? `make db-up` starts one in Docker): %w", where, err)
+	}
+
+	if err := Migrate(ctx, pool, log); err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	log.Info("connected to database", "database", where)
+	return pool, nil
+}

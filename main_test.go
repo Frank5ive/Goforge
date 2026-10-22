@@ -331,7 +331,7 @@ func TestAddResource(t *testing.T) {
 		binary += ".exe"
 	}
 	runGo(t, project, "build", "-o", binary, ".")
-	baseURL := startServer(t, binary)
+	baseURL, _ := startServer(t, binary)
 
 	// Every endpoint works straight after `add resource` and a build: no manual wiring
 	product := `{"name":"Gopher plush","image_url":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
@@ -408,15 +408,17 @@ func request(t *testing.T, method, url, body string) (int, http.Header, []byte) 
 	return resp.StatusCode, resp.Header, respBody
 }
 
-// startServer runs the binary on a free port until the test ends and returns its base URL.
-func startServer(t *testing.T, binary string) string {
+// startServer runs the binary on a free port until the test ends (or until the
+// returned stop function is called) and returns its base URL. env adds
+// environment variables such as DATABASE_URL.
+func startServer(t *testing.T, binary string, env ...string) (string, func()) {
 	t.Helper()
 
 	port := freePort(t)
 	var output bytes.Buffer
 
 	cmd := exec.Command(binary)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
+	cmd.Env = append(append(os.Environ(), fmt.Sprintf("PORT=%d", port)), env...)
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	if err := cmd.Start(); err != nil {
@@ -428,12 +430,137 @@ func startServer(t *testing.T, binary string) string {
 		_ = cmd.Wait()
 		close(done)
 	}()
-	t.Cleanup(func() {
+	stop := func() {
 		_ = cmd.Process.Kill()
 		<-done
+	}
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		default:
+			stop()
+		}
 	})
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	waitForHealth(t, baseURL+"/health", done, &output).Body.Close()
-	return baseURL
+	return baseURL, stop
+}
+
+// TestAddDatabase adds PostgreSQL to a generated project with resources and
+// checks that it passes its tests against a real database, that data survives a
+// server restart, and that /readyz reports the database. It needs Docker on
+// Linux and network access for `go get`; elsewhere it is skipped.
+func TestAddDatabase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping end-to-end database test in short mode")
+	}
+	databaseURL := startPostgres(t)
+
+	templates, err := fs.Sub(TemplatesFS, "templates")
+	if err != nil {
+		t.Fatalf("Failed to open embedded templates: %v", err)
+	}
+	container, err := di.BuildContainer(templates, di.Options{})
+	if err != nil {
+		t.Fatalf("Failed to build container: %v", err)
+	}
+
+	config := &domain.ServerConfig{AppName: "shop", ModulePath: "github.com/acme/shop", Port: 8080, OutputDir: t.TempDir(), IncludeLogger: true, IncludeCI: true}
+	if err := container.ServerGeneratorUsecase.Generate(config); err != nil {
+		t.Fatalf("Failed to generate server: %v", err)
+	}
+	project := config.GetProjectPath()
+
+	// One resource before the database, so `add db` must convert it
+	product := &domain.ResourceConfig{ProjectDir: project, Name: "product", Fields: []domain.Field{
+		{Name: "name", Type: domain.FieldString},
+		{Name: "notes", Type: domain.FieldString, Optional: true},
+		{Name: "stock", Type: domain.FieldInt},
+		{Name: "price", Type: domain.FieldFloat},
+		{Name: "in_stock", Type: domain.FieldBool},
+		{Name: "released_at", Type: domain.FieldTime},
+	}}
+	if err := container.ResourceGeneratorUsecase.Add(product); err != nil {
+		t.Fatalf("Failed to add resource: %v", err)
+	}
+	if _, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: project, Engine: domain.DatabasePostgres}); err != nil {
+		t.Fatalf("Failed to add database: %v", err)
+	}
+
+	assertGofmtClean(t, project)
+	runGo(t, project, "vet", "./...")
+	runGoEnv(t, project, []string{"TEST_DATABASE_URL=" + databaseURL}, "test", "-count=1", "./...")
+
+	binary := filepath.Join(t.TempDir(), "shop")
+	runGo(t, project, "build", "-o", binary, ".")
+
+	baseURL, stop := startServer(t, binary, "DATABASE_URL="+databaseURL)
+	body := `{"name":"Gopher plush","notes":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
+	if status, _, resp := request(t, http.MethodPost, baseURL+"/products", body); status != http.StatusCreated {
+		t.Fatalf("POST /products = %d %s", status, resp)
+	}
+	if status, _, _ := request(t, http.MethodGet, baseURL+"/readyz", ""); status != http.StatusOK {
+		t.Errorf("GET /readyz = %d, want 200 with the database up", status)
+	}
+	stop()
+
+	// Data is in PostgreSQL, so it survives a restart
+	baseURL, _ = startServer(t, binary, "DATABASE_URL="+databaseURL)
+	var page struct {
+		Total int `json:"total"`
+	}
+	if status, _, resp := request(t, http.MethodGet, baseURL+"/products", ""); status != http.StatusOK || json.Unmarshal(resp, &page) != nil || page.Total < 1 {
+		t.Errorf("GET /products after restart = %d %s, want the stored product", status, resp)
+	}
+}
+
+// startPostgres starts a throwaway PostgreSQL container and returns its URL. It
+// skips the test unless Docker is available on Linux.
+func startPostgres(t *testing.T) string {
+	t.Helper()
+
+	if runtime.GOOS != "linux" {
+		t.Skip("PostgreSQL end-to-end tests run on Linux only")
+	}
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		t.Skip("Docker is not available")
+	}
+
+	out, err := exec.Command("docker", "run", "-d", "--rm",
+		"-e", "POSTGRES_USER=app", "-e", "POSTGRES_PASSWORD=app", "-e", "POSTGRES_DB=shop",
+		"-p", "127.0.0.1::5432", "postgres:18-alpine").Output()
+	if err != nil {
+		t.Fatalf("starting PostgreSQL: %v", err)
+	}
+	id := strings.TrimSpace(string(out))
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
+
+	out, err = exec.Command("docker", "port", id, "5432/tcp").Output()
+	if err != nil {
+		t.Fatalf("finding the PostgreSQL port: %v", err)
+	}
+	hostPort := strings.TrimSpace(strings.Split(string(out), "\n")[0])
+
+	deadline := time.Now().Add(60 * time.Second)
+	for exec.Command("docker", "exec", id, "pg_isready", "-U", "app", "-d", "shop", "-h", "127.0.0.1").Run() != nil {
+		if time.Now().After(deadline) {
+			t.Fatal("PostgreSQL did not become ready within 60s")
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return fmt.Sprintf("postgres://app:app@%s/shop?sslmode=disable", hostPort)
+}
+
+// runGoEnv is runGo with extra environment variables.
+func runGoEnv(t *testing.T, dir string, env []string, args ...string) {
+	t.Helper()
+
+	cmd := exec.Command("go", args...)
+	cmd.Dir = dir
+	cmd.Env = append(append(os.Environ(), "GOWORK=off"), env...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go %s failed: %v\nOutput:\n%s", strings.Join(args, " "), err, output)
+	}
 }

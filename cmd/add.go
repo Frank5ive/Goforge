@@ -18,6 +18,7 @@ func newAddCmd() *cobra.Command {
 		Short: "Add code to a project created by goforge generate",
 	}
 	cmd.AddCommand(newAddResourceCmd())
+	cmd.AddCommand(newAddDBCmd())
 	return cmd
 }
 

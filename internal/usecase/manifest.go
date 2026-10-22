@@ -30,9 +30,18 @@ func readManifest(w domain.FileWriter, projectDir string) (domain.Manifest, bool
 
 // writeManifest writes m to the project's .goforge.json.
 func writeManifest(w domain.FileWriter, projectDir string, m domain.Manifest) error {
-	content, err := json.MarshalIndent(m, "", "  ")
+	content, err := marshalManifest(m)
 	if err != nil {
 		return err
 	}
-	return w.WriteFile(filepath.Join(projectDir, domain.ManifestFile), string(content)+"\n")
+	return w.WriteFile(filepath.Join(projectDir, domain.ManifestFile), content)
+}
+
+// marshalManifest returns m as indented JSON with a trailing newline.
+func marshalManifest(m domain.Manifest) (string, error) {
+	content, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(content) + "\n", nil
 }

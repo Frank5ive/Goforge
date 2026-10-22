@@ -1,9 +1,7 @@
 package usecase
 
 import (
-	"errors"
 	"fmt"
-	"go/format"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -28,7 +26,18 @@ var resourceFiles = []struct {
 	{"resource/handler.tmpl", func(*domain.ResourceConfig) string { return "handler.go" }},
 	{"resource/service_test.tmpl", func(*domain.ResourceConfig) string { return "service_test.go" }},
 	{"resource/handler_test.tmpl", func(*domain.ResourceConfig) string { return "handler_test.go" }},
+	{"resource/repository_test.tmpl", func(*domain.ResourceConfig) string { return "repository_test.go" }},
 	{"resource/requests.tmpl", func(*domain.ResourceConfig) string { return "requests.http" }},
+}
+
+// postgresFiles are generated, in addition to resourceFiles, for resources in a
+// project with a PostgreSQL database.
+var postgresFiles = []struct {
+	template string
+	file     string
+}{
+	{"resource/postgres.tmpl", "postgres.go"},
+	{"resource/postgres_test.tmpl", "postgres_test.go"},
 }
 
 // defaultPortPattern finds the default port in a generated project's config/config.go.
@@ -63,7 +72,7 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) error {
 		return domain.NewGenerationError("validation", "resource validation failed", err)
 	}
 
-	modulePath, err := u.readModulePath(config.ProjectDir)
+	modulePath, err := readModulePath(u.fileWriter, config.ProjectDir)
 	if err != nil {
 		return domain.NewGenerationError("project_check",
 			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", config.ProjectDir), err)
@@ -85,7 +94,8 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) error {
 			"server/routes.go not found; run this inside a project created by goforge generate", err)
 	}
 
-	updatedRoutes, err := registerResource(routes, modulePath, config.PackageName())
+	pkg := config.PackageName()
+	updatedRoutes, err := registerResource(routes, modulePath, pkg, pkg+".NewMemoryRepository()")
 	if err != nil {
 		return domain.NewGenerationError("register_routes", "cannot register the resource in server/routes.go", err)
 	}
@@ -134,22 +144,6 @@ func (u *ResourceGeneratorUsecase) cleanup(pkgDir string, genErr *domain.Generat
 	return genErr
 }
 
-// readModulePath returns the module path declared in the project's go.mod.
-func (u *ResourceGeneratorUsecase) readModulePath(projectDir string) (string, error) {
-	goMod, err := u.fileWriter.ReadFile(filepath.Join(projectDir, "go.mod"))
-	if err != nil {
-		return "", err
-	}
-
-	for _, line := range strings.Split(goMod, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == "module" {
-			return strings.Trim(fields[1], `"`), nil
-		}
-	}
-	return "", errors.New("go.mod has no module directive")
-}
-
 // readDefaultPort returns the default port from the project's config/config.go, or
 // fallbackPort for projects that don't have one (e.g. older GoForge versions).
 func (u *ResourceGeneratorUsecase) readDefaultPort(projectDir string) int {
@@ -170,39 +164,24 @@ func (u *ResourceGeneratorUsecase) readDefaultPort(projectDir string) int {
 }
 
 // registerResource returns routes.go source with the resource package imported
-// and its routes registered just above the goforge:routes marker.
-func registerResource(src, modulePath, pkg string) (string, error) {
-	importPath := strconv.Quote(modulePath + "/" + pkg)
-	registration := fmt.Sprintf("%s.RegisterRoutes(mux, %s.NewService(%s.NewMemoryRepository()))", pkg, pkg, pkg)
+// and its routes registered just above the goforge:routes marker. repo is the Go
+// expression that creates its Repository, e.g. "products.NewMemoryRepository()".
+func registerResource(src, modulePath, pkg, repo string) (string, error) {
+	importPath := modulePath + "/" + pkg
+	registration := fmt.Sprintf("%s.RegisterRoutes(mux, %s.NewService(%s))", pkg, pkg, repo)
 
-	if strings.Contains(src, importPath) {
-		return "", fmt.Errorf("%s is already imported", importPath)
+	if strings.Contains(src, strconv.Quote(importPath)) {
+		return "", fmt.Errorf("%q is already imported", importPath)
 	}
 
-	markerAt := strings.Index(src, routesMarker)
-	if markerAt < 0 {
-		return "", fmt.Errorf("the %q marker is missing; add it inside registerRoutes, or register the resource yourself with:\n\t%s", routesMarker, registration)
-	}
-	lineStart := strings.LastIndex(src[:markerAt], "\n") + 1
-	indent := src[lineStart:markerAt]
-	src = src[:lineStart] + indent + registration + "\n" + src[lineStart:]
-
-	importStart := strings.Index(src, "import (")
-	if importStart < 0 {
-		return "", errors.New("no import block found")
-	}
-	importEnd := strings.Index(src[importStart:], "\n)")
-	if importEnd < 0 {
-		return "", errors.New("unterminated import block")
-	}
-	importEnd += importStart
-	src = src[:importEnd] + "\n\t" + importPath + src[importEnd:]
-
-	formatted, err := format.Source([]byte(src))
+	src, err := insertAboveMarker(src, routesMarker, registration)
 	if err != nil {
-		return "", fmt.Errorf("updated routes.go is not valid Go: %w", err)
+		return "", fmt.Errorf("%w; add it inside registerRoutes, or register the resource yourself with:\n\t%s", err, registration)
 	}
-	return string(formatted), nil
+	if src, err = addImport(src, importPath); err != nil {
+		return "", err
+	}
+	return formatGo("routes.go", src)
 }
 
 // resourceData is the template data for resource templates.
@@ -221,6 +200,15 @@ type resourceData struct {
 	Port          int    // the project's default port, for requests.http
 	SampleBody    string // pretty-printed JSON create request, for requests.http
 	UpdatedBody   string // pretty-printed JSON replace request, for requests.http
+
+	// PostgreSQL names and statements; identifiers are quoted so names like
+	// "order" or "user" work
+	Table       string // quoted, e.g. "blog_posts", for SQL
+	TableName   string // unquoted, for comments and messages
+	IndexName   string
+	Columns     string // the select list, in scan order
+	InsertQuery string
+	UpdateQuery string
 }
 
 // resourceField describes one field for the templates, including sample values
@@ -229,6 +217,9 @@ type resourceField struct {
 	GoName      string
 	JSON        string
 	GoType      string
+	Column      string // quoted SQL column name
+	SQLType     string
+	IsTime      bool
 	Required    bool   // a required string field
 	Sample      string // Go literal
 	Updated     string // a different Go literal
@@ -250,6 +241,9 @@ func newResourceData(config *domain.ResourceConfig, modulePath string) resourceD
 		field := resourceField{
 			GoName:   domain.CamelCase(f.Name),
 			JSON:     f.Name,
+			Column:   quoteIdent(f.Name),
+			SQLType:  sqlTypes[f.Type],
+			IsTime:   f.Type == domain.FieldTime,
 			Required: f.Type == domain.FieldString && !f.Optional,
 		}
 
@@ -282,9 +276,53 @@ func newResourceData(config *domain.ResourceConfig, modulePath string) resourceD
 	}
 
 	data.First = data.Fields[0]
+	addSQL(&data, config.PluralName())
 	data.SampleBody = prettyBody(data.Fields, func(f resourceField) string { return f.SampleJSON })
 	data.UpdatedBody = prettyBody(data.Fields, func(f resourceField) string { return f.UpdatedJSON })
 	return data
+}
+
+// sqlTypes maps field types to PostgreSQL column types.
+var sqlTypes = map[domain.FieldType]string{
+	domain.FieldString: "text",
+	domain.FieldInt:    "bigint",
+	domain.FieldFloat:  "double precision",
+	domain.FieldBool:   "boolean",
+	domain.FieldTime:   "timestamptz",
+}
+
+// addSQL fills in the PostgreSQL table name and statements for a resource stored
+// in table. Parameters are $1 for the ID, then the fields in order, then the
+// timestamps.
+func addSQL(data *resourceData, table string) {
+	data.Table = quoteIdent(table)
+	data.TableName = table
+	data.IndexName = quoteIdent(table + "_created_at_id_idx")
+
+	columns := []string{`"id"`}
+	var sets []string
+	for i, f := range data.Fields {
+		columns = append(columns, f.Column)
+		sets = append(sets, fmt.Sprintf("%s = $%d", f.Column, i+2))
+	}
+	columns = append(columns, `"created_at"`, `"updated_at"`)
+	n := len(data.Fields)
+
+	placeholders := make([]string, len(columns))
+	for i := range placeholders {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+
+	data.Columns = strings.Join(columns, ", ")
+	data.InsertQuery = fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		data.Table, data.Columns, strings.Join(placeholders, ", "))
+	data.UpdateQuery = fmt.Sprintf(`UPDATE %s SET %s, "updated_at" = $%d WHERE "id" = $1`,
+		data.Table, strings.Join(sets, ", "), n+2)
+}
+
+// quoteIdent quotes a snake_case SQL identifier.
+func quoteIdent(name string) string {
+	return `"` + name + `"`
 }
 
 // prettyBody renders fields as an indented JSON object, using value for each field's JSON value.

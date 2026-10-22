@@ -1,0 +1,34 @@
+# Local development services. `make db-up` starts PostgreSQL;
+{{- if .Docker}} `docker compose up --build` also builds and runs the app.{{else}} the app runs with `go run .`.{{end}}
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: {{.DBName}}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d {{.DBName}}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+{{- if .Docker}}
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/{{.DBName}}?sslmode=disable
+      PORT: "{{.Port}}"
+    ports:
+      - "{{.Port}}:{{.Port}}"
+    depends_on:
+      db:
+        condition: service_healthy
+{{- end}}
+
+volumes:
+  db-data:
