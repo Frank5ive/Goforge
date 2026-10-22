@@ -52,6 +52,22 @@ the standard library's `net/http`, with no framework to learn.
 - **Not a fit (yet):** gRPC or GraphQL services, server-rendered web apps, or adding GoForge to an
   existing project it didn't generate.
 
+### Alternatives
+
+- **[go-blueprint](https://github.com/Melkeydev/go-blueprint)** scaffolds a project once, with your
+  choice of web framework (Chi, Gin, Fiber, Echo, and others), database driver, and extras such as
+  HTMX, Tailwind, React, and WebSockets. Choose it for a specific framework or a frontend in the
+  same repository.
+- **[gonew](https://go.dev/blog/gonew)** is the Go team's experimental tool for copying a template
+  module under a new module path. Choose it when you already have a template you like.
+- **[Goa](https://goa.design)** is design-first: you describe the API in a Go DSL and it generates
+  HTTP and gRPC servers, clients, and OpenAPI specifications. Choose it when the design should be
+  the source of truth, or you need gRPC.
+- **GoForge** generates a server on the standard library and keeps extending it: `goforge add
+  resource` adds tested CRUD endpoints with storage, `goforge add db` moves them onto a database,
+  and every command has machine-readable output for AI agents. Choose it for a REST API you'll keep
+  growing, with or without an AI agent.
+
 ### Why GoForge?
 
 ✅ **Production Ready** - Graceful shutdown, request IDs, panic recovery, and timeouts  

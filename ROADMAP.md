@@ -55,8 +55,9 @@ within seconds that it fits, and can drive it without a human at the keyboard.
    validation and tests"), each done by an agent from scratch and with GoForge, measuring tokens,
    cost, time to passing tests, correction cycles, and test pass rate. The harness lives in the repo
    so anyone can reproduce it.
-8. **Listings**: submit GoForge to awesome-go once it meets their criteria; add Go Report Card and
-   a test coverage badge
+8. **Listings**: submit GoForge to awesome-go. It meets their criteria (a year of history, a
+   `vX.Y.Z` release, docs on pkg.go.dev, about 82% test coverage) except one: the coverage must be
+   published on Codecov or Coveralls. (Go Report Card, once planned here, has shut down.)
 
 ### Done when
 
