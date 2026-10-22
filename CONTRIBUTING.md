@@ -65,7 +65,8 @@ git checkout -b feature/my-new-feature
 # ... edit files ...
 
 # Run tests (the end-to-end tests generate and build every option combination,
-# and on Linux with Docker also run against PostgreSQL; add -short to skip them)
+# run against SQLite, and on Linux with Docker also against PostgreSQL, MySQL, and
+# MongoDB; add -short to skip them)
 go test ./...
 
 # Format and lint (https://golangci-lint.run, config in .golangci.yml)

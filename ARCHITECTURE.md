@@ -82,30 +82,49 @@ anything and explains what to add.
 3. Use the field in templates or in a `projectFiles` `include` function, and extend
    the option matrix in `TestGeneratedProjects` if it changes generated Go code.
 
-## How `goforge add db postgres` works
+## How `goforge add db <engine>` works
+
+Everything that differs between databases is described by an `engine` in
+`internal/usecase/engines.go`: the driver module, the `db` package templates, the
+per-resource repository templates, the SQL dialect (identifier quoting, placeholders,
+column types), the `server.Deps` field and readiness check, default and test URLs, the
+docker compose template, CI service, Makefile targets, and `.gitignore` entries.
+Templates live in `templates/db/<engine>/`, with `templates/db/sql/` shared by the
+`database/sql` engines (MySQL and SQLite).
 
 `DatabaseGeneratorUsecase.Add` reads the project's `.goforge.json` to learn its options
 and resources, then plans every change in a `changeset` before touching the disk:
 
-1. Marker edits to `config/config.go` (`DatabaseURL`), `server/deps.go` (the pool and its
-   readiness check), `main.go` (connecting at startup), and `server/routes.go` (switching
-   each resource from `NewMemoryRepository()` to `NewPostgresRepository(deps.DB)`), plus
-   database targets appended to the Makefile and a PostgreSQL service in the CI workflow.
-2. New files: the `db` package from `templates/db/`, `docker-compose.yml`, and, for each
-   resource, `postgres.go`, `postgres_test.go`, and a migration from `templates/resource/`.
-3. The manifest, now recording `"database": "postgres"`.
+1. Marker edits to `config/config.go` (`DatabaseURL`), `server/deps.go` (the connection
+   and its readiness check), `main.go` (connecting at startup), and `server/routes.go`
+   (switching each resource from `NewMemoryRepository()` to the engine's repository),
+   plus Makefile targets, a CI service, and `.gitignore` entries where the engine has them.
+2. New files: the engine's `db` package, `docker-compose.yml`, and, for each resource,
+   its repository, tests, and (for SQL databases) a migration.
+3. The manifest, now recording the database.
 
 `changeset.apply` writes everything and then runs `go get` and `go mod tidy` (through the
 `domain.ModuleManager` interface). If any step fails, it removes the files and directories
 it created and restores every edited file, `go.mod`, and `go.sum`.
 
 `add resource` uses the same changeset and, when the manifest records a database, also
-plans the resource's PostgreSQL files and migration. `generate --db postgres` runs
+plans the resource's repository files and migration. `generate --db <engine>` runs
 `generate` and then the same `add db` usecase.
 
-`TestAddDatabase` in `main_test.go` runs the whole flow against PostgreSQL in Docker (Linux
-only; skipped elsewhere): vet, the project's tests with `TEST_DATABASE_URL`, and data
-surviving a server restart.
+SQL statements are built by `addEngineData` from the dialect, with parameters numbered in
+the order they appear, since `?` placeholders bind by position.
+
+`TestAddDatabase` in `main_test.go` runs the whole flow for every engine: vet, the
+project's tests against the real database, and data surviving a server restart. SQLite
+runs everywhere; the others start a throwaway container and need Docker on Linux.
+
+### Adding an engine
+
+1. Add a template directory under `templates/db/` with the `db` package, repository, and
+   repository test (reuse `templates/db/sql/` for a `database/sql` driver).
+2. Describe it in `engines.go` and register it in `engines`.
+3. Add its name (and any aliases) to `domain.DatabaseEngines`.
+4. Add it to `databaseEngines` in `main_test.go` with a function that starts it.
 
 ## The banner and README logo
 

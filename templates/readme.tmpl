@@ -119,8 +119,8 @@ goforge add resource product --fields "name:string,price:float,in_stock:bool"
 This creates a `products/` package with a paginated `GET /products`, `POST /products`, and
 `GET/PUT/PATCH/DELETE /products/{id}`, plus a `products/requests.http` file of example
 requests. The routes are registered in `server/routes.go` for you, so they work as soon as
-you restart the server. Data is stored in memory until you run `goforge add db postgres`,
-which moves every resource to PostgreSQL.
+you restart the server. Data is stored in memory until you run `goforge add db <engine>`
+(`postgres`, `mysql`, `sqlite`, or `mongo`), which moves every resource to that database.
 
 ## Adding an endpoint
 

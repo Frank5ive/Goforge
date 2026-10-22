@@ -54,17 +54,19 @@ The first public release will be tagged `v0.1.0`.
   which holds shared services such as a database pool
 - Generated projects record their options and resources in `.goforge.json`, so
   `goforge add` commands can extend them safely
-- `goforge add db postgres` (or `goforge generate --db postgres`) stores data in
-  PostgreSQL:
-  - a `db` package with a pgx connection pool and an embedded-SQL migration runner
-    (applied at startup, once each, in transactions, behind an advisory lock)
-  - startup wiring, `DATABASE_URL` in `config`, and `/readyz` checking the database
-  - every existing resource converted to a `PostgresRepository` with a migration;
-    resources added later use PostgreSQL automatically
-  - shared repository tests that run against the in-memory and PostgreSQL
-    repositories (PostgreSQL when `TEST_DATABASE_URL` is set)
+- `goforge add db <engine>` (or `goforge generate --db <engine>`) stores data in a
+  database: PostgreSQL (`postgres`), MySQL/MariaDB (`mysql`), SQLite (`sqlite`), or
+  MongoDB (`mongo`):
+  - a `db` package that connects at startup and, for SQL databases, applies embedded
+    migrations once each behind a lock (advisory lock, `GET_LOCK`, or SQLite's
+    `BEGIN IMMEDIATE`)
+  - `DATABASE_URL` in `config`, and `/readyz` checking the database
+  - every existing resource converted to a database repository (with a migration for
+    SQL databases); resources added later use the database automatically
+  - shared repository tests that run against the in-memory and database
+    repositories (SQLite always; others when `TEST_DATABASE_URL` is set)
   - `docker-compose.yml`, `make db-up`/`db-down`/`db-reset`/`test-db`, and a
-    PostgreSQL service in the generated CI workflow
+    database service in the generated CI workflow (none needed for SQLite)
   - planned in full before writing, and rolled back completely (including `go.mod`)
     if any step fails
 - Generated Go code is always gofmt-formatted
