@@ -14,7 +14,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # ubuntu-24.04, not ubuntu-latest: the newer images run a Linux kernel
+        # (6.19 through 7.0.13) that MongoDB refuses to start on, which breaks
+        # TestAddDatabase/mongo (SERVER-121912)
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -32,7 +35,7 @@ jobs:
 
   min-go:
     name: Test (minimum Go version)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # see the test job
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

@@ -48,6 +48,7 @@ type engine struct {
 
 	composeTemplate string                              // docker-compose.yml template; "" for none
 	ciService       func(testDB, testURL string) string // services/env for the CI test job; nil for none
+	ciRunner        string                              // runner for the CI test job when ubuntu-latest won't do; "" keeps it
 	makeTargets     func(dbName string, testURL string) []string
 	gitignore       []string // lines to add to .gitignore
 	dockerNote      string   // shown when the project has a Dockerfile
@@ -273,6 +274,9 @@ env:
   TEST_DATABASE_URL: %s
 `, testURL)
 	},
+	// MongoDB refuses to start on Linux 6.19 through 7.0.13, which the newer
+	// ubuntu-latest images run (SERVER-121912)
+	ciRunner: "ubuntu-24.04",
 	makeTargets: func(_, testURL string) []string {
 		return dockerMakeTargets("MongoDB", "", testURL)
 	},

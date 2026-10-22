@@ -272,3 +272,34 @@ func TestDatabaseGenerator_Add_ConvertsTheRightResourceWhenNamesOverlap(t *testi
 		}
 	}
 }
+
+func TestDatabaseGenerator_Add_CIRunner(t *testing.T) {
+	const workflow = "jobs:\n  test:\n    runs-on: ubuntu-latest\n    # goforge:ci-test-services\n    steps: []\n\n  lint:\n    runs-on: ubuntu-latest\n"
+
+	tests := []struct {
+		engine string
+		want   string
+	}{
+		// MongoDB can't start on the kernel newer ubuntu-latest images run
+		{"mongo", "  test:\n    runs-on: ubuntu-24.04 # MongoDB can't start on the kernel newer ubuntu-latest runners use\n    services:\n"},
+		{"postgres", "  test:\n    runs-on: ubuntu-latest\n    services:\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.engine, func(t *testing.T) {
+			w := newDBProject()
+			w.FilesWritten[filepath.Join("/proj", ".github", "workflows", "ci.yml")] = workflow
+
+			if _, err := newTestDatabaseGenerator(w, &mockModules{}).Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: tt.engine}); err != nil {
+				t.Fatalf("Add() error = %v", err)
+			}
+
+			got := file(w, ".github/workflows/ci.yml")
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("ci.yml does not contain %q:\n%s", tt.want, got)
+			}
+			if !strings.Contains(got, "  lint:\n    runs-on: ubuntu-latest\n") {
+				t.Errorf("the lint job's runner changed:\n%s", got)
+			}
+		})
+	}
+}
