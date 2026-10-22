@@ -1,15 +1,68 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 )
+
+// RequestIDHeader carries the request ID. The server sets it on every response
+// before calling a handler, and error responses repeat it in their body.
+const RequestIDHeader = "X-Request-ID"
 
 // ErrorResponse is the JSON body for error responses.
 type ErrorResponse struct {
 	Error string `json:"error"`
+	// RequestID matches the X-Request-ID header and the request_id of the
+	// server's log lines for the request, so an error can be traced to its logs.
+	RequestID string `json:"request_id,omitempty"`
+	// Detail is the cause of a 500. It is only set with APP_ENV=development,
+	// so internal details never reach clients in production.
+	Detail string `json:"detail,omitempty"`
+}
+
+type requestKey struct{}
+
+// request is what the server stores in each request's context.
+type request struct {
+	log         *slog.Logger
+	showDetails bool
+}
+
+// WithRequest returns ctx carrying the request's logger (which should include its
+// request ID) and whether 500 responses may show their cause. The server calls it
+// for every request.
+func WithRequest(ctx context.Context, log *slog.Logger, showErrorDetails bool) context.Context {
+	return context.WithValue(ctx, requestKey{}, request{log: log, showDetails: showErrorDetails})
+}
+
+// Logger returns the logger for the request in ctx, whose lines carry the
+// request's ID, or slog.Default() outside a request. Use it in services and
+// repositories to log with the request ID:
+//
+//	handlers.Logger(ctx).Info("order placed", "order_id", order.ID)
+func Logger(ctx context.Context) *slog.Logger {
+	if req, ok := ctx.Value(requestKey{}).(request); ok && req.log != nil {
+		return req.log
+	}
+	return slog.Default()
+}
+
+// InternalError responds 500 for an unexpected error. It logs err, with any extra
+// key-value pairs, as the cause; the response says only "internal server error"
+// and gives the request ID, plus the cause with APP_ENV=development.
+func InternalError(w http.ResponseWriter, r *http.Request, err error, attrs ...any) {
+	Logger(r.Context()).Error("internal server error",
+		append([]any{"error", err, "method", r.Method, "path", r.URL.Path}, attrs...)...)
+
+	resp := ErrorResponse{Error: "internal server error", RequestID: w.Header().Get(RequestIDHeader)}
+	if req, ok := r.Context().Value(requestKey{}).(request); ok && req.showDetails {
+		resp.Detail = err.Error()
+	}
+	WriteJSON(w, http.StatusInternalServerError, resp)
 }
 
 // WriteJSON writes v as a JSON response with the given status code.
@@ -27,9 +80,10 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	_, _ = w.Write(append(body, '\n'))
 }
 
-// WriteError writes {"error": message} with the given status code.
+// WriteError writes {"error": message, "request_id": ...} with the given status
+// code. For unexpected errors, use InternalError, which also logs the cause.
 func WriteError(w http.ResponseWriter, status int, message string) {
-	WriteJSON(w, status, ErrorResponse{Error: message})
+	WriteJSON(w, status, ErrorResponse{Error: message, RequestID: w.Header().Get(RequestIDHeader)})
 }
 
 // DecodeJSON decodes a single JSON object from the request body into dst,

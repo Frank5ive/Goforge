@@ -11,20 +11,24 @@ Use GoForge when starting a Go REST API or microservice, or when adding resource
 
 ## Commands
 
-Run every command non-interactively. `generate` needs `--yes` outside a terminal; it stops with an error rather than waiting for input. Every command accepts `--dry-run`, which lists the files it would create or change without writing anything. Every command changes all files or none.
+Add `--json` to `generate`, `add resource`, `add db`, `inspect`, or `check` to get its result as JSON on stdout. For `generate` and `add`, that is `ok`, `created` and `updated` files (relative to `project`), `endpoints`, `notes`, `info`, and `next_steps`. On failure it exits with status 1 and prints `"ok": false` with an `error` object: a stable `code` (`invalid_arguments`, `invalid_input`, `not_a_goforge_project`, `already_exists`, `marker_missing`, `dependency_failed`, `write_failed`, `cancelled`, `internal_error`), a `message`, and a `hint`. Commands never wait for input: without a terminal, or with `--json` or `--yes`, `generate` uses flag values and defaults. `generate` and the `add` commands accept `--dry-run`, which lists the files they would create or change without writing anything, and change all files or none.
 
-- `goforge generate --name <app> --module <module-path> --yes`: create a server in `./<app>`. Options: `--db postgres|mysql|sqlite|mongo`, `--port <n>` (default 8080), `--output <dir>`, `--logger`, `--docker`, `--ci`, `--readme` (each on by default; `--docker=false` turns one off), `--git`.
+- `goforge generate --name <app> --module <module-path> --json`: create a server in `./<app>`. Options: `--db postgres|mysql|sqlite|mongo`, `--port <n>` (default 8080), `--output <dir>`, `--logger`, `--docker`, `--ci`, `--readme` (each on by default; `--docker=false` turns one off), `--git`.
 - `goforge add resource <name> --fields "<field>:<type>,..."`: add a REST resource in its own package, with a model, validation, a repository (in memory, or the project's database), a service, handlers, tests, and a requests.http file. Its routes are registered automatically. `<name>` is singular snake_case, e.g. `product` or `blog_post`. Types: `string`, `int`, `float`, `bool`, `time`. A trailing `?` makes a string optional, e.g. `image_url:string?`. Use `--plural` for irregular plurals and `--dir` to point at the project.
 - `goforge add db <postgres|mysql|sqlite|mongo>`: add a database. Existing resources get a database repository (and a migration for SQL databases); later resources use it automatically. Adds docker-compose.yml and Makefile targets (except for SQLite), and a test database in CI.
+
+- `goforge check`: run gofmt, go vet, the tests, and golangci-lint (if installed) and report each problem with its file and line. Use `--json` to read the report, `--race` for the race detector. Works in any Go module.
+- `goforge inspect`: describe a project without reading its code: module, Go version, features, database, resources with their fields, every route, the environment variables it reads, its marker comments, and `problems` that would stop `goforge add` from working. Use `--json` to read it programmatically.
 
 Each resource serves `GET /<plural>?limit=&offset=`, `POST /<plural>`, `GET /<plural>/{id}`, `PUT /<plural>/{id}`, `PATCH /<plural>/{id}`, and `DELETE /<plural>/{id}`.
 
 ## Working in a generated project
 
-- Verify changes with `go test ./...` and `make lint`; a generated project passes both.
+- Verify changes with `goforge check --json`: it runs gofmt, go vet, go test, and golangci-lint (if installed), and returns `ok` plus a `problems` list where each problem has a `step` (`format`, `vet`, `test`, or `lint`), `file`, `line`, `message`, and, for tests, the `test` name. Exit status 1 means something failed. A generated project passes it. (`go test ./...` and `make lint` also work.)
 - Keep the `// goforge:` marker comments: GoForge edits files only at those markers, so later `goforge add` commands depend on them.
 - `.goforge.json` records the project's options, resources, and database. Don't edit it by hand.
-- Configuration comes from environment variables: `PORT`, `DATABASE_URL`, `LOG_LEVEL`, `LOG_FORMAT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, `SHUTDOWN_TIMEOUT`.
+- Configuration comes from environment variables: `APP_ENV` (`production` or `development`), `PORT`, `DATABASE_URL`, `LOG_LEVEL`, `LOG_FORMAT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, `SHUTDOWN_TIMEOUT`.
+- Run the server with `make run` while developing: it sets `APP_ENV=development`, so a 500 response includes its cause in `detail`. Error responses from the generated handlers are JSON with a `request_id`; the server's log lines for that request carry the same ID, and unexpected errors are logged with their cause. (Unknown routes and unsupported methods get Go's plain-text 404 and 405, which still carry the `X-Request-ID` header.) Plain `go run .` uses production mode, without `detail`. Log from your own code with `handlers.Logger(ctx)` to include the request ID.
 - `GET /health` reports liveness and `GET /readyz` readiness, including the database.
 - With Docker databases: `make db-up` starts the database, `make test-db` runs the tests against it.
 

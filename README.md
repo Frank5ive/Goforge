@@ -52,6 +52,22 @@ the standard library's `net/http`, with no framework to learn.
 - **Not a fit (yet):** gRPC or GraphQL services, server-rendered web apps, or adding GoForge to an
   existing project it didn't generate.
 
+### Alternatives
+
+- **[go-blueprint](https://github.com/Melkeydev/go-blueprint)** scaffolds a project once, with your
+  choice of web framework (Chi, Gin, Fiber, Echo, and others), database driver, and extras such as
+  HTMX, Tailwind, React, and WebSockets. Choose it for a specific framework or a frontend in the
+  same repository.
+- **[gonew](https://go.dev/blog/gonew)** is the Go team's experimental tool for copying a template
+  module under a new module path. Choose it when you already have a template you like.
+- **[Goa](https://goa.design)** is design-first: you describe the API in a Go DSL and it generates
+  HTTP and gRPC servers, clients, and OpenAPI specifications. Choose it when the design should be
+  the source of truth, or you need gRPC.
+- **GoForge** generates a server on the standard library and keeps extending it: `goforge add
+  resource` adds tested CRUD endpoints with storage, `goforge add db` moves them onto a database,
+  and every command has machine-readable output for AI agents. Choose it for a REST API you'll keep
+  growing, with or without an AI agent.
+
 ### Why GoForge?
 
 ✅ **Production Ready** - Graceful shutdown, request IDs, panic recovery, and timeouts  
@@ -69,10 +85,11 @@ the standard library's `net/http`, with no framework to learn.
 - 🔌 **Health and Readiness** - `GET /health` for liveness and `GET /readyz` for readiness (checks dependencies such as the database)
 - 🛑 **Graceful Shutdown** - Handles SIGINT/SIGTERM and drains in-flight requests
 - 🧭 **Modern Routing** - Go 1.22+ `http.ServeMux` patterns like `GET /users/{id}`, with automatic 405s
-- 🪪 **Request IDs** - Every response carries an `X-Request-ID`; incoming IDs are reused for tracing
-- 🧯 **Panic Recovery** - Panics become 500s and are logged with a stack trace
+- 🪪 **Request IDs** - Every response carries an `X-Request-ID`, incoming IDs are reused for tracing, and every log line for a request includes it
+- 🔎 **Traceable Errors** - Error responses from the generated handlers include the request ID; unexpected errors are logged with their cause, and with `APP_ENV=development` the response shows it too
+- 🧯 **Panic Recovery** - Panics become JSON 500s and are logged with a stack trace
 - ⏱️ **Timeouts** - Read, write, idle, and read-header timeouts
-- ⚙️ **12-Factor Config** - A `config` package loads `PORT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, and `SHUTDOWN_TIMEOUT` from the environment
+- ⚙️ **12-Factor Config** - A `config` package loads `APP_ENV`, `PORT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, and `SHUTDOWN_TIMEOUT` from the environment
 - 🌐 **CORS** - Opt-in with `CORS_ALLOWED_ORIGINS`, including preflight handling
 - 📏 **Body Limits** - Request bodies are capped (1 MiB by default) and oversized ones get `413`
 - 🧰 **JSON Helpers** - `WriteJSON`, `WriteError`, and a strict `DecodeJSON` that rejects unknown fields
@@ -182,19 +199,55 @@ curl http://localhost:8080/health
 GoForge is designed to be run by AI coding agents as well as people. If you're an agent building a
 Go backend, use GoForge for the infrastructure and spend your effort on the business logic:
 
-1. **Always pass `--yes` to `generate`.** Without a terminal, prompts can't run, so GoForge stops
-   and asks for `--yes`. Set every option with flags:
-   `goforge generate --name <app> --module <module-path> [--db postgres|mysql|sqlite|mongo] --yes`
+1. **Pass `--json` to `generate`, `add`, `inspect`, or `check`** to get its result as JSON on
+   stdout: for `generate` and `add`, the files created and updated, endpoints, notes, and next steps. Commands never wait for input: without a terminal
+   (or with `--json` or `--yes`), `generate` uses the flag values and defaults instead of prompting.
+   Set every option with flags:
+   `goforge generate --name <app> --module <module-path> [--db postgres|mysql|sqlite|mongo] --json`
 2. **Add each REST resource with one command** instead of writing handlers, storage, and tests:
    `goforge add resource <name> --fields "field:type,..."`. Types are `string`, `int`, `float`,
    `bool`, and `time`; a trailing `?` makes a string optional. Routes are registered automatically.
 3. **Add a database** with `goforge add db <postgres|mysql|sqlite|mongo>`. Existing resources move
    onto it.
-4. **Preview first** with `--dry-run` on any command; it lists every file it would create or change.
-5. **Verify** with `go test ./...` (and `make lint`). Generated projects pass both.
+4. **Preview first** with `--dry-run` on `generate` and the `add` commands; it lists every file
+   they would create or change.
+   **Understand an existing project** with `goforge inspect --json`: its resources and fields,
+   routes, database, environment variables, and anything stopping `goforge add` from working.
+5. **Verify** with `goforge check --json`: it runs gofmt, vet, the tests, and golangci-lint, and
+   returns each problem with its file, line, and message. Generated projects pass it.
 6. **Leave the `// goforge:` marker comments in place.** GoForge edits files only at those markers,
    and `.goforge.json` records the project's resources and database; both let later `goforge add`
-   commands extend the project safely. Every command changes all files or none.
+   commands extend the project safely. `generate` and the `add` commands change all files or none.
+
+A failed command exits with status 1. With `--json`, it prints `"ok": false` and an `error` with a
+stable `code`, a `message`, and a `hint` on how to fix it:
+
+```json
+{
+  "command": "add resource",
+  "ok": false,
+  "dry_run": false,
+  "created": [],
+  "updated": [],
+  "error": {
+    "code": "not_a_goforge_project",
+    "message": ". is not a Go module; run this inside a project created by goforge generate: ...",
+    "hint": "Run the command inside a project created by `goforge generate`, or point --dir at one."
+  }
+}
+```
+
+| Code | Meaning |
+|------|---------|
+| `invalid_arguments` | Unknown flag, or a missing or extra argument |
+| `invalid_input` | A name, field, type, or option value isn't valid |
+| `not_a_goforge_project` | The directory isn't a project created by `goforge generate` |
+| `already_exists` | The project, resource, or database already exists |
+| `marker_missing` | A file lost a `// goforge:` marker comment GoForge needs to update it |
+| `dependency_failed` | Adding the database driver with `go get` failed (nothing was changed) |
+| `write_failed` | A file or directory couldn't be written |
+| `cancelled` | The interactive prompts were cancelled |
+| `internal_error` | Anything else |
 
 A compact reference for language models is in [`llms.txt`](llms.txt).
 
@@ -262,6 +315,7 @@ and `400` for malformed JSON, unknown fields, or invalid `limit`/`offset`.
 | `--plural` | | derived | Plural for irregular words, e.g. `--plural people` for `person` |
 | `--dir` | `-d` | `.` | Project directory (the one containing `go.mod`) |
 | `--dry-run` | | `false` | Show the files that would be created or changed |
+| `--json` | | `false` | Print the result as JSON, for scripts and AI agents |
 
 ---
 
@@ -309,7 +363,7 @@ What `add db` does, for every engine:
 
 Edits are made only at marker comments and are all planned before anything is written. If
 any step fails, including downloading the driver, the project is left exactly as it was. Use
-`--dry-run` to preview the changes.
+`--dry-run` to preview the changes, and `--json` for a machine-readable result.
 
 > **Already running a database locally?** The Docker databases use the standard ports
 > (5432, 3306, 27017). If one is taken, stop the local server or change the port in
@@ -320,6 +374,67 @@ any step fails, including downloading the driver, the project is left exactly as
 > The generated `docker-compose.yml` and CI service set `GLIBC_TUNABLES=glibc.pthread.rseq=1`,
 > which hands `rseq` to glibc so MongoDB starts at a small cost in allocator speed. Set the
 > same variable for a MongoDB you run some other way, or use kernel 7.0.14 or later.
+
+---
+
+## 🔎 Inspecting a Project
+
+`goforge inspect` describes a project without reading its code: its module and Go version,
+features, database, resources and their fields, every route it serves, the environment variables
+it reads, and whether `goforge add` can still extend it.
+
+```bash
+goforge inspect            # in the project directory, or pass --dir
+goforge inspect --json     # the same, as JSON
+```
+
+```
+🔎 shop · github.com/you/shop · Go 1.26.0
+   Port 8080 · Database: SQLite · Features: request logging, Dockerfile, README, GitHub Actions CI
+
+📦 Resources (1):
+   product      /products        products/    name string, price float
+
+🌐 Routes (8):
+   GET    /health
+   GET    /readyz
+   GET    /products
+   ...
+
+⚙️  Environment: APP_ENV, PORT, CORS_ALLOWED_ORIGINS, MAX_BODY_BYTES, SHUTDOWN_TIMEOUT, LOG_LEVEL, LOG_FORMAT, DATABASE_URL
+🧩 Markers: 7 of 7 present
+
+✅ No problems: `goforge add` commands can extend this project.
+```
+
+If a file lost a `// goforge:` marker comment that a command needs, `inspect` says which one and
+which command it affects.
+
+---
+
+## ✅ Checking a Project
+
+`goforge check` runs what CI runs (gofmt, `go vet`, the tests, and golangci-lint if it's installed)
+and reports each problem with its file, line, and message instead of the tools' raw output:
+
+```
+🔍 Checking /home/you/shop
+   ✓ format  0s
+   ✓ vet     600ms
+   ✗ test    500ms  1 problem
+   ✓ lint    1.7s
+
+❌ products/service_test.go:42  TestService_Create
+   service_test.go:42: name = "", want "widget"
+
+1 problem. Fix it and run `goforge check` again.
+```
+
+A failing test is reported once, at the line where it failed (for a panic, the line in your code
+that panicked). Tests and lint are skipped while the code doesn't compile, so a compile error isn't
+repeated by every step. The command exits with status 1 if anything fails; `--json` prints the
+report as JSON, and `--race` runs the tests with the race detector. It works in any Go module, not
+only GoForge projects.
 
 ---
 
@@ -346,6 +461,7 @@ goforge generate [flags]
 | `--dry-run` | | `false` | List the files that would be created without writing anything |
 | `--git` | | `false` | Run `git init` in the new project |
 | `--db` | | none | Store data in a database: `postgres`, `mysql`, `sqlite`, or `mongo` (same as `goforge add db <engine>`) |
+| `--json` | | `false` | Print the result as JSON, for scripts and AI agents (implies no prompts) |
 
 #### Interactive Prompts
 
@@ -354,7 +470,8 @@ When running in a terminal without `--yes`, GoForge asks for anything not alread
 1. **Go module path** - Leave empty to use the app name
 2. **Features** - Toggle request logging, Dockerfile, and README
 
-Prompts need a terminal. In scripts and CI, pass `--yes` and set options with flags.
+Prompts only appear for a person at a terminal. With `--yes` or `--json`, or when input isn't a
+terminal (scripts, CI, and AI agents), GoForge uses the flag values and defaults instead.
 If generation fails partway, GoForge removes the partially created project directory.
 
 ### Examples
@@ -395,6 +512,7 @@ my-api/
 │   ├── respond.go             # JSON response helper
 │   └── health_test.go
 ├── logger/                    # slog setup from LOG_LEVEL / LOG_FORMAT (optional)
+├── AGENTS.md                  # Guidance for AI coding agents: goforge commands and project rules
 ├── Makefile                   # run, build, test, cover, lint, docker-build, ...
 ├── .golangci.yml              # golangci-lint v2 config
 ├── .github/workflows/ci.yml   # GitHub Actions CI (optional)

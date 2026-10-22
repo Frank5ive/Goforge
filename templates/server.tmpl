@@ -40,14 +40,14 @@ func newHandler(cfg config.Config, deps Deps, log *slog.Logger) http.Handler {
 
 	var handler http.Handler = mux
 {{- if .IncludeLogger}}
-	handler = logging(handler, log)
+	handler = logging(handler)
 {{- end}}
 	handler = limitBody(handler, cfg.MaxBodyBytes)
-	handler = recovery(handler, log)
+	handler = recovery(handler)
 	if len(cfg.CORSAllowedOrigins) > 0 {
 		handler = cors(handler, cfg.CORSAllowedOrigins)
 	}
-	handler = requestID(handler)
+	handler = requestID(handler, log, cfg.Environment == config.Development)
 
 	return handler
 }

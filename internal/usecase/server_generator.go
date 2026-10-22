@@ -48,6 +48,7 @@ var projectFiles = []projectFile{
 	{template: "dockerfile.tmpl", path: "Dockerfile", include: withDocker},
 	{template: "dockerignore.tmpl", path: ".dockerignore", include: withDocker},
 	{template: "readme.tmpl", path: "README.md", include: withReadme},
+	{template: "agents.tmpl", path: "AGENTS.md", include: always},
 	{template: "gitignore.tmpl", path: ".gitignore", include: always},
 }
 
@@ -80,11 +81,11 @@ func (u *ServerGeneratorUsecase) Generate(config *domain.ServerConfig) error {
 
 	projectPath := config.GetProjectPath()
 	if u.fileWriter.FileExists(projectPath) {
-		return domain.NewGenerationError(
+		return domain.WithCode(domain.CodeAlreadyExists, domain.NewGenerationError(
 			"directory_check",
 			fmt.Sprintf("project directory already exists: %s", projectPath),
 			nil,
-		)
+		))
 	}
 
 	if err := u.fileWriter.CreateDirectory(projectPath); err != nil {

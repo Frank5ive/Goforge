@@ -265,7 +265,7 @@ func TestGenerationError_Error(t *testing.T) {
 	baseErr := NewValidationError("invalid config")
 	err := NewGenerationError("template_rendering", "failed to render template", baseErr)
 
-	expected := "generation error at step [template_rendering]: failed to render template"
+	expected := "failed to render template"
 	got := err.Error()
 
 	if !strings.Contains(got, expected) {

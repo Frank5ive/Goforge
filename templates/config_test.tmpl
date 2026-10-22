@@ -18,6 +18,9 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("load() error = %v", err)
 	}
 
+	if cfg.Environment != Production {
+		t.Errorf("Environment = %q, want %q", cfg.Environment, Production)
+	}
 	if cfg.Port != defaultPort {
 		t.Errorf("Port = %d, want %d", cfg.Port, defaultPort)
 	}
@@ -34,6 +37,7 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadFromEnv(t *testing.T) {
 	cfg, err := load(env(map[string]string{
+		"APP_ENV":              "development",
 		"PORT":                 "9090",
 		"CORS_ALLOWED_ORIGINS": "https://a.example, https://b.example,",
 		"MAX_BODY_BYTES":       "2048",
@@ -43,6 +47,9 @@ func TestLoadFromEnv(t *testing.T) {
 		t.Fatalf("load() error = %v", err)
 	}
 
+	if cfg.Environment != Development {
+		t.Errorf("Environment = %q, want %q", cfg.Environment, Development)
+	}
 	if cfg.Port != 9090 {
 		t.Errorf("Port = %d, want 9090", cfg.Port)
 	}
@@ -59,6 +66,7 @@ func TestLoadFromEnv(t *testing.T) {
 
 func TestLoadReportsEveryInvalidVariable(t *testing.T) {
 	_, err := load(env(map[string]string{
+		"APP_ENV":          "staging",
 		"PORT":             "not-a-port",
 		"MAX_BODY_BYTES":   "-1",
 		"SHUTDOWN_TIMEOUT": "soon",
@@ -67,7 +75,7 @@ func TestLoadReportsEveryInvalidVariable(t *testing.T) {
 		t.Fatal("load() error = nil, want an error")
 	}
 
-	for _, name := range []string{"PORT", "MAX_BODY_BYTES", "SHUTDOWN_TIMEOUT"} {
+	for _, name := range []string{"APP_ENV", "PORT", "MAX_BODY_BYTES", "SHUTDOWN_TIMEOUT"} {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("error does not mention %s: %v", name, err)
 		}

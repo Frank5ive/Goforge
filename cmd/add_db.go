@@ -14,6 +14,7 @@ import (
 type addDBOptions struct {
 	dir    string
 	dryRun bool
+	json   bool
 }
 
 func newAddDBCmd() *cobra.Command {
@@ -38,8 +39,9 @@ SQLite, which is just a file), a database for tests in CI, and the driver to
 go.mod. If any step fails, the project is left unchanged.`,
 		Example: `  goforge add db postgres
   goforge add db sqlite
-  goforge add db mysql --dry-run`,
-		Args:      cobra.ExactArgs(1),
+  goforge add db mysql --dry-run
+  goforge add db mongo --json`,
+		Args:      usageArgs(cobra.ExactArgs(1)),
 		ValidArgs: domain.DatabaseEngines,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
@@ -50,6 +52,7 @@ go.mod. If any step fails, the project is left unchanged.`,
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.dir, "dir", "d", ".", "Project directory (the one containing go.mod)")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show the files that would be created or changed without writing anything")
+	flags.BoolVar(&opts.json, "json", false, "Print the result as JSON, for scripts and AI agents")
 
 	return cmd
 }
@@ -68,45 +71,27 @@ func runAddDB(out io.Writer, engine string, opts *addDBOptions) error {
 		return err
 	}
 
+	r := newResult("add db", opts.dir, opts.dryRun)
+	r.Created, r.Updated, r.Notes = changes.Created, changes.Updated, changes.Notes
 	if opts.dryRun {
-		fmt.Fprintf(out, "🔍 Dry run: no files were written. GoForge would create %d files:\n", len(changes.Created))
-	} else {
-		fmt.Fprintf(out, "✅ Added %s. Created %d files:\n", label, len(changes.Created))
-	}
-	printRelative(out, changes.Created)
-
-	if opts.dryRun {
-		fmt.Fprintln(out, "\n…and would update:")
-	} else {
-		fmt.Fprintln(out, "\n📝 Updated:")
-	}
-	printRelative(out, changes.Updated)
-
-	for _, note := range changes.Notes {
-		fmt.Fprintf(out, "\n⚠️  %s\n", note)
+		r.Summary = fmt.Sprintf("GoForge would add %s.", label)
+		return r.print(out, opts.json)
 	}
 
-	if opts.dryRun {
-		return nil
-	}
-
-	fmt.Fprintln(out, "\n🗄️  Next steps:")
+	r.Summary = "Added " + label
 	if engine == domain.DatabaseSQLite {
-		fmt.Fprintln(out, "   go run .       # creates the database file, applies migrations, and serves your resources")
-		fmt.Fprintln(out, "   go test ./...  # the SQLite tests run against a temporary database file")
-		fmt.Fprintln(out, "\n🔐 DATABASE_URL defaults to a file in the project directory; set it for production.")
-		return nil
+		r.NextSteps = []nextStep{
+			{Command: "make run", Description: "creates the database file, applies migrations, and serves your resources"},
+			{Command: "go test ./...", Description: "the SQLite tests run against a temporary database file"},
+		}
+		r.Info = append(r.Info, "DATABASE_URL defaults to a file in the project directory; set it for production.")
+		return r.print(out, opts.json)
 	}
-	fmt.Fprintf(out, "   make db-up     # start %s in Docker\n", label)
-	fmt.Fprintf(out, "   go run .       # connects and serves your resources from %s\n", label)
-	fmt.Fprintf(out, "   make test-db   # run every test, including the %s ones\n", label)
-	fmt.Fprintln(out, "\n🔐 DATABASE_URL defaults to the local Docker database; set it for production.")
-	return nil
-}
-
-// printRelative lists paths that are already relative to the project.
-func printRelative(out io.Writer, paths []string) {
-	for _, path := range paths {
-		fmt.Fprintf(out, "   %s\n", path)
+	r.NextSteps = []nextStep{
+		{Command: "make db-up", Description: "start " + label + " in Docker"},
+		{Command: "make run", Description: "connects and serves your resources from " + label},
+		{Command: "make test-db", Description: "run every test, including the " + label + " ones"},
 	}
+	r.Info = append(r.Info, "DATABASE_URL defaults to the local Docker database; set it for production.")
+	return r.print(out, opts.json)
 }

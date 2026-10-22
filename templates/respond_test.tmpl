@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,6 +24,7 @@ func TestWriteJSON_EncodingFailure(t *testing.T) {
 
 func TestWriteError(t *testing.T) {
 	rec := httptest.NewRecorder()
+	rec.Header().Set(RequestIDHeader, "req-1") // set by the server's middleware
 
 	WriteError(rec, http.StatusNotFound, "not here")
 
@@ -28,8 +32,44 @@ func TestWriteError(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decoding body: %v", err)
 	}
-	if rec.Code != http.StatusNotFound || body.Error != "not here" {
-		t.Errorf("got %d %+v, want 404 with error %q", rec.Code, body, "not here")
+	if want := (ErrorResponse{Error: "not here", RequestID: "req-1"}); rec.Code != http.StatusNotFound || body != want {
+		t.Errorf("got %d %+v, want 404 with %+v", rec.Code, body, want)
+	}
+}
+
+func TestInternalError(t *testing.T) {
+	cause := errors.New("connection refused")
+
+	for _, development := range []bool{false, true} {
+		var logs bytes.Buffer
+		ctx := WithRequest(t.Context(), slog.New(slog.NewTextHandler(&logs, nil)).With("request_id", "req-1"), development)
+		rec := httptest.NewRecorder()
+		rec.Header().Set(RequestIDHeader, "req-1")
+
+		InternalError(rec, httptest.NewRequestWithContext(ctx, http.MethodGet, "/orders", nil), cause)
+
+		var body ErrorResponse
+		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding body: %v", err)
+		}
+		want := ErrorResponse{Error: "internal server error", RequestID: "req-1"}
+		if development {
+			want.Detail = cause.Error()
+		}
+		if rec.Code != http.StatusInternalServerError || body != want {
+			t.Errorf("development=%t: got %d %+v, want 500 with %+v", development, rec.Code, body, want)
+		}
+		for _, logged := range []string{"connection refused", "path=/orders", "request_id=req-1"} {
+			if !strings.Contains(logs.String(), logged) {
+				t.Errorf("log is missing %q: %s", logged, logs.String())
+			}
+		}
+	}
+}
+
+func TestLoggerOutsideARequest(t *testing.T) {
+	if Logger(t.Context()) != slog.Default() {
+		t.Error("Logger() outside a request should return slog.Default()")
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"go/format"
 	"strconv"
 	"strings"
+
+	"github.com/Frank5ive/goforge/internal/domain"
 )
 
 // insertAboveMarker inserts code on the lines just above marker, indented like the
@@ -13,7 +15,7 @@ import (
 func insertAboveMarker(src, marker, code string) (string, error) {
 	at := strings.Index(src, marker)
 	if at < 0 {
-		return "", fmt.Errorf("the %q marker is missing", marker)
+		return "", domain.WithCode(domain.CodeMarkerMissing, fmt.Errorf("the %q marker is missing", marker))
 	}
 
 	lineStart := strings.LastIndex(src[:at], "\n") + 1

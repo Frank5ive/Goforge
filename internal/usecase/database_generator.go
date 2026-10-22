@@ -70,8 +70,8 @@ func (u *DatabaseGeneratorUsecase) Add(config *domain.DatabaseConfig) (domain.Ch
 
 	modulePath, err := readModulePath(u.fileWriter, dir)
 	if err != nil {
-		return domain.Changes{}, domain.NewGenerationError("project_check",
-			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", dir), err)
+		return domain.Changes{}, domain.WithCode(domain.CodeNotAProject, domain.NewGenerationError("project_check",
+			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", dir), err))
 	}
 
 	manifest, err := u.readOrStartManifest(dir, modulePath)
@@ -79,8 +79,9 @@ func (u *DatabaseGeneratorUsecase) Add(config *domain.DatabaseConfig) (domain.Ch
 		return domain.Changes{}, err
 	}
 	if manifest.Database != "" {
-		return domain.Changes{}, domain.NewGenerationError("project_check",
-			fmt.Sprintf("this project already uses a %s database", manifest.Database), nil)
+		return domain.Changes{}, domain.WithHint(domain.CodeAlreadyExists,
+			"A project has one database, and `goforge add db` can't replace it. Nothing was changed.",
+			domain.NewGenerationError("project_check", fmt.Sprintf("this project already uses a %s database", manifest.Database), nil))
 	}
 
 	data := databaseData{
@@ -136,8 +137,8 @@ func (u *DatabaseGeneratorUsecase) readOrStartManifest(dir, modulePath string) (
 
 	routes, err := u.fileWriter.ReadFile(filepath.Join(dir, "server", "routes.go"))
 	if err != nil {
-		return domain.Manifest{}, domain.NewGenerationError("project_check",
-			"server/routes.go not found; run this inside a project created by goforge generate", err)
+		return domain.Manifest{}, domain.WithCode(domain.CodeNotAProject, domain.NewGenerationError("project_check",
+			"server/routes.go not found; run this inside a project created by goforge generate", err))
 	}
 	if strings.Contains(routes, ".NewMemoryRepository()") {
 		return domain.Manifest{}, domain.NewGenerationError("project_check",
@@ -234,7 +235,8 @@ func (u *DatabaseGeneratorUsecase) editGo(cs *changeset, dir, rel string, change
 	path := filepath.Join(dir, filepath.FromSlash(rel))
 	src, err := u.fileWriter.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("%s not found; run this inside a project created by goforge generate", rel)
+		return domain.WithCode(domain.CodeNotAProject,
+			fmt.Errorf("%s not found; run this inside a project created by goforge generate", rel))
 	}
 
 	src, err = change(src)

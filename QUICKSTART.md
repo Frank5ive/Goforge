@@ -62,7 +62,7 @@ my-api/
 
 ```bash
 cd my-api
-make run            # or: go run .
+make run            # development mode; plain `go run .` uses production settings
 
 # In another terminal
 curl http://localhost:8080/health

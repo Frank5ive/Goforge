@@ -69,8 +69,8 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Ch
 
 	modulePath, err := readModulePath(u.fileWriter, dir)
 	if err != nil {
-		return domain.Changes{}, domain.NewGenerationError("project_check",
-			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", dir), err)
+		return domain.Changes{}, domain.WithCode(domain.CodeNotAProject, domain.NewGenerationError("project_check",
+			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", dir), err))
 	}
 
 	manifest, hasManifest, err := readManifest(u.fileWriter, dir)
@@ -91,8 +91,8 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Ch
 	routesPath := filepath.Join(dir, "server", "routes.go")
 	routes, err := u.fileWriter.ReadFile(routesPath)
 	if err != nil {
-		return domain.Changes{}, domain.NewGenerationError("project_check",
-			"server/routes.go not found; run this inside a project created by goforge generate", err)
+		return domain.Changes{}, domain.WithCode(domain.CodeNotAProject, domain.NewGenerationError("project_check",
+			"server/routes.go not found; run this inside a project created by goforge generate", err))
 	}
 
 	pkg := config.PackageName()
@@ -107,7 +107,8 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Ch
 
 	pkgDir := filepath.Join(dir, pkg)
 	if u.fileWriter.FileExists(pkgDir) {
-		return domain.Changes{}, domain.NewGenerationError("directory_check", fmt.Sprintf("%s already exists", pkgDir), nil)
+		return domain.Changes{}, domain.WithCode(domain.CodeAlreadyExists,
+			domain.NewGenerationError("directory_check", fmt.Sprintf("%s already exists", pkgDir), nil))
 	}
 
 	data := newResourceData(config, modulePath)
@@ -164,7 +165,7 @@ func registerResource(src, modulePath, pkg, repo string) (string, error) {
 	registration := fmt.Sprintf("%s.RegisterRoutes(mux, %s.NewService(%s))", pkg, pkg, repo)
 
 	if strings.Contains(src, strconv.Quote(importPath)) {
-		return "", fmt.Errorf("%q is already imported", importPath)
+		return "", domain.WithCode(domain.CodeAlreadyExists, fmt.Errorf("%q is already imported", importPath))
 	}
 
 	src, err := insertAboveMarker(src, routesMarker, registration)

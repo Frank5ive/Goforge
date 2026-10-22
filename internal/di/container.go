@@ -6,6 +6,7 @@ import (
 
 	"github.com/Frank5ive/goforge/internal/domain"
 	"github.com/Frank5ive/goforge/internal/infrastructure/filesystem"
+	"github.com/Frank5ive/goforge/internal/infrastructure/gocheck"
 	"github.com/Frank5ive/goforge/internal/infrastructure/gomod"
 	"github.com/Frank5ive/goforge/internal/infrastructure/template"
 	"github.com/Frank5ive/goforge/internal/usecase"
@@ -22,6 +23,8 @@ type Container struct {
 	ServerGeneratorUsecase   domain.ServerGenerator
 	ResourceGeneratorUsecase domain.ResourceGenerator
 	DatabaseGeneratorUsecase domain.DatabaseGenerator
+	ProjectInspector         domain.ProjectInspector
+	ProjectChecker           domain.ProjectChecker
 
 	// Files records every file written by ServerGeneratorUsecase
 	// (or that would be written, in dry-run mode).
@@ -43,6 +46,8 @@ func BuildContainer(templates fs.FS, opts Options) (*Container, error) {
 		ServerGeneratorUsecase:   usecase.NewServerGeneratorUsecase(templateRenderer, files),
 		ResourceGeneratorUsecase: usecase.NewResourceGeneratorUsecase(templateRenderer, files),
 		DatabaseGeneratorUsecase: usecase.NewDatabaseGeneratorUsecase(templateRenderer, files, gomod.New(opts.DryRun)),
+		ProjectInspector:         usecase.NewProjectInspectorUsecase(files),
+		ProjectChecker:           gocheck.New(),
 		Files:                    files,
 	}, nil
 }

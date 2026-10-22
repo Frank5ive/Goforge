@@ -27,6 +27,7 @@ type addResourceOptions struct {
 	plural string
 	dir    string
 	dryRun bool
+	json   bool
 }
 
 func newAddResourceCmd() *cobra.Command {
@@ -51,8 +52,9 @@ added automatically.`, fieldTypeNames()),
 		Example: `  goforge add resource product --fields "name:string,price:float,in_stock:bool"
   goforge add resource blog_post --fields "title:string,body:string,cover_url:string?,published_at:time"
   goforge add resource person --plural people --fields "name:string,age:int"
-  goforge add resource task --dry-run`,
-		Args: cobra.ExactArgs(1),
+  goforge add resource task --dry-run
+  goforge add resource order --fields "total:float,paid:bool" --json`,
+		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 			return runAddResource(cmd.OutOrStdout(), args[0], opts)
@@ -64,6 +66,7 @@ added automatically.`, fieldTypeNames()),
 	flags.StringVar(&opts.plural, "plural", "", "Plural name for irregular words, e.g. people (default: derived from <name>)")
 	flags.StringVarP(&opts.dir, "dir", "d", ".", "Project directory (the one containing go.mod)")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show the files that would be created or changed without writing anything")
+	flags.BoolVar(&opts.json, "json", false, "Print the result as JSON, for scripts and AI agents")
 
 	return cmd
 }
@@ -91,43 +94,39 @@ func runAddResource(out io.Writer, name string, opts *addResourceOptions) error 
 		return err
 	}
 
+	r := newResult("add resource", opts.dir, opts.dryRun)
+	r.Created, r.Updated = changes.Created, changes.Updated
 	if opts.dryRun {
-		fmt.Fprintf(out, "🔍 Dry run: no files were written. GoForge would create %d files:\n", len(changes.Created))
+		r.Summary = fmt.Sprintf("GoForge would add the %s resource.", config.Name)
 	} else {
-		fmt.Fprintf(out, "✅ Added the %s resource. Created %d files:\n", config.Name, len(changes.Created))
-	}
-	printRelative(out, changes.Created)
-
-	if len(changes.Updated) > 0 {
-		if opts.dryRun {
-			fmt.Fprintln(out, "\n…and would update:")
-		} else {
-			fmt.Fprintln(out, "\n📝 Updated:")
-		}
-		printRelative(out, changes.Updated)
+		r.Summary = fmt.Sprintf("Added the %s resource", config.Name)
 	}
 
 	path := config.RoutePath()
-	fmt.Fprintf(out, "\n🌐 Endpoints:\n")
-	fmt.Fprintf(out, "   GET    %s?limit=20&offset=0\n", path)
-	fmt.Fprintf(out, "   POST   %s\n", path)
-	fmt.Fprintf(out, "   GET    %s/{id}\n", path)
-	fmt.Fprintf(out, "   PUT    %s/{id}\n", path)
-	fmt.Fprintf(out, "   PATCH  %s/{id}\n", path)
-	fmt.Fprintf(out, "   DELETE %s/{id}\n", path)
+	r.Endpoints = []endpoint{
+		{Method: "GET", Path: path, Query: "limit=20&offset=0"},
+		{Method: "POST", Path: path},
+		{Method: "GET", Path: path + "/{id}"},
+		{Method: "PUT", Path: path + "/{id}"},
+		{Method: "PATCH", Path: path + "/{id}"},
+		{Method: "DELETE", Path: path + "/{id}"},
+	}
 
 	if !opts.dryRun {
 		pkg := config.PackageName()
-		fmt.Fprintf(out, "\n🚀 The routes are registered in server/routes.go, so they're live as soon as\n")
-		fmt.Fprintf(out, "   you start (or restart) the server: go run .\n")
-		fmt.Fprintf(out, "📮 Try them with %s/requests.http (VS Code REST Client or JetBrains HTTP client)\n", pkg)
-		fmt.Fprintf(out, "🧪 Run its tests with: go test ./%s\n", pkg)
+		r.Info = append(r.Info,
+			"The routes are registered in server/routes.go, so they work as soon as the server starts (or restarts).",
+			fmt.Sprintf("Try them with %s/requests.http (VS Code REST Client or JetBrains HTTP client).", pkg))
 		if changes.Storage != "" {
-			fmt.Fprintln(out, "💾 "+changes.Storage)
+			r.Info = append(r.Info, changes.Storage)
+		}
+		r.NextSteps = []nextStep{
+			{Command: "go test ./" + pkg, Description: "run the resource's tests"},
+			{Command: "make run", Description: "start the server in development mode"},
 		}
 	}
 
-	return nil
+	return r.print(out, opts.json)
 }
 
 func fieldTypeNames() string {

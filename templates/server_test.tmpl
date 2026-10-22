@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -94,13 +96,32 @@ func TestRecovery(t *testing.T) {
 	panicking := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		panic("boom")
 	})
-	handler := recovery(panicking, discardLogger)
 
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
+	for _, development := range []bool{false, true} {
+		var logs bytes.Buffer
+		handler := requestID(recovery(panicking), slog.New(slog.NewTextHandler(&logs, nil)), development)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
+
+		var body handlers.ErrorResponse
+		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding body: %v", err)
+		}
+		if rec.Code != http.StatusInternalServerError || body.RequestID != rec.Header().Get(RequestIDHeader) {
+			t.Errorf("got %d %+v, want 500 with the request ID", rec.Code, body)
+		}
+
+		// The panic is logged with its stack and request ID, and only shown to
+		// clients in development
+		for _, want := range []string{"panic: boom", "stack=", "request_id=" + body.RequestID} {
+			if !strings.Contains(logs.String(), want) {
+				t.Errorf("log is missing %q: %s", want, logs.String())
+			}
+		}
+		if got := strings.Contains(body.Detail, "panic: boom"); got != development {
+			t.Errorf("development=%t: detail = %q", development, body.Detail)
+		}
 	}
 }
 

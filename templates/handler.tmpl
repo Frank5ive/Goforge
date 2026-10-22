@@ -35,13 +35,14 @@ const readyTimeout = 2 * time.Second
 
 // Ready returns a handler that reports whether the service can serve traffic,
 // using check to test its dependencies (such as the database). It responds 503
-// when check fails, without exposing the error to clients.
+// when check fails, logging the cause without exposing it to clients.
 func Ready(check func(context.Context) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), readyTimeout)
 		defer cancel()
 
 		if err := check(ctx); err != nil {
+			Logger(r.Context()).Warn("not ready", "error", err)
 			WriteJSON(w, http.StatusServiceUnavailable, ReadyResponse{Status: "unavailable"})
 			return
 		}

@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -46,6 +45,7 @@ type generateOptions struct {
 	yes     bool
 	dryRun  bool
 	initGit bool
+	json    bool
 }
 
 // feature is an optional part of a generated project that can be toggled by flag or prompt.
@@ -79,12 +79,15 @@ The generated server will include:
   - Tests, a Makefile, and a golangci-lint config
   - Optional request logging, Dockerfile, README, and GitHub Actions CI
 
-Features not set by flag are asked for interactively, unless --yes is given.`,
+Features not set by flag are asked for interactively. With --yes or --json, or when
+input is not a terminal (as for scripts and AI agents), the flag values and
+defaults are used instead.`,
 		Example: `  goforge generate --name=my-api --module=github.com/acme/my-api
   goforge generate -n user-service -p 3000 -o ./services --yes
   goforge generate -n worker --docker=false --yes --git
-  goforge generate -n my-api --dry-run`,
-		Args: cobra.NoArgs,
+  goforge generate -n my-api --dry-run
+  goforge generate -n shop --db postgres --json`,
+		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Flag errors above print usage; generation errors below do not
 			cmd.SilenceUsage = true
@@ -105,21 +108,25 @@ Features not set by flag are asked for interactively, unless --yes is given.`,
 	flags.BoolVarP(&opts.yes, "yes", "y", false, "Skip prompts and use flag values and defaults")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show the files that would be created without writing anything")
 	flags.BoolVar(&opts.initGit, "git", false, "Initialize a git repository in the new project")
+	flags.BoolVar(&opts.json, "json", false, "Print the result as JSON, for scripts and AI agents (implies no prompts)")
 
 	return cmd
 }
 
 func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	out := cmd.OutOrStdout()
-
-	printBanner(out)
+	if !opts.json {
+		printBanner(out)
+	}
 
 	opts.db = domain.NormalizeDatabase(opts.db)
 	if opts.db != "" && !slices.Contains(domain.DatabaseEngines, opts.db) {
-		return fmt.Errorf("unsupported --db %q (supported: %s)", opts.db, strings.Join(domain.DatabaseEngines, ", "))
+		return domain.WithCode(domain.CodeInvalidInput,
+			fmt.Errorf("unsupported --db %q (supported: %s)", opts.db, strings.Join(domain.DatabaseEngines, ", ")))
 	}
 
-	if !opts.yes {
+	// Prompt only when a person is at the terminal
+	if !opts.yes && !opts.json && term.IsTerminal(int(os.Stdin.Fd())) {
 		if err := promptForOptions(cmd, opts); err != nil {
 			return err
 		}
@@ -136,7 +143,9 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 		IncludeCI:     opts.ci,
 	}
 
-	displayConfig(out, config, opts)
+	if !opts.json {
+		displayConfig(out, config, opts)
+	}
 
 	container, err := di.BuildContainer(templatesFS, di.Options{DryRun: opts.dryRun})
 	if err != nil {
@@ -148,51 +157,55 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	}
 
 	projectPath := config.GetProjectPath()
-	files := container.Files.Files()
+	r := newResult("generate", projectPath, opts.dryRun)
+	r.Created = relativePaths(projectPath, container.Files.Files())
 
 	if opts.dryRun {
-		fmt.Fprintf(out, "🔍 Dry run: no files were written. GoForge would create %d files in %s:\n", len(files), projectPath)
-		printFiles(out, projectPath, files)
+		r.Summary = fmt.Sprintf("GoForge would create the %s project in %s.", config.AppName, projectPath)
 		if opts.db != "" {
-			fmt.Fprintf(out, "\n🗄️  %s would then be added, as with `goforge add db %s`.\n", domain.DatabaseLabel(opts.db), opts.db)
+			r.Info = append(r.Info, fmt.Sprintf("%s would then be added, as with `goforge add db %s`.", domain.DatabaseLabel(opts.db), opts.db))
 		}
-		return nil
+		return r.print(out, opts.json)
 	}
 
-	fmt.Fprintf(out, "✅ Created %d files in %s:\n", len(files), projectPath)
-	printFiles(out, projectPath, files)
-
+	r.Summary = fmt.Sprintf("Created the %s project in %s", config.AppName, projectPath)
 	if opts.db != "" {
 		label := domain.DatabaseLabel(opts.db)
-		fmt.Fprintf(out, "\n🗄️  Adding %s…\n", label)
 		changes, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: projectPath, Engine: opts.db})
 		if err != nil {
 			return fmt.Errorf("the project was created in %s, but adding %s failed: %w\nRun `goforge add db %s` inside it to try again", projectPath, label, err, opts.db)
 		}
-		fmt.Fprintf(out, "✅ Added %s (%d files created, %d updated)\n", label, len(changes.Created), len(changes.Updated))
-		for _, note := range changes.Notes {
-			fmt.Fprintf(out, "⚠️  %s\n", note)
+		r.Summary += ", storing data in " + label
+		// Files the database step changed were all just created, so list them once
+		for _, path := range changes.Created {
+			if !slices.Contains(r.Created, path) {
+				r.Created = append(r.Created, path)
+			}
 		}
+		r.Notes = append(r.Notes, changes.Notes...)
 	}
 
 	if opts.initGit {
-		initGitRepo(out, projectPath)
+		if err := initGitRepo(projectPath); err != nil {
+			r.Notes = append(r.Notes, fmt.Sprintf("The git repository was not initialized: %v", err))
+		} else {
+			r.Info = append(r.Info, "Initialized a git repository.")
+		}
 	}
 
-	fmt.Fprintf(out, "\n📝 Next steps:\n")
-	fmt.Fprintf(out, "   cd %s\n", projectPath)
+	r.NextSteps = append(r.NextSteps, nextStep{Command: "cd " + projectPath})
 	if opts.db != "" && opts.db != domain.DatabaseSQLite {
-		fmt.Fprintf(out, "   make db-up        # start %s in Docker\n", domain.DatabaseLabel(opts.db))
+		r.NextSteps = append(r.NextSteps, nextStep{Command: "make db-up", Description: "start " + domain.DatabaseLabel(opts.db) + " in Docker"})
 	}
-	fmt.Fprintf(out, "   go run .\n")
-	fmt.Fprintf(out, "\n🌐 Your server will be available at: http://localhost:%d\n", config.Port)
-	fmt.Fprintf(out, "💚 Health endpoint: http://localhost:%d/health\n", config.Port)
+	r.NextSteps = append(r.NextSteps,
+		nextStep{Command: "make run", Description: "start the server in development mode"},
+		nextStep{Command: `goforge add resource product --fields "name:string,price:float"`, Description: "add a REST resource"},
+	)
+	r.Info = append(r.Info,
+		fmt.Sprintf("The server listens on http://localhost:%d, with a health check at /health.", config.Port))
 
-	return nil
+	return r.print(out, opts.json)
 }
-
-// errNotInteractive is returned when prompts are needed but stdin is not a terminal.
-var errNotInteractive = errors.New("interactive prompts need a terminal; use --yes and set options with flags (--module, --logger, --docker, --readme, --ci, --db)")
 
 // promptForOptions asks for the module path and features that were not set by flag.
 func promptForOptions(cmd *cobra.Command, opts *generateOptions) error {
@@ -255,10 +268,6 @@ func promptForOptions(cmd *cobra.Command, opts *generateOptions) error {
 		return nil
 	}
 
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return errNotInteractive
-	}
-
 	form := huh.NewForm(huh.NewGroup(fields...))
 
 	if err := form.Run(); err != nil {
@@ -293,33 +302,18 @@ func displayConfig(out io.Writer, config *domain.ServerConfig, opts *generateOpt
 	fmt.Fprintln(out)
 }
 
-// printFiles lists generated files relative to the project directory.
-func printFiles(out io.Writer, projectPath string, files []string) {
-	for _, file := range files {
-		relative, err := filepath.Rel(projectPath, file)
-		if err != nil {
-			relative = file
-		}
-		fmt.Fprintf(out, "   %s\n", filepath.ToSlash(relative))
-	}
-}
-
-// initGitRepo runs `git init` in the project. Failures are reported but are not
-// fatal, since the project itself was generated successfully.
-func initGitRepo(out io.Writer, projectPath string) {
+// initGitRepo runs `git init` in the project.
+func initGitRepo(projectPath string) error {
 	if _, err := exec.LookPath("git"); err != nil {
-		fmt.Fprintln(out, "⚠️  git not found in PATH; skipping repository initialization")
-		return
+		return errors.New("git not found in PATH")
 	}
 
 	gitInit := exec.Command("git", "init", "--quiet")
 	gitInit.Dir = projectPath
 	if output, err := gitInit.CombinedOutput(); err != nil {
-		fmt.Fprintf(out, "⚠️  git init failed: %v\n%s", err, output)
-		return
+		return fmt.Errorf("git init: %w: %s", err, output)
 	}
-
-	fmt.Fprintln(out, "🌱 Initialized a git repository")
+	return nil
 }
 
 func getBoolIcon(value bool) string {

@@ -13,6 +13,10 @@ import (
 // Config holds the server's settings. Every field has a working default, so the
 // server runs without any environment variables set.
 type Config struct {
+	// Environment is Production (the default) or Development (APP_ENV). In
+	// development, 500 responses include the error that caused them.
+	Environment string
+
 	// Port is the TCP port to listen on (PORT).
 	Port int
 
@@ -30,6 +34,12 @@ type Config struct {
 	// goforge:config-fields (`goforge add` adds settings above this line)
 }
 
+// Environments for APP_ENV.
+const (
+	Production  = "production"
+	Development = "development"
+)
+
 const (
 	defaultPort            = {{.Port}}
 	defaultMaxBodyBytes    = 1 << 20 // 1 MiB
@@ -44,11 +54,20 @@ func Load() (Config, error) {
 
 func load(getenv func(string) string) (Config, error) {
 	cfg := Config{
+		Environment:     Production,
 		Port:            defaultPort,
 		MaxBodyBytes:    defaultMaxBodyBytes,
 		ShutdownTimeout: defaultShutdownTimeout,
 	}
 	var errs []error
+
+	switch v := getenv("APP_ENV"); v {
+	case "": // unset: keep the default
+	case Production, Development:
+		cfg.Environment = v
+	default:
+		errs = append(errs, fmt.Errorf("APP_ENV must be %q or %q, got %q", Production, Development, v))
+	}
 
 	if v := getenv("PORT"); v != "" {
 		port, err := strconv.Atoi(v)
