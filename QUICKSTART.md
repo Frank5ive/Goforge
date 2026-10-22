@@ -37,6 +37,7 @@ goforge --version
 ```
 my-api/
 ├── main.go             # Entry point
+├── config/             # Settings from environment variables
 ├── go.mod
 ├── Makefile            # make run / test / lint / build
 ├── server/             # Server, routes, middleware, tests

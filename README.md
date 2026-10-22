@@ -5,7 +5,7 @@
 [![CI](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Frank5ive/goforge)](https://github.com/Frank5ive/goforge/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Frank5ive/goforge.svg)](https://pkg.go.dev/github.com/Frank5ive/goforge)
-[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
@@ -43,7 +43,10 @@ GoForge is a CLI tool that generates production-ready Go HTTP servers using only
 - 🪪 **Request IDs** - Every response carries an `X-Request-ID`; incoming IDs are reused for tracing
 - 🧯 **Panic Recovery** - Panics become 500s and are logged with a stack trace
 - ⏱️ **Timeouts** - Read, write, idle, and read-header timeouts
-- ⚙️ **12-Factor Config** - `PORT` (and `LOG_LEVEL`/`LOG_FORMAT` with logging) from the environment
+- ⚙️ **12-Factor Config** - A `config` package loads `PORT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, and `SHUTDOWN_TIMEOUT` from the environment
+- 🌐 **CORS** - Opt-in with `CORS_ALLOWED_ORIGINS`, including preflight handling
+- 📏 **Body Limits** - Request bodies are capped (1 MiB by default) and oversized ones get `413`
+- 🧰 **JSON Helpers** - `WriteJSON`, `WriteError`, and a strict `DecodeJSON` that rejects unknown fields
 - 🧪 **Tests and Tooling** - Handler and middleware tests, a Makefile, and a golangci-lint config
 
 ### Optional Features
@@ -58,7 +61,7 @@ GoForge is a CLI tool that generates production-ready Go HTTP servers using only
 
 ### Option 1: Go Install
 
-Requires Go 1.24 or newer.
+Requires Go 1.26 or newer to install GoForge. Generated projects need Go 1.24 or newer.
 
 ```bash
 go install github.com/Frank5ive/goforge@latest
@@ -187,7 +190,8 @@ goforge generate --name=ci-api --module=github.com/acme/ci-api --output=./servic
 
 ```
 my-api/
-├── main.go                    # Entry point: config, startup, graceful shutdown
+├── main.go                    # Entry point: startup and graceful shutdown
+├── config/                    # Settings from environment variables
 ├── server/
 │   ├── server.go              # HTTP server and middleware chain
 │   ├── routes.go              # Route registration (add endpoints here)
@@ -300,7 +304,7 @@ go test -short ./...
 
 ### Project Stack
 
-- **Language**: Go 1.24+
+- **Language**: Go 1.26+
 - **CLI Framework**: Cobra
 - **Interactive Prompts**: Huh
 - **Architecture**: Clean Architecture

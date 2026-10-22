@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"{{.GetModuleName}}/config"
 )
 
 // Server is the HTTP server for {{.AppName}}.
@@ -15,12 +17,12 @@ type Server struct {
 	httpServer *http.Server
 }
 
-// New creates a Server listening on port, with all routes and middleware registered.
-func New(port int, log *slog.Logger) *Server {
+// New creates a Server for cfg, with all routes and middleware registered.
+func New(cfg config.Config, log *slog.Logger) *Server {
 	return &Server{
 		httpServer: &http.Server{
-			Addr:              fmt.Sprintf(":%d", port),
-			Handler:           newHandler(log),
+			Addr:              fmt.Sprintf(":%d", cfg.Port),
+			Handler:           newHandler(cfg, log),
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       15 * time.Second,
 			WriteTimeout:      15 * time.Second,
@@ -31,8 +33,8 @@ func New(port int, log *slog.Logger) *Server {
 
 // newHandler builds the router and wraps it in middleware.
 // Middleware applied last runs first, so requests flow:
-// requestID → recovery{{if .IncludeLogger}} → logging{{end}} → router.
-func newHandler(log *slog.Logger) http.Handler {
+// requestID → cors (if configured) → recovery → limitBody{{if .IncludeLogger}} → logging{{end}} → router.
+func newHandler(cfg config.Config, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	registerRoutes(mux)
 
@@ -40,7 +42,11 @@ func newHandler(log *slog.Logger) http.Handler {
 {{- if .IncludeLogger}}
 	handler = logging(handler, log)
 {{- end}}
+	handler = limitBody(handler, cfg.MaxBodyBytes)
 	handler = recovery(handler, log)
+	if len(cfg.CORSAllowedOrigins) > 0 {
+		handler = cors(handler, cfg.CORSAllowedOrigins)
+	}
 	handler = requestID(handler)
 
 	return handler

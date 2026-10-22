@@ -1,0 +1,75 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestWriteJSON_EncodingFailure(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	// Channels cannot be encoded as JSON
+	WriteJSON(rec, http.StatusOK, make(chan int))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestWriteError(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	WriteError(rec, http.StatusNotFound, "not here")
+
+	var body ErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if rec.Code != http.StatusNotFound || body.Error != "not here" {
+		t.Errorf("got %d %+v, want 404 with error %q", rec.Code, body, "not here")
+	}
+}
+
+func TestDecodeJSON(t *testing.T) {
+	type payload struct {
+		Name string `json:"name"`
+	}
+
+	tests := []struct {
+		name     string
+		body     string
+		maxBytes int64
+		wantOK   bool
+		wantCode int
+	}{
+		{"valid", `{"name":"gopher"}`, 1 << 20, true, http.StatusOK},
+		{"malformed", `{"name":`, 1 << 20, false, http.StatusBadRequest},
+		{"unknown field", `{"name":"gopher","extra":1}`, 1 << 20, false, http.StatusBadRequest},
+		{"trailing data", `{"name":"a"}{"name":"b"}`, 1 << 20, false, http.StatusBadRequest},
+		{"too large", `{"name":"` + strings.Repeat("x", 100) + `"}`, 16, false, http.StatusRequestEntityTooLarge},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader(tt.body))
+			req.Body = http.MaxBytesReader(rec, req.Body, tt.maxBytes)
+
+			var dst payload
+			ok := DecodeJSON(rec, req, &dst)
+
+			if ok != tt.wantOK {
+				t.Fatalf("DecodeJSON() = %t, want %t (response: %s)", ok, tt.wantOK, rec.Body.String())
+			}
+			if rec.Code != tt.wantCode {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantCode)
+			}
+			if ok && dst.Name != "gopher" {
+				t.Errorf("decoded name = %q, want gopher", dst.Name)
+			}
+		})
+	}
+}

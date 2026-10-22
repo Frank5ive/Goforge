@@ -44,7 +44,10 @@ Configuration comes from environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PORT` | Port the server listens on | `{{.Port}}` |{{if .IncludeLogger}}
+| `PORT` | Port the server listens on | `{{.Port}}` |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call the API from a browser, or `*` | CORS disabled |
+| `MAX_BODY_BYTES` | Maximum request body size; larger bodies get `413` | `1048576` (1 MiB) |
+| `SHUTDOWN_TIMEOUT` | How long in-flight requests get to finish on shutdown | `30s` |{{if .IncludeLogger}}
 | `LOG_LEVEL` | `debug`, `info`, `warn`, or `error` | `info` |
 | `LOG_FORMAT` | `text` or `json` (use `json` in production) | `text` |{{end}}
 
@@ -73,16 +76,20 @@ trace a request across services; otherwise one is generated.
 
 ```
 {{.AppName}}/
-├── main.go                 # Entry point: config, startup, graceful shutdown
+├── main.go                 # Entry point: startup and graceful shutdown
+├── config/
+│   ├── config.go           # Settings from environment variables
+│   └── config_test.go
 ├── server/
 │   ├── server.go           # HTTP server and middleware chain
 │   ├── routes.go           # Route registration (add endpoints here)
-│   ├── middleware.go       # Request ID, panic recovery{{if .IncludeLogger}}, request logging{{end}}
+│   ├── middleware.go       # Request ID, CORS, body limit, panic recovery{{if .IncludeLogger}}, request logging{{end}}
 │   └── server_test.go
 ├── handlers/
 │   ├── health.go           # GET /health
-│   ├── respond.go          # JSON response helper
-│   └── health_test.go{{if .IncludeLogger}}
+│   ├── respond.go          # WriteJSON, WriteError, DecodeJSON helpers
+│   ├── health_test.go
+│   └── respond_test.go{{if .IncludeLogger}}
 ├── logger/
 │   └── logger.go           # slog setup from LOG_LEVEL and LOG_FORMAT{{end}}
 ├── Makefile
@@ -100,7 +107,7 @@ trace a request across services; otherwise one is generated.
    // Greet responds with a greeting for the {name} path value.
    func Greet() http.HandlerFunc {
        return func(w http.ResponseWriter, r *http.Request) {
-           writeJSON(w, http.StatusOK, map[string]string{
+           WriteJSON(w, http.StatusOK, map[string]string{
                "message": "Hello, " + r.PathValue("name") + "!",
            })
        }

@@ -7,21 +7,14 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
-	"time"
-{{- if .IncludeLogger}}
 
+	"{{.GetModuleName}}/config"
+{{- if .IncludeLogger}}
 	"{{.GetModuleName}}/logger"
 {{- end}}
 	"{{.GetModuleName}}/server"
 )
-
-// defaultPort is used when the PORT environment variable is not set.
-const defaultPort = {{.Port}}
-
-// shutdownTimeout is how long in-flight requests get to finish on shutdown.
-const shutdownTimeout = 30 * time.Second
 
 func main() {
 {{- if .IncludeLogger}}
@@ -36,15 +29,15 @@ func main() {
 	}
 }
 
-// run starts the server and blocks until it fails or receives SIGINT/SIGTERM,
-// then shuts it down gracefully.
+// run loads the configuration, starts the server, and blocks until it fails or
+// receives SIGINT/SIGTERM, then shuts it down gracefully.
 func run(log *slog.Logger) error {
-	port, err := portFromEnv()
+	cfg, err := config.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	srv := server.New(port, log)
+	srv := server.New(cfg, log)
 
 	// Stop on Ctrl+C or SIGTERM (sent by Docker and Kubernetes)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -58,8 +51,8 @@ func run(log *slog.Logger) error {
 
 	log.Info("server started",
 		"app", "{{.AppName}}",
-		"port", port,
-		"health", fmt.Sprintf("http://localhost:%d/health", port))
+		"port", cfg.Port,
+		"health", fmt.Sprintf("http://localhost:%d/health", cfg.Port))
 
 	select {
 	case err := <-serverErr:
@@ -68,9 +61,9 @@ func run(log *slog.Logger) error {
 	case <-ctx.Done():
 	}
 
-	log.Info("shutting down", "timeout", shutdownTimeout)
+	log.Info("shutting down", "timeout", cfg.ShutdownTimeout)
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
@@ -79,18 +72,4 @@ func run(log *slog.Logger) error {
 
 	log.Info("server exited gracefully")
 	return nil
-}
-
-// portFromEnv returns the PORT environment variable, or defaultPort if it is unset.
-func portFromEnv() (int, error) {
-	value := os.Getenv("PORT")
-	if value == "" {
-		return defaultPort, nil
-	}
-
-	port, err := strconv.Atoi(value)
-	if err != nil || port < 1 || port > 65535 {
-		return 0, fmt.Errorf("PORT must be a number between 1 and 65535, got %q", value)
-	}
-	return port, nil
 }

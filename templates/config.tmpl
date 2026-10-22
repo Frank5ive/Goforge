@@ -1,0 +1,87 @@
+// Package config loads the server's settings from environment variables.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Config holds the server's settings. Every field has a working default, so the
+// server runs without any environment variables set.
+type Config struct {
+	// Port is the TCP port to listen on (PORT).
+	Port int
+
+	// CORSAllowedOrigins lists the origins allowed to make cross-origin requests
+	// (CORS_ALLOWED_ORIGINS, comma-separated, or "*" for any). Empty disables CORS.
+	CORSAllowedOrigins []string
+
+	// MaxBodyBytes caps the size of request bodies (MAX_BODY_BYTES).
+	MaxBodyBytes int64
+
+	// ShutdownTimeout is how long in-flight requests get to finish on shutdown
+	// (SHUTDOWN_TIMEOUT, e.g. "30s").
+	ShutdownTimeout time.Duration
+}
+
+const (
+	defaultPort            = {{.Port}}
+	defaultMaxBodyBytes    = 1 << 20 // 1 MiB
+	defaultShutdownTimeout = 30 * time.Second
+)
+
+// Load reads the configuration from the environment. It reports every invalid
+// variable at once rather than stopping at the first.
+func Load() (Config, error) {
+	return load(os.Getenv)
+}
+
+func load(getenv func(string) string) (Config, error) {
+	cfg := Config{
+		Port:            defaultPort,
+		MaxBodyBytes:    defaultMaxBodyBytes,
+		ShutdownTimeout: defaultShutdownTimeout,
+	}
+	var errs []error
+
+	if v := getenv("PORT"); v != "" {
+		port, err := strconv.Atoi(v)
+		if err != nil || port < 1 || port > 65535 {
+			errs = append(errs, fmt.Errorf("PORT must be a number between 1 and 65535, got %q", v))
+		} else {
+			cfg.Port = port
+		}
+	}
+
+	if v := getenv("CORS_ALLOWED_ORIGINS"); v != "" {
+		for _, origin := range strings.Split(v, ",") {
+			if origin = strings.TrimSpace(origin); origin != "" {
+				cfg.CORSAllowedOrigins = append(cfg.CORSAllowedOrigins, origin)
+			}
+		}
+	}
+
+	if v := getenv("MAX_BODY_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 1 {
+			errs = append(errs, fmt.Errorf("MAX_BODY_BYTES must be a positive number of bytes, got %q", v))
+		} else {
+			cfg.MaxBodyBytes = n
+		}
+	}
+
+	if v := getenv("SHUTDOWN_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT must be a positive duration like 30s, got %q", v))
+		} else {
+			cfg.ShutdownTimeout = d
+		}
+	}
+
+	return cfg, errors.Join(errs...)
+}

@@ -27,7 +27,11 @@ The first public release will be tagged `v0.1.0`.
   - Go 1.22+ routing patterns in `server/routes.go`
   - Request ID middleware (`X-Request-ID`) and panic recovery with stack traces
   - HTTP read, write, idle, and read-header timeouts
-  - `PORT` environment variable override
+  - A `config` package that loads `PORT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`,
+    and `SHUTDOWN_TIMEOUT` from the environment and reports every invalid value at once
+  - Opt-in CORS middleware with preflight handling
+  - Request body size limit (1 MiB by default) with `413` responses
+  - Exported JSON helpers: `WriteJSON`, `WriteError`, and a strict `DecodeJSON`
   - Handler and middleware tests, a Makefile, and a golangci-lint v2 config
   - Optional structured logging with `log/slog` (`LOG_LEVEL`, `LOG_FORMAT`) and request logs
   - Optional multi-stage Dockerfile running as a non-root user, with a health check
