@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -224,7 +225,7 @@ func TestServerConfig_GetProjectPath(t *testing.T) {
 		OutputDir: "/home/user/projects",
 	}
 
-	expected := "/home/user/projects/testapp"
+	expected := filepath.Join("/home/user/projects", "testapp")
 	got := config.GetProjectPath()
 
 	if got != expected {

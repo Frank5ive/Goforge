@@ -182,7 +182,13 @@ func renderWordmark(mode colorMode) []string {
 		lines = append(lines, b.String())
 	}
 
-	return append(lines, " "+paint(mode, mutedGray, tagline+" · v"+version))
+	// Long development versions would overflow the wordmark's width, so drop them
+	footer := tagline + " · " + displayVersion()
+	if 1+runeWidth(footer) > runeWidth(wordmarkGo[0])+forgeWidth {
+		footer = tagline
+	}
+
+	return append(lines, " "+paint(mode, mutedGray, footer))
 }
 
 // renderCompactTitle is used beside the gopher when the terminal is too narrow for
@@ -197,11 +203,11 @@ func renderCompactTitle(mode colorMode, available int) []string {
 
 // renderTitle returns "GoForge vX.Y.Z" with "Go" in Go blue and "Forge" in ember.
 func renderTitle(mode colorMode) string {
-	return bold(mode, paint(mode, goBlue, "Go")+paint(mode, emberStart, "Forge")) + " " + paint(mode, mutedGray, "v"+version)
+	return bold(mode, paint(mode, goBlue, "Go")+paint(mode, emberStart, "Forge")) + " " + paint(mode, mutedGray, displayVersion())
 }
 
 func plainTitle() string {
-	return "GoForge v" + version
+	return "GoForge " + displayVersion()
 }
 
 // renderGopher converts the gopher pixels into terminal lines. Each line holds two

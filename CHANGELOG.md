@@ -41,10 +41,16 @@ The first public release will be tagged `v0.1.0`.
 - End-to-end test that generates every option combination and checks each one is
   gofmt-clean, passes `go vet` and its own tests, builds, serves `/health`, and shuts
   down gracefully
+- CI on Linux, macOS, and Windows, plus the minimum Go version, golangci-lint, and
+  govulncheck
+- Release automation with GoReleaser: tagging `v*` publishes binaries for Linux,
+  macOS, and Windows (amd64/arm64) with checksums
+- `goforge --version` reports the release version, or the module version for
+  `go install` builds
+- Dependabot updates for Go modules and GitHub Actions, and a security policy
 
 ## Security
 
-To report a vulnerability, please open a private security advisory on
-[GitHub](https://github.com/Frank5ive/goforge/security/advisories/new) rather than a public issue.
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 [Unreleased]: https://github.com/Frank5ive/goforge/commits/master

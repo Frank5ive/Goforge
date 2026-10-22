@@ -3,6 +3,7 @@ package filesystem
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -277,6 +278,10 @@ func TestFileSystemWriter_GetAbsolutePath(t *testing.T) {
 }
 
 func TestFileSystemWriter_Permissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not meaningful on Windows")
+	}
+
 	writer := NewFileSystemWriter()
 	tempDir := t.TempDir()
 

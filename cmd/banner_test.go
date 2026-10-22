@@ -32,10 +32,10 @@ func TestRenderBanner(t *testing.T) {
 		{"truecolor wide shows gopher and wordmark", trueColor, 120, "██████╗", true, 7},
 		{"256 color fits 80 columns", color256, 80, "██████╗", true, 7},
 		{"color medium uses compact title with tagline", trueColor, 70, "in seconds", true, 7},
-		{"color narrow drops tagline", trueColor, 60, "GoForge v" + version, true, 7},
-		{"color very narrow drops gopher", color256, 30, "GoForge v" + version, true, 1},
+		{"color narrow drops tagline", trueColor, 60, "GoForge " + displayVersion(), true, 7},
+		{"color very narrow drops gopher", color256, 25, "GoForge " + displayVersion(), true, 1},
 		{"no color wide shows plain wordmark and tagline", noColor, 120, "in seconds", false, 7},
-		{"no color narrow shows plain title", noColor, 40, "GoForge v" + version, false, 1},
+		{"no color narrow shows plain title", noColor, 40, "GoForge " + displayVersion(), false, 1},
 	}
 
 	for _, tt := range tests {
@@ -61,6 +61,30 @@ func TestRenderBanner(t *testing.T) {
 				t.Errorf("banner does not contain %q", tt.wantContains)
 			}
 		})
+	}
+}
+
+func TestRenderBanner_LongVersionFits(t *testing.T) {
+	original := version
+	version = "0.0.0-20261021193000-abcdef123456+dirty"
+	t.Cleanup(func() { version = original })
+
+	for _, line := range visibleLines(renderBanner(trueColor, 80)) {
+		if w := runeWidth(strings.TrimRight(line, " ")); w > 80 {
+			t.Errorf("line is %d columns wide with a long version: %q", w, line)
+		}
+	}
+}
+
+func TestDisplayVersion(t *testing.T) {
+	original := version
+	t.Cleanup(func() { version = original })
+
+	for value, want := range map[string]string{"0.1.0": "v0.1.0", "dev": "dev"} {
+		version = value
+		if got := displayVersion(); got != want {
+			t.Errorf("displayVersion() with version %q = %q, want %q", value, got, want)
+		}
 	}
 }
 

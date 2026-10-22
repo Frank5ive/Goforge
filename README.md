@@ -4,9 +4,11 @@
 
 **Forge production-ready Go HTTP servers in seconds**
 
+[![CI](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Frank5ive/goforge)](https://github.com/Frank5ive/goforge/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Frank5ive/goforge.svg)](https://pkg.go.dev/github.com/Frank5ive/goforge)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Clean Architecture](https://img.shields.io/badge/Architecture-Clean-brightgreen.svg)](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [Features](#-features) •
@@ -56,23 +58,25 @@ GoForge is a CLI tool that generates production-ready Go HTTP servers using only
 
 ## 📦 Installation
 
-### Option 1: From Source
+### Option 1: Go Install
+
+Requires Go 1.24 or newer.
 
 ```bash
 go install github.com/Frank5ive/goforge@latest
 ```
 
-### Option 2: Download Binary
+### Option 2: Download a Binary
 
-Download the latest release from the [releases page](https://github.com/Frank5ive/goforge/releases).
+Prebuilt binaries for Linux, macOS, and Windows (amd64 and arm64) are on the
+[releases page](https://github.com/Frank5ive/goforge/releases), with a `checksums.txt` to verify them.
 
 ```bash
-# Linux/macOS
-chmod +x goforge
+# Linux/macOS: extract and move onto your PATH
+tar -xzf goforge_*_linux_amd64.tar.gz
 sudo mv goforge /usr/local/bin/
 
-# Windows
-# Add goforge.exe to your PATH
+# Windows: extract the .zip and add goforge.exe to your PATH
 ```
 
 ### Option 3: Build from Source
