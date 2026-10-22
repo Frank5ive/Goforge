@@ -10,12 +10,6 @@ import (
 	"github.com/Frank5ive/goforge/internal/domain"
 )
 
-// pgx is the PostgreSQL driver generated projects use.
-const (
-	pgxModule  = "github.com/jackc/pgx/v5"
-	pgxVersion = "v5.11.0"
-)
-
 // Markers in generated projects where `goforge add db` inserts code.
 const (
 	configFieldsMarker = "// goforge:config-fields"
@@ -26,20 +20,8 @@ const (
 	ciServicesMarker   = "# goforge:ci-test-services"
 )
 
-// databaseFiles are the files of the db package, relative to the project.
-var databaseFiles = []struct {
-	template string
-	path     string
-}{
-	{"db/db.tmpl", "db/db.go"},
-	{"db/migrate.tmpl", "db/migrate.go"},
-	{"db/migrate_test.tmpl", "db/migrate_test.go"},
-	{"db/migrations_readme.tmpl", "db/migrations/README.md"},
-	{"db/dbtest.tmpl", "db/dbtest/dbtest.go"},
-}
-
-// DatabaseGeneratorUsecase adds a PostgreSQL database to existing generated
-// projects. It implements the domain.DatabaseGenerator interface.
+// DatabaseGeneratorUsecase adds a database to existing generated projects. It
+// implements the domain.DatabaseGenerator interface.
 type DatabaseGeneratorUsecase struct {
 	templateRenderer domain.TemplateRenderer
 	fileWriter       domain.FileWriter
@@ -68,6 +50,7 @@ type databaseData struct {
 	DBName  string // database name, e.g. "my_api"
 	Port    int
 	Docker  bool // the project has a Dockerfile, so docker-compose also runs the app
+	Label   string
 }
 
 // Add implements domain.DatabaseGenerator. Every edit is computed before anything
@@ -75,6 +58,10 @@ type databaseData struct {
 // fails, so a failed run leaves the project unchanged.
 func (u *DatabaseGeneratorUsecase) Add(config *domain.DatabaseConfig) (domain.Changes, error) {
 	if err := config.Validate(); err != nil {
+		return domain.Changes{}, domain.NewGenerationError("validation", "database validation failed", err)
+	}
+	eng, err := engineFor(config.Engine)
+	if err != nil {
 		return domain.Changes{}, domain.NewGenerationError("validation", "database validation failed", err)
 	}
 	dir := config.ProjectDir
@@ -100,28 +87,29 @@ func (u *DatabaseGeneratorUsecase) Add(config *domain.DatabaseConfig) (domain.Ch
 		DBName:  databaseName(manifest.AppName, modulePath),
 		Port:    manifest.Port,
 		Docker:  manifest.Features.Docker || u.fileWriter.FileExists(filepath.Join(dir, "Dockerfile")),
+		Label:   eng.label,
 	}
 	if data.Port == 0 {
 		data.Port = fallbackPort
 	}
 
 	cs := newChangeset(u.fileWriter)
-	if err := u.planEdits(cs, dir, data, manifest); err != nil {
+	if err := u.planEdits(cs, dir, eng, data, manifest); err != nil {
 		return domain.Changes{}, domain.NewGenerationError("project_check", "cannot add the database", err)
 	}
-	if err := u.planFiles(cs, dir, data, manifest); err != nil {
+	if err := u.planFiles(cs, dir, eng, data, manifest); err != nil {
 		return domain.Changes{}, domain.NewGenerationError("generate_files", "cannot add the database", err)
 	}
 
-	manifest.Database = domain.DatabasePostgres
+	manifest.Database = eng.name
 	if err := planManifest(cs, dir, manifest); err != nil {
 		return domain.Changes{}, domain.NewGenerationError("manifest", "cannot update "+domain.ManifestFile, err)
 	}
 
 	goFiles := []string{filepath.Join(dir, "go.mod"), filepath.Join(dir, "go.sum")}
 	err = cs.apply(goFiles, func() error {
-		if err := u.modules.Require(dir, pgxModule, pgxVersion); err != nil {
-			return fmt.Errorf("adding %s: %w", pgxModule, err)
+		if err := u.modules.Require(dir, eng.module, eng.version); err != nil {
+			return fmt.Errorf("adding %s: %w", eng.module, err)
 		}
 		return nil
 	})
@@ -156,15 +144,13 @@ func (u *DatabaseGeneratorUsecase) readOrStartManifest(dir, modulePath string) (
 }
 
 // planEdits queues the changes to existing files: config, deps, main, routes,
-// and (when present) the Makefile and CI workflow.
-func (u *DatabaseGeneratorUsecase) planEdits(cs *changeset, dir string, data databaseData, manifest domain.Manifest) error {
-	defaultURL := fmt.Sprintf("postgres://app:app@localhost:5432/%s?sslmode=disable", data.DBName)
-
+// and (when present) the Makefile, CI workflow, and .gitignore.
+func (u *DatabaseGeneratorUsecase) planEdits(cs *changeset, dir string, eng *engine, data databaseData, manifest domain.Manifest) error {
 	err := u.editGo(cs, dir, "config/config.go", func(src string) (string, error) {
-		src, err := insertAboveMarker(src, configFieldsMarker, `// DatabaseURL is the PostgreSQL connection string (DATABASE_URL). The
-// default matches the database started by `+"`make db-up`"+`.
+		src, err := insertAboveMarker(src, configFieldsMarker, fmt.Sprintf(`// DatabaseURL is the %s connection string (DATABASE_URL). The
+// default matches the local development database.
 DatabaseURL string
-`)
+`, eng.label))
 		if err != nil {
 			return "", err
 		}
@@ -172,30 +158,30 @@ DatabaseURL string
 if cfg.DatabaseURL == "" {
 	cfg.DatabaseURL = %q
 }
-`, defaultURL))
+`, eng.defaultURL(data.DBName)))
 	})
 	if err != nil {
 		return err
 	}
 
 	err = u.editGo(cs, dir, "server/deps.go", func(src string) (string, error) {
-		src, err := addImport(src, "github.com/jackc/pgx/v5/pgxpool")
+		src, err := addImport(src, eng.depsImport)
 		if err != nil {
-			return "", err
-		}
-		if src, err = insertAboveMarker(src, depsFieldsMarker, "// DB is the PostgreSQL connection pool.\nDB *pgxpool.Pool\n"); err != nil {
 			return "", err
 		}
 		if src, err = addImport(src, "errors"); err != nil {
 			return "", err
 		}
-		return insertAboveMarker(src, depsReadyMarker, `if d.DB == nil {
+		if src, err = insertAboveMarker(src, depsFieldsMarker, fmt.Sprintf("// DB is the %s database.\nDB %s\n", eng.label, eng.depsType)); err != nil {
+			return "", err
+		}
+		return insertAboveMarker(src, depsReadyMarker, fmt.Sprintf(`if d.DB == nil {
 	return errors.New("the database is not connected")
 }
-if err := d.DB.Ping(ctx); err != nil {
+if err := %s; err != nil {
 	return err
 }
-`)
+`, eng.readyCheck))
 	})
 	if err != nil {
 		return err
@@ -206,13 +192,7 @@ if err := d.DB.Ping(ctx); err != nil {
 		if err != nil {
 			return "", err
 		}
-		return insertAboveMarker(src, depsConnectMarker, `pool, err := db.Connect(ctx, cfg.DatabaseURL, log)
-if err != nil {
-	return err
-}
-defer pool.Close()
-deps.DB = pool
-`)
+		return insertAboveMarker(src, depsConnectMarker, connectCode)
 	})
 	if err != nil {
 		return err
@@ -222,10 +202,11 @@ deps.DB = pool
 		for _, r := range manifest.Resources {
 			pkg := r.ResourceConfig(dir).PackageName()
 			memory := pkg + ".NewMemoryRepository()"
+			repo := fmt.Sprintf("%s.New%s(deps.DB)", pkg, eng.repoType)
 			if !strings.Contains(src, memory) {
-				return "", fmt.Errorf("server/routes.go no longer creates %s; register the resource with %s.NewPostgresRepository(deps.DB) yourself", memory, pkg)
+				return "", fmt.Errorf("server/routes.go no longer creates %s; register the resource with %s yourself", memory, repo)
 			}
-			src = strings.Replace(src, memory, pkg+".NewPostgresRepository(deps.DB)", 1)
+			src = strings.Replace(src, memory, repo, 1)
 		}
 		return src, nil
 	})
@@ -233,10 +214,13 @@ deps.DB = pool
 		return err
 	}
 
-	if err := u.editMakefile(cs, dir, data); err != nil {
+	if err := u.editMakefile(cs, dir, eng, data); err != nil {
 		return err
 	}
-	return u.editCI(cs, dir, data)
+	if err := u.editCI(cs, dir, eng, data); err != nil {
+		return err
+	}
+	return u.editGitignore(cs, dir, eng)
 }
 
 // editGo queues an edit to a Go file in the project, formatting the result.
@@ -258,8 +242,9 @@ func (u *DatabaseGeneratorUsecase) editGo(cs *changeset, dir, rel string, change
 	return nil
 }
 
-// editMakefile appends database targets to the project's Makefile, if it has one.
-func (u *DatabaseGeneratorUsecase) editMakefile(cs *changeset, dir string, data databaseData) error {
+// editMakefile appends the engine's database targets to the project's Makefile,
+// if it has one.
+func (u *DatabaseGeneratorUsecase) editMakefile(cs *changeset, dir string, eng *engine, data databaseData) error {
 	path := filepath.Join(dir, "Makefile")
 	if !u.fileWriter.FileExists(path) {
 		return nil
@@ -268,40 +253,26 @@ func (u *DatabaseGeneratorUsecase) editMakefile(cs *changeset, dir string, data 
 	if err != nil {
 		return err
 	}
-	if strings.Contains(makefile, "db-up:") {
+	if strings.Contains(makefile, "db-reset:") {
 		return nil
 	}
 
-	testURL := fmt.Sprintf("postgres://app:app@localhost:5432/%s_test?sslmode=disable", data.DBName)
-	targets := strings.Join([]string{
-		"",
-		".PHONY: db-up db-down db-reset test-db",
-		"",
-		"db-up: ## Start PostgreSQL in Docker",
-		"\tdocker compose up -d --wait db",
-		"",
-		"db-down: ## Stop PostgreSQL (data is kept)",
-		"\tdocker compose down",
-		"",
-		"db-reset: ## Delete all data and start a fresh PostgreSQL",
-		"\tdocker compose down -v",
-		"\tdocker compose up -d --wait db",
-		"",
-		"test-db: db-up ## Run all tests, including the PostgreSQL ones",
-		fmt.Sprintf("\t-docker compose exec -T db createdb -U app %s_test 2>/dev/null", data.DBName),
-		fmt.Sprintf("\tTEST_DATABASE_URL=%q go test ./...", testURL),
-		"",
-	}, "\n")
+	testURL := ""
+	if eng.testURL != nil {
+		testURL = eng.testURL(data.DBName)
+	}
+	targets := eng.makeTargets(data.DBName, testURL)
+	block := append([]string{"", ".PHONY: " + strings.Join(phonyTargets(targets), " "), ""}, targets...)
 
-	cs.edit(path, strings.TrimRight(makefile, "\n")+"\n"+targets)
+	cs.edit(path, strings.TrimRight(makefile, "\n")+"\n"+strings.Join(block, "\n")+"\n")
 	return nil
 }
 
-// editCI adds a PostgreSQL service and TEST_DATABASE_URL to the test job of the
-// project's CI workflow, if it has one with the marker.
-func (u *DatabaseGeneratorUsecase) editCI(cs *changeset, dir string, data databaseData) error {
+// editCI adds the engine's database service and TEST_DATABASE_URL to the test
+// job of the project's CI workflow, if it has one with the marker.
+func (u *DatabaseGeneratorUsecase) editCI(cs *changeset, dir string, eng *engine, data databaseData) error {
 	path := filepath.Join(dir, ".github", "workflows", "ci.yml")
-	if !u.fileWriter.FileExists(path) {
+	if eng.ciService == nil || !u.fileWriter.FileExists(path) {
 		return nil
 	}
 	workflow, err := u.fileWriter.ReadFile(path)
@@ -309,28 +280,11 @@ func (u *DatabaseGeneratorUsecase) editCI(cs *changeset, dir string, data databa
 		return err
 	}
 	if !strings.Contains(workflow, ciServicesMarker) {
-		cs.note("Your CI workflow was customized, so it was left alone. To run the PostgreSQL tests in CI, add a postgres service and set TEST_DATABASE_URL in the test job.")
+		cs.note("Your CI workflow was customized, so it was left alone. To run the %s tests in CI, add a %s service and set TEST_DATABASE_URL in the test job.", eng.label, eng.label)
 		return nil
 	}
 
-	testDB := data.DBName + "_test"
-	updated, err := insertAboveMarker(workflow, ciServicesMarker, fmt.Sprintf(`services:
-  postgres:
-    image: postgres:18-alpine
-    env:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: %[1]s
-    ports:
-      - 5432:5432
-    options: >-
-      --health-cmd "pg_isready -U app -d %[1]s"
-      --health-interval 2s
-      --health-timeout 3s
-      --health-retries 15
-env:
-  TEST_DATABASE_URL: postgres://app:app@localhost:5432/%[1]s?sslmode=disable
-`, testDB))
+	updated, err := insertAboveMarker(workflow, ciServicesMarker, eng.ciService(data.DBName+"_test", eng.testURL(data.DBName)))
 	if err != nil {
 		return err
 	}
@@ -338,20 +292,38 @@ env:
 	return nil
 }
 
-// planFiles queues the db package, docker-compose.yml, and the PostgreSQL files
+// editGitignore adds the engine's ignore patterns to the project's .gitignore.
+func (u *DatabaseGeneratorUsecase) editGitignore(cs *changeset, dir string, eng *engine) error {
+	path := filepath.Join(dir, ".gitignore")
+	if len(eng.gitignore) == 0 || !u.fileWriter.FileExists(path) {
+		return nil
+	}
+	gitignore, err := u.fileWriter.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	block := "\n# " + eng.label + " database files\n" + strings.Join(eng.gitignore, "\n") + "\n"
+	cs.edit(path, strings.TrimRight(gitignore, "\n")+"\n"+block)
+	return nil
+}
+
+// planFiles queues the db package, docker-compose.yml, and the database files
 // for every existing resource.
-func (u *DatabaseGeneratorUsecase) planFiles(cs *changeset, dir string, data databaseData, manifest domain.Manifest) error {
-	for _, f := range databaseFiles {
+func (u *DatabaseGeneratorUsecase) planFiles(cs *changeset, dir string, eng *engine, data databaseData, manifest domain.Manifest) error {
+	for _, f := range eng.dbFiles {
 		if err := planTemplate(u.templateRenderer, cs, filepath.Join(dir, filepath.FromSlash(f.path)), f.template, data); err != nil {
 			return err
 		}
 	}
 
-	composePath := filepath.Join(dir, "docker-compose.yml")
-	if u.fileWriter.FileExists(composePath) {
-		cs.note("docker-compose.yml already exists, so it was left alone. Add a PostgreSQL service named db for `make db-up` to work.")
-	} else if err := planTemplate(u.templateRenderer, cs, composePath, "compose.tmpl", data); err != nil {
-		return err
+	if eng.composeTemplate != "" {
+		composePath := filepath.Join(dir, "docker-compose.yml")
+		if u.fileWriter.FileExists(composePath) {
+			cs.note("docker-compose.yml already exists, so it was left alone. Add a %s service named db for `make db-up` to work.", eng.label)
+		} else if err := planTemplate(u.templateRenderer, cs, composePath, eng.composeTemplate, data); err != nil {
+			return err
+		}
 	}
 
 	version := u.now().UTC()
@@ -368,7 +340,7 @@ func (u *DatabaseGeneratorUsecase) planFiles(cs *changeset, dir string, data dat
 			}
 		}
 
-		if err := planPostgresResource(u.templateRenderer, cs, dir, resource, resourceData, version); err != nil {
+		if err := planDatabaseResource(u.templateRenderer, cs, dir, eng, resource, resourceData, version); err != nil {
 			return err
 		}
 		// Keep migration versions unique and in resource order
@@ -377,18 +349,23 @@ func (u *DatabaseGeneratorUsecase) planFiles(cs *changeset, dir string, data dat
 	return nil
 }
 
-// planPostgresResource queues a resource's PostgreSQL repository, its tests, and
-// the migration that creates its table.
-func planPostgresResource(renderer domain.TemplateRenderer, cs *changeset, dir string, resource *domain.ResourceConfig, data resourceData, version time.Time) error {
+// planDatabaseResource queues a resource's repository for eng, its tests, and,
+// for SQL databases, the migration that creates its table.
+func planDatabaseResource(renderer domain.TemplateRenderer, cs *changeset, dir string, eng *engine, resource *domain.ResourceConfig, data resourceData, version time.Time) error {
+	addEngineData(&data, eng, resource.PluralName())
+
 	pkgDir := filepath.Join(dir, resource.PackageName())
-	for _, f := range postgresFiles {
-		if err := planTemplate(renderer, cs, filepath.Join(pkgDir, f.file), f.template, data); err != nil {
+	for _, f := range eng.repositoryFiles {
+		if err := planTemplate(renderer, cs, filepath.Join(pkgDir, f.path), f.template, data); err != nil {
 			return err
 		}
 	}
 
+	if eng.dialect == nil {
+		return nil
+	}
 	migration := fmt.Sprintf("%s_create_%s.sql", version.Format("20060102150405"), resource.PluralName())
-	return planTemplate(renderer, cs, filepath.Join(dir, "db", "migrations", migration), "resource/migration.tmpl", data)
+	return planTemplate(renderer, cs, filepath.Join(dir, "db", "migrations", migration), "db/migration.tmpl", data)
 }
 
 // planTemplate renders a template and queues it as a new file, formatting Go.

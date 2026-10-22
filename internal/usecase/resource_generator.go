@@ -31,16 +31,6 @@ var resourceFiles = []struct {
 	{"resource/requests.tmpl", func(*domain.ResourceConfig) string { return "requests.http" }},
 }
 
-// postgresFiles are generated, in addition to resourceFiles, for resources in a
-// project with a PostgreSQL database.
-var postgresFiles = []struct {
-	template string
-	file     string
-}{
-	{"resource/postgres.tmpl", "postgres.go"},
-	{"resource/postgres_test.tmpl", "postgres_test.go"},
-}
-
 // defaultPortPattern finds the default port in a generated project's config/config.go.
 var defaultPortPattern = regexp.MustCompile(`defaultPort\s*=\s*(\d+)`)
 
@@ -69,8 +59,8 @@ func NewResourceGeneratorUsecase(
 
 // Add implements domain.ResourceGenerator. Everything is rendered and checked
 // before any file is written, then applied as one changeset, so a failed run
-// leaves the project unchanged. In a project with a PostgreSQL database, the
-// resource is stored in PostgreSQL and gets a migration for its table.
+// leaves the project unchanged. In a project with a database, the resource is
+// stored in it and, for SQL databases, gets a migration for its table.
 func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Changes, error) {
 	if err := config.Validate(); err != nil {
 		return domain.Changes{}, domain.NewGenerationError("validation", "resource validation failed", err)
@@ -91,7 +81,12 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Ch
 		// Projects from older GoForge versions have no manifest; start one
 		manifest = domain.Manifest{Module: modulePath}
 	}
-	postgres := manifest.Database == domain.DatabasePostgres
+	var eng *engine
+	if manifest.Database != "" {
+		if eng, err = engineFor(manifest.Database); err != nil {
+			return domain.Changes{}, domain.NewGenerationError("project_check", "cannot read "+domain.ManifestFile, err)
+		}
+	}
 
 	routesPath := filepath.Join(dir, "server", "routes.go")
 	routes, err := u.fileWriter.ReadFile(routesPath)
@@ -102,8 +97,8 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Ch
 
 	pkg := config.PackageName()
 	repo := pkg + ".NewMemoryRepository()"
-	if postgres {
-		repo = pkg + ".NewPostgresRepository(deps.DB)"
+	if eng != nil {
+		repo = fmt.Sprintf("%s.New%s(deps.DB)", pkg, eng.repoType)
 	}
 	updatedRoutes, err := registerResource(routes, modulePath, pkg, repo)
 	if err != nil {
@@ -124,9 +119,9 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Ch
 			return domain.Changes{}, domain.NewGenerationError("generate_files", fmt.Sprintf("failed to generate %s", f.file(config)), err)
 		}
 	}
-	if postgres {
-		if err := planPostgresResource(u.templateRenderer, cs, dir, config, data, u.now().UTC()); err != nil {
-			return domain.Changes{}, domain.NewGenerationError("generate_files", "failed to generate the PostgreSQL repository", err)
+	if eng != nil {
+		if err := planDatabaseResource(u.templateRenderer, cs, dir, eng, config, data, u.now().UTC()); err != nil {
+			return domain.Changes{}, domain.NewGenerationError("generate_files", "failed to generate the "+eng.label+" repository", err)
 		}
 	}
 	cs.edit(routesPath, updatedRoutes)
@@ -199,14 +194,23 @@ type resourceData struct {
 	SampleBody    string // pretty-printed JSON create request, for requests.http
 	UpdatedBody   string // pretty-printed JSON replace request, for requests.http
 
-	// PostgreSQL names and statements; identifiers are quoted so names like
-	// "order" or "user" work
-	Table       string // quoted, e.g. "blog_posts", for SQL
-	TableName   string // unquoted, for comments and messages
-	IndexName   string
-	Columns     string // the select list, in scan order
-	InsertQuery string
-	UpdateQuery string
+	// Database-specific names, set by addEngineData for projects with a database
+	RepoType    string // e.g. "PostgresRepository"
+	EngineLabel string // e.g. "PostgreSQL"
+	TableName   string // unquoted table or collection name, e.g. blog_posts
+
+	// SQL names and statements; identifiers are quoted so names like "order"
+	// or "user" work
+	Table         string // quoted table name
+	IndexName     string
+	IDColumn      string
+	CreatedColumn string
+	UpdatedColumn string
+	IDType        string
+	TimeType      string
+	Columns       string // the select list, in scan order
+	InsertQuery   string
+	UpdateQuery   string
 }
 
 // resourceField describes one field for the templates, including sample values
@@ -215,8 +219,9 @@ type resourceField struct {
 	GoName      string
 	JSON        string
 	GoType      string
-	Column      string // quoted SQL column name
-	SQLType     string
+	Type        domain.FieldType
+	Column      string // quoted SQL column name, set by addEngineData
+	SQLType     string // set by addEngineData
 	IsTime      bool
 	Required    bool   // a required string field
 	Sample      string // Go literal
@@ -239,8 +244,7 @@ func newResourceData(config *domain.ResourceConfig, modulePath string) resourceD
 		field := resourceField{
 			GoName:   domain.CamelCase(f.Name),
 			JSON:     f.Name,
-			Column:   quoteIdent(f.Name),
-			SQLType:  sqlTypes[f.Type],
+			Type:     f.Type,
 			IsTime:   f.Type == domain.FieldTime,
 			Required: f.Type == domain.FieldString && !f.Optional,
 		}
@@ -274,53 +278,9 @@ func newResourceData(config *domain.ResourceConfig, modulePath string) resourceD
 	}
 
 	data.First = data.Fields[0]
-	addSQL(&data, config.PluralName())
 	data.SampleBody = prettyBody(data.Fields, func(f resourceField) string { return f.SampleJSON })
 	data.UpdatedBody = prettyBody(data.Fields, func(f resourceField) string { return f.UpdatedJSON })
 	return data
-}
-
-// sqlTypes maps field types to PostgreSQL column types.
-var sqlTypes = map[domain.FieldType]string{
-	domain.FieldString: "text",
-	domain.FieldInt:    "bigint",
-	domain.FieldFloat:  "double precision",
-	domain.FieldBool:   "boolean",
-	domain.FieldTime:   "timestamptz",
-}
-
-// addSQL fills in the PostgreSQL table name and statements for a resource stored
-// in table. Parameters are $1 for the ID, then the fields in order, then the
-// timestamps.
-func addSQL(data *resourceData, table string) {
-	data.Table = quoteIdent(table)
-	data.TableName = table
-	data.IndexName = quoteIdent(table + "_created_at_id_idx")
-
-	columns := []string{`"id"`}
-	var sets []string
-	for i, f := range data.Fields {
-		columns = append(columns, f.Column)
-		sets = append(sets, fmt.Sprintf("%s = $%d", f.Column, i+2))
-	}
-	columns = append(columns, `"created_at"`, `"updated_at"`)
-	n := len(data.Fields)
-
-	placeholders := make([]string, len(columns))
-	for i := range placeholders {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-	}
-
-	data.Columns = strings.Join(columns, ", ")
-	data.InsertQuery = fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-		data.Table, data.Columns, strings.Join(placeholders, ", "))
-	data.UpdateQuery = fmt.Sprintf(`UPDATE %s SET %s, "updated_at" = $%d WHERE "id" = $1`,
-		data.Table, strings.Join(sets, ", "), n+2)
-}
-
-// quoteIdent quotes a snake_case SQL identifier.
-func quoteIdent(name string) string {
-	return `"` + name + `"`
 }
 
 // prettyBody renders fields as an indented JSON object, using value for each field's JSON value.

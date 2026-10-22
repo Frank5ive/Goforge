@@ -46,3 +46,9 @@ func Connect(ctx context.Context, url string, log *slog.Logger) (*pgxpool.Pool, 
 	log.Info("connected to database", "database", where)
 	return pool, nil
 }
+
+// Close closes the connection pool. main defers it, so in-flight queries finish
+// before the process exits.
+func Close(pool *pgxpool.Pool, _ *slog.Logger) {
+	pool.Close()
+}

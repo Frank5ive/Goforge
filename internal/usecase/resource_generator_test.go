@@ -313,6 +313,7 @@ func TestAddSQL(t *testing.T) {
 			{Name: "total", Type: domain.FieldFloat},
 		},
 	}, "example.com/app")
+	addEngineData(&data, postgresEngine, "orders")
 
 	want := map[string]string{
 		"Table":       `"orders"`,

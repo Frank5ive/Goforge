@@ -124,7 +124,7 @@ func TestDatabaseGenerator_Add(t *testing.T) {
 	checks := map[string][]string{
 		"config/config.go": {"DatabaseURL string", `getenv("DATABASE_URL")`, "postgres://app:app@localhost:5432/my_app?sslmode=disable"},
 		"server/deps.go":   {`"github.com/jackc/pgx/v5/pgxpool"`, "DB *pgxpool.Pool", "d.DB.Ping(ctx)"},
-		"main.go":          {`"example.com/app/db"`, "db.Connect(ctx, cfg.DatabaseURL, log)", "deps.DB = pool"},
+		"main.go":          {`"example.com/app/db"`, "db.Connect(ctx, cfg.DatabaseURL, log)", "defer db.Close(database, log)", "deps.DB = database"},
 		"server/routes.go": {"products.NewPostgresRepository(deps.DB)"},
 		"Makefile":         {"db-up:", "test-db: db-up", "my_app_test"},
 		".goforge.json":    {`"database": "postgres"`, `"name": "product"`},
@@ -141,7 +141,7 @@ func TestDatabaseGenerator_Add(t *testing.T) {
 		t.Error("routes.go still uses the in-memory repository")
 	}
 
-	if len(modules.calls) != 1 || modules.calls[0] != "github.com/jackc/pgx/v5@"+pgxVersion {
+	if len(modules.calls) != 1 || modules.calls[0] != postgresEngine.module+"@"+postgresEngine.version {
 		t.Errorf("module calls = %v, want pgx", modules.calls)
 	}
 	if len(changes.Created) == 0 || len(changes.Updated) == 0 {
