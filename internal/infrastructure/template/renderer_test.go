@@ -17,9 +17,10 @@ func templateFS(templates map[string]string) fstest.MapFS {
 
 func TestNewGoTemplateRenderer(t *testing.T) {
 	fsys := templateFS(map[string]string{
-		"main.tmpl":   `Hello {{.Name}}!`,
-		"server.tmpl": `test`,
-		"notes.txt":   `not a template`,
+		"main.tmpl":           `Hello {{.Name}}!`,
+		"server.tmpl":         `test`,
+		"resource/model.tmpl": `nested`,
+		"notes.txt":           `not a template`,
 	})
 
 	renderer, err := NewGoTemplateRenderer(fsys)
@@ -28,7 +29,7 @@ func TestNewGoTemplateRenderer(t *testing.T) {
 	}
 
 	got := renderer.GetLoadedTemplates()
-	want := []string{"main.tmpl", "server.tmpl"}
+	want := []string{"main.tmpl", "resource/model.tmpl", "server.tmpl"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("Expected templates %v, got %v", want, got)
 	}

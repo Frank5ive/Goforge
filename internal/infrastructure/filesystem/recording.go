@@ -42,6 +42,12 @@ func (w *RecordingWriter) FileExists(path string) bool {
 	return w.inner.FileExists(path)
 }
 
+// ReadFile implements domain.FileWriter.ReadFile. It always reads the real
+// filesystem, so a dry run sees files as they are on disk.
+func (w *RecordingWriter) ReadFile(path string) (string, error) {
+	return w.inner.ReadFile(path)
+}
+
 // RemoveAll implements domain.FileWriter.RemoveAll.
 func (w *RecordingWriter) RemoveAll(path string) error {
 	if w.dryRun {

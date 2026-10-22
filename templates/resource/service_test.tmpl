@@ -1,0 +1,130 @@
+package {{.Package}}
+
+import (
+	"errors"
+	"testing"
+	"time"
+)
+
+// newTestService returns a Service with an in-memory repository and a clock
+// that advances one second per call, so timestamps are deterministic.
+func newTestService() *Service {
+	svc := NewService(NewMemoryRepository())
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time {
+		clock = clock.Add(time.Second)
+		return clock
+	}
+	return svc
+}
+
+func validInput() Input {
+	return Input{
+{{- range .Fields}}
+		{{.GoName}}: {{.Sample}},
+{{- end}}
+	}
+}
+
+func updatedInput() Input {
+	return Input{
+{{- range .Fields}}
+		{{.GoName}}: {{.Updated}},
+{{- end}}
+	}
+}
+
+func TestServiceCreateAndGet(t *testing.T) {
+	svc := newTestService()
+
+	created, err := svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.ID == "" || created.CreatedAt.IsZero() {
+		t.Fatalf("Create() = %+v, want an ID and timestamps", created)
+	}
+
+	got, err := svc.Get(t.Context(), created.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got != created {
+		t.Errorf("Get() = %+v, want %+v", got, created)
+	}
+}
+{{- if .HasRequired}}
+
+func TestServiceCreateValidates(t *testing.T) {
+	_, err := newTestService().Create(t.Context(), Input{})
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("Create(empty) error = %v, want ErrInvalid", err)
+	}
+}
+{{- end}}
+
+func TestServiceUpdate(t *testing.T) {
+	svc := newTestService()
+	created, err := svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	updated, err := svc.Update(t.Context(), created.ID, updatedInput())
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	want := created
+	want.apply(updatedInput())
+	want.UpdatedAt = updated.UpdatedAt
+	if updated != want {
+		t.Errorf("Update() = %+v, want %+v", updated, want)
+	}
+	if !updated.UpdatedAt.After(created.UpdatedAt) {
+		t.Errorf("UpdatedAt = %v, want it after %v", updated.UpdatedAt, created.UpdatedAt)
+	}
+}
+
+func TestServiceDelete(t *testing.T) {
+	svc := newTestService()
+	created, err := svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if err := svc.Delete(t.Context(), created.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if _, err := svc.Get(t.Context(), created.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get() after Delete() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestServiceListIsOldestFirst(t *testing.T) {
+	svc := newTestService()
+	first, _ := svc.Create(t.Context(), validInput())
+	second, _ := svc.Create(t.Context(), validInput())
+
+	items, err := svc.List(t.Context())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(items) != 2 || items[0].ID != first.ID || items[1].ID != second.ID {
+		t.Errorf("List() = %+v, want [%s %s]", items, first.ID, second.ID)
+	}
+}
+
+func TestServiceNotFound(t *testing.T) {
+	svc := newTestService()
+
+	if _, err := svc.Get(t.Context(), "missing"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get() error = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.Update(t.Context(), "missing", validInput()); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Update() error = %v, want ErrNotFound", err)
+	}
+	if err := svc.Delete(t.Context(), "missing"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Delete() error = %v, want ErrNotFound", err)
+	}
+}
