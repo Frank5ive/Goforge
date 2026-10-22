@@ -20,8 +20,9 @@ func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{items: make(map[string]{{.Type}})}
 }
 
-// List returns every {{.Human}}, oldest first.
-func (r *MemoryRepository) List(_ context.Context) ([]{{.Type}}, error) {
+// List returns up to limit {{.HumanPlural}} starting at offset, oldest first, and
+// the total number stored.
+func (r *MemoryRepository) List(_ context.Context, limit, offset int) ([]{{.Type}}, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -36,7 +37,11 @@ func (r *MemoryRepository) List(_ context.Context) ([]{{.Type}}, error) {
 		return cmp.Compare(a.ID, b.ID)
 	})
 
-	return items, nil
+	total := len(items)
+	if offset >= total {
+		return []{{.Type}}{}, total, nil
+	}
+	return items[offset:min(offset+limit, total)], total, nil
 }
 
 // Get returns the {{.Human}} with the given ID, or ErrNotFound.

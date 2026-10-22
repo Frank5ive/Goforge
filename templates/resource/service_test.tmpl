@@ -34,6 +34,10 @@ func updatedInput() Input {
 	}
 }
 
+func ptr[T any](v T) *T {
+	return &v
+}
+
 func TestServiceCreateAndGet(t *testing.T) {
 	svc := newTestService()
 
@@ -53,7 +57,7 @@ func TestServiceCreateAndGet(t *testing.T) {
 		t.Errorf("Get() = %+v, want %+v", got, created)
 	}
 }
-{{- if .HasRequired}}
+{{- if .RequiredField}}
 
 func TestServiceCreateValidates(t *testing.T) {
 	_, err := newTestService().Create(t.Context(), Input{})
@@ -86,6 +90,41 @@ func TestServiceUpdate(t *testing.T) {
 	}
 }
 
+func TestServicePatchChangesOnlySentFields(t *testing.T) {
+	svc := newTestService()
+	created, err := svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	patched, err := svc.Patch(t.Context(), created.ID, Patch{ {{- .First.GoName}}: ptr({{.First.Updated}})})
+	if err != nil {
+		t.Fatalf("Patch() error = %v", err)
+	}
+
+	want := created
+	want.{{.First.GoName}} = {{.First.Updated}}
+	want.UpdatedAt = patched.UpdatedAt
+	if patched != want {
+		t.Errorf("Patch() = %+v, want %+v", patched, want)
+	}
+}
+{{- if .RequiredField}}
+
+func TestServicePatchValidates(t *testing.T) {
+	svc := newTestService()
+	created, err := svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	_, err = svc.Patch(t.Context(), created.ID, Patch{ {{- .RequiredField}}: ptr("")})
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("Patch() clearing a required field error = %v, want ErrInvalid", err)
+	}
+}
+{{- end}}
+
 func TestServiceDelete(t *testing.T) {
 	svc := newTestService()
 	created, err := svc.Create(t.Context(), validInput())
@@ -101,17 +140,53 @@ func TestServiceDelete(t *testing.T) {
 	}
 }
 
-func TestServiceListIsOldestFirst(t *testing.T) {
+func TestServiceListPaginates(t *testing.T) {
 	svc := newTestService()
-	first, _ := svc.Create(t.Context(), validInput())
-	second, _ := svc.Create(t.Context(), validInput())
-
-	items, err := svc.List(t.Context())
-	if err != nil {
-		t.Fatalf("List() error = %v", err)
+	var ids []string
+	for range 3 {
+		item, err := svc.Create(t.Context(), validInput())
+		if err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		ids = append(ids, item.ID)
 	}
-	if len(items) != 2 || items[0].ID != first.ID || items[1].ID != second.ID {
-		t.Errorf("List() = %+v, want [%s %s]", items, first.ID, second.ID)
+
+	tests := []struct {
+		name              string
+		limit, offset     int
+		wantIDs           []string
+		wantLimit, wantTotal int
+	}{
+		{"default limit", 0, 0, ids, DefaultLimit, 3},
+		{"first page", 2, 0, ids[:2], 2, 3},
+		{"second page", 2, 2, ids[2:], 2, 3},
+		{"past the end", 2, 5, nil, 2, 3},
+		{"limit capped", MaxLimit + 50, 0, ids, MaxLimit, 3},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			page, err := svc.List(t.Context(), tt.limit, tt.offset)
+			if err != nil {
+				t.Fatalf("List() error = %v", err)
+			}
+			if page.Total != tt.wantTotal || page.Limit != tt.wantLimit || page.Offset != tt.offset {
+				t.Errorf("List() total/limit/offset = %d/%d/%d, want %d/%d/%d",
+					page.Total, page.Limit, page.Offset, tt.wantTotal, tt.wantLimit, tt.offset)
+			}
+			if len(page.Items) != len(tt.wantIDs) {
+				t.Fatalf("List() returned %d items, want %d", len(page.Items), len(tt.wantIDs))
+			}
+			for i, item := range page.Items {
+				if item.ID != tt.wantIDs[i] {
+					t.Errorf("item %d = %s, want %s (oldest first)", i, item.ID, tt.wantIDs[i])
+				}
+			}
+		})
+	}
+
+	if _, err := svc.List(t.Context(), -1, 0); !errors.Is(err, ErrInvalid) {
+		t.Errorf("List(negative limit) error = %v, want ErrInvalid", err)
 	}
 }
 
@@ -123,6 +198,9 @@ func TestServiceNotFound(t *testing.T) {
 	}
 	if _, err := svc.Update(t.Context(), "missing", validInput()); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Update() error = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.Patch(t.Context(), "missing", Patch{}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Patch() error = %v, want ErrNotFound", err)
 	}
 	if err := svc.Delete(t.Context(), "missing"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Delete() error = %v, want ErrNotFound", err)

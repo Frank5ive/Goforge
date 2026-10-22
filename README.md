@@ -90,6 +90,23 @@ cd goforge
 go build -o goforge .
 ```
 
+### Shell Completion
+
+Tab-complete commands and flags in bash, zsh, fish, or PowerShell:
+
+```bash
+# bash (current session; add to ~/.bashrc to keep it)
+source <(goforge completion bash)
+
+# zsh
+goforge completion zsh > "${fpath[1]}/_goforge"
+
+# fish
+goforge completion fish > ~/.config/fish/completions/goforge.fish
+```
+
+Run `goforge completion <shell> --help` for details.
+
 ---
 
 ## ⚡ Quick Start
@@ -142,36 +159,51 @@ goforge add resource product --fields "name:string,price:float,in_stock:bool,ima
 ```
 
 ```
-✅ Added the product resource. Created 6 files:
-   products/product.go         # Product model, Input, validation rules, Repository interface
+✅ Added the product resource. Created 7 files:
+   products/product.go         # Product model, Input, Patch, validation rules, Repository interface
    products/memory.go          # Thread-safe in-memory Repository
-   products/service.go         # Business logic: create, get, list, update, delete
+   products/service.go         # Business logic: list, get, create, update, patch, delete
    products/handler.go         # HTTP handlers and route registration
    products/service_test.go
    products/handler_test.go
+   products/requests.http      # Example requests to run from your editor
 
 📝 Updated:
    server/routes.go            # Routes registered automatically
 
 🌐 Endpoints:
-   GET    /products
+   GET    /products?limit=20&offset=0
    POST   /products
    GET    /products/{id}
    PUT    /products/{id}
+   PATCH  /products/{id}
    DELETE /products/{id}
 ```
 
-Each resource follows Clean Architecture inside its own package: handlers call the service,
-the service holds the business rules, and storage sits behind a `Repository` interface. Swap
-the in-memory repository for a database without touching the service or handlers.
+**Ready to go:** the routes are registered in `server/routes.go` for you, so the endpoints
+work as soon as you start (or restart) the server with `go run .`. No wiring needed. Open
+`products/requests.http` in VS Code (REST Client extension) or a JetBrains IDE to try every
+endpoint with one click; it already points at your project's port.
+
+Each resource uses Clean Architecture–style layering in a single package: handlers call
+the service, the service holds the business rules, and storage sits behind a `Repository`
+interface. Swap the in-memory repository for a database without touching the service or
+handlers. Keeping a resource in one package makes it easy to find and follow.
 
 **Fields** are `name:type` pairs. Types: `string`, `int`, `float`, `bool`, and `time`
 (RFC 3339 in JSON). String fields are required unless marked optional with `?`. `id`,
 `created_at`, and `updated_at` are added automatically.
 
+**Listing** is paginated: `GET /products?limit=20&offset=40` returns
+`{"items": [...], "total": 57, "limit": 20, "offset": 40}`, oldest first. `limit` defaults to
+20 and is capped at 100.
+
+**Updating:** `PUT` replaces every editable field, while `PATCH` changes only the fields you
+send (`{"price": 24.5}`). Both run the same validation rules.
+
 **Responses:** `201` with a `Location` header on create, `204` on delete, `404` for unknown
 IDs, `422` with every failed rule listed (`{"error":"invalid product: name is required"}`),
-and `400` for malformed JSON or unknown fields.
+and `400` for malformed JSON, unknown fields, or invalid `limit`/`offset`.
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|

@@ -2,17 +2,20 @@ package {{.Package}}
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"{{.Module}}/handlers"
 )
 
 // RegisterRoutes adds the {{.Human}} endpoints to mux:
 //
-//	GET    {{.Path}}       list {{.HumanPlural}}
+//	GET    {{.Path}}       list {{.HumanPlural}} (?limit=20&offset=0)
 //	POST   {{.Path}}       create a {{.Human}}
 //	GET    {{.Path}}/{id}  get a {{.Human}}
 //	PUT    {{.Path}}/{id}  replace a {{.Human}}'s fields
+//	PATCH  {{.Path}}/{id}  change some of a {{.Human}}'s fields
 //	DELETE {{.Path}}/{id}  delete a {{.Human}}
 func RegisterRoutes(mux *http.ServeMux, svc *Service) {
 	h := &handler{svc: svc}
@@ -21,6 +24,7 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service) {
 	mux.HandleFunc("POST {{.Path}}", h.create)
 	mux.HandleFunc("GET {{.Path}}/{id}", h.get)
 	mux.HandleFunc("PUT {{.Path}}/{id}", h.update)
+	mux.HandleFunc("PATCH {{.Path}}/{id}", h.patch)
 	mux.HandleFunc("DELETE {{.Path}}/{id}", h.delete)
 }
 
@@ -29,12 +33,23 @@ type handler struct {
 }
 
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
-	items, err := h.svc.List(r.Context())
+	limit, err := queryInt(r, "limit")
+	if err != nil {
+		handlers.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	offset, err := queryInt(r, "offset")
+	if err != nil {
+		handlers.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	page, err := h.svc.List(r.Context(), limit, offset)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	handlers.WriteJSON(w, http.StatusOK, items)
+	handlers.WriteJSON(w, http.StatusOK, page)
 }
 
 func (h *handler) create(w http.ResponseWriter, r *http.Request) {
@@ -76,12 +91,40 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 	handlers.WriteJSON(w, http.StatusOK, item)
 }
 
+func (h *handler) patch(w http.ResponseWriter, r *http.Request) {
+	var p Patch
+	if !handlers.DecodeJSON(w, r, &p) {
+		return
+	}
+
+	item, err := h.svc.Patch(r.Context(), r.PathValue("id"), p)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	handlers.WriteJSON(w, http.StatusOK, item)
+}
+
 func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.Delete(r.Context(), r.PathValue("id")); err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// queryInt parses a non-negative integer query parameter, returning 0 when it is absent.
+func queryInt(r *http.Request, name string) (int, error) {
+	value := r.URL.Query().Get(name)
+	if value == "" {
+		return 0, nil
+	}
+
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer, got %q", name, value)
+	}
+	return n, nil
 }
 
 // writeServiceError maps service errors to HTTP responses. Unexpected errors

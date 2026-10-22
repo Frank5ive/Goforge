@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/format"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -27,7 +28,14 @@ var resourceFiles = []struct {
 	{"resource/handler.tmpl", func(*domain.ResourceConfig) string { return "handler.go" }},
 	{"resource/service_test.tmpl", func(*domain.ResourceConfig) string { return "service_test.go" }},
 	{"resource/handler_test.tmpl", func(*domain.ResourceConfig) string { return "handler_test.go" }},
+	{"resource/requests.tmpl", func(*domain.ResourceConfig) string { return "requests.http" }},
 }
+
+// defaultPortPattern finds the default port in a generated project's config/config.go.
+var defaultPortPattern = regexp.MustCompile(`defaultPort\s*=\s*(\d+)`)
+
+// fallbackPort is used for requests.http when the project's port can't be read.
+const fallbackPort = 8080
 
 // ResourceGeneratorUsecase adds REST resources to existing generated projects.
 // It implements the domain.ResourceGenerator interface.
@@ -83,6 +91,7 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) error {
 	}
 
 	data := newResourceData(config, modulePath)
+	data.Port = u.readDefaultPort(config.ProjectDir)
 	for _, f := range resourceFiles {
 		content, err := u.templateRenderer.Render(f.template, data)
 		if err == nil {
@@ -123,6 +132,25 @@ func (u *ResourceGeneratorUsecase) readModulePath(projectDir string) (string, er
 		}
 	}
 	return "", errors.New("go.mod has no module directive")
+}
+
+// readDefaultPort returns the default port from the project's config/config.go, or
+// fallbackPort for projects that don't have one (e.g. older GoForge versions).
+func (u *ResourceGeneratorUsecase) readDefaultPort(projectDir string) int {
+	src, err := u.fileWriter.ReadFile(filepath.Join(projectDir, "config", "config.go"))
+	if err != nil {
+		return fallbackPort
+	}
+
+	match := defaultPortPattern.FindStringSubmatch(src)
+	if match == nil {
+		return fallbackPort
+	}
+	port, err := strconv.Atoi(match[1])
+	if err != nil {
+		return fallbackPort
+	}
+	return port
 }
 
 // registerResource returns routes.go source with the resource package imported
@@ -170,7 +198,13 @@ type resourceData struct {
 	HumanPlural string // e.g. "blog posts"
 	Path        string // collection route, e.g. "/blog-posts"
 	Fields      []resourceField
-	HasRequired bool // at least one required string field, so Validate has rules
+	First       resourceField // the first field, used by PATCH examples and tests
+	// RequiredField is the Go name of the first required string field, or "" if
+	// there is none (then Validate has no rules).
+	RequiredField string
+	Port          int    // the project's default port, for requests.http
+	SampleBody    string // pretty-printed JSON create request, for requests.http
+	UpdatedBody   string // pretty-printed JSON replace request, for requests.http
 }
 
 // resourceField describes one field for the templates, including sample values
@@ -209,7 +243,9 @@ func newResourceData(config *domain.ResourceConfig, modulePath string) resourceD
 			field.GoType = "string"
 			field.Sample, field.Updated = strconv.Quote("example "+label), strconv.Quote("updated "+label)
 			field.SampleJSON, field.UpdatedJSON = field.Sample, field.Updated
-			data.HasRequired = data.HasRequired || field.Required
+			if field.Required && data.RequiredField == "" {
+				data.RequiredField = field.GoName
+			}
 		case domain.FieldInt:
 			field.GoType, field.Sample, field.Updated = "int", "42", "7"
 		case domain.FieldFloat:
@@ -229,5 +265,17 @@ func newResourceData(config *domain.ResourceConfig, modulePath string) resourceD
 		data.Fields = append(data.Fields, field)
 	}
 
+	data.First = data.Fields[0]
+	data.SampleBody = prettyBody(data.Fields, func(f resourceField) string { return f.SampleJSON })
+	data.UpdatedBody = prettyBody(data.Fields, func(f resourceField) string { return f.UpdatedJSON })
 	return data
+}
+
+// prettyBody renders fields as an indented JSON object, using value for each field's JSON value.
+func prettyBody(fields []resourceField, value func(resourceField) string) string {
+	lines := make([]string, len(fields))
+	for i, f := range fields {
+		lines[i] = fmt.Sprintf("  %q: %s", f.JSON, value(f))
+	}
+	return "{\n" + strings.Join(lines, ",\n") + "\n}"
 }

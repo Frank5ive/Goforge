@@ -1,0 +1,36 @@
+# Example requests for the {{.Human}} API.
+# Run them while the server is running (`go run .`) with the REST Client extension
+# in VS Code or the HTTP client built into JetBrains IDEs.
+
+@baseUrl = http://localhost:{{.Port}}
+# Paste an ID from the create response here
+@id = REPLACE_WITH_ID
+
+### List {{.HumanPlural}} (paginated: limit defaults to 20, max 100)
+GET {{"{{baseUrl}}"}}{{.Path}}?limit=20&offset=0
+
+### Create a {{.Human}}
+POST {{"{{baseUrl}}"}}{{.Path}}
+Content-Type: application/json
+
+{{.SampleBody}}
+
+### Get a {{.Human}}
+GET {{"{{baseUrl}}"}}{{.Path}}/{{"{{id}}"}}
+
+### Replace all of a {{.Human}}'s fields
+PUT {{"{{baseUrl}}"}}{{.Path}}/{{"{{id}}"}}
+Content-Type: application/json
+
+{{.UpdatedBody}}
+
+### Change only some fields of a {{.Human}}
+PATCH {{"{{baseUrl}}"}}{{.Path}}/{{"{{id}}"}}
+Content-Type: application/json
+
+{
+  "{{.First.JSON}}": {{.First.UpdatedJSON}}
+}
+
+### Delete a {{.Human}}
+DELETE {{"{{baseUrl}}"}}{{.Path}}/{{"{{id}}"}}

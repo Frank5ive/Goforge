@@ -41,9 +41,15 @@ The first public release will be tagged `v0.1.0`.
 - `goforge add resource <name> --fields "..."` adds a REST resource to a generated
   project: a package with the model and validation rules, a `Repository` interface
   with a thread-safe in-memory implementation, a service, CRUD handlers, and tests.
-  Routes are registered in `server/routes.go` automatically. Supports `string`, `int`,
-  `float`, `bool`, and `time` fields, optional strings (`name:string?`), `--plural`
-  for irregular words, and `--dry-run`; a failed run leaves the project unchanged.
+  Routes are registered in `server/routes.go` automatically, so the endpoints work as
+  soon as the server starts. Supports `string`, `int`, `float`, `bool`, and `time`
+  fields, optional strings (`name:string?`), `--plural` for irregular words, and
+  `--dry-run`; a failed run leaves the project unchanged.
+  - Paginated lists: `?limit=&offset=` returning `{items, total, limit, offset}`
+    (default 20, max 100)
+  - `PATCH /{resource}/{id}` for partial updates, validated like full updates
+  - A `requests.http` file of example requests, pointed at the project's port
+- `goforge completion bash|zsh|fish|powershell` for shell tab completion
 - Generated Go code is always gofmt-formatted
 - Templates embedded in the binary (single-file distribution)
 - Terminal banner with a pixel-art Go gopher and wordmark; adapts to terminal width,

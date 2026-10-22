@@ -23,9 +23,28 @@ func NewService(repo Repository) *Service {
 	}
 }
 
-// List returns every {{.Human}}.
-func (s *Service) List(ctx context.Context) ([]{{.Type}}, error) {
-	return s.repo.List(ctx)
+// Pagination limits for List.
+const (
+	DefaultLimit = 20
+	MaxLimit     = 100
+)
+
+// List returns one page of {{.HumanPlural}}, oldest first. A limit of 0 means
+// DefaultLimit, and limits above MaxLimit are capped.
+func (s *Service) List(ctx context.Context, limit, offset int) (Page, error) {
+	if limit < 0 || offset < 0 {
+		return Page{}, fmt.Errorf("%w: limit and offset must not be negative", ErrInvalid)
+	}
+	if limit == 0 {
+		limit = DefaultLimit
+	}
+	limit = min(limit, MaxLimit)
+
+	items, total, err := s.repo.List(ctx, limit, offset)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Items: items, Total: total, Limit: limit, Offset: offset}, nil
 }
 
 // Get returns the {{.Human}} with the given ID.
@@ -58,6 +77,28 @@ func (s *Service) Update(ctx context.Context, id string, in Input) ({{.Type}}, e
 	item, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return {{.Type}}{}, err
+	}
+	item.apply(in)
+	item.UpdatedAt = s.now()
+
+	if err := s.repo.Update(ctx, item); err != nil {
+		return {{.Type}}{}, err
+	}
+	return item, nil
+}
+
+// Patch changes only the fields set in p on the {{.Human}} with the given ID. The
+// result is validated with the same rules as Create and Update.
+func (s *Service) Patch(ctx context.Context, id string, p Patch) ({{.Type}}, error) {
+	item, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return {{.Type}}{}, err
+	}
+
+	in := item.input()
+	p.applyTo(&in)
+	if err := in.Validate(); err != nil {
+		return {{.Type}}{}, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	item.apply(in)
 	item.UpdatedAt = s.now()

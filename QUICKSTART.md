@@ -33,6 +33,9 @@ goforge generate --help
 
 # Show version
 goforge --version
+
+# Enable tab completion (bash; also zsh, fish, powershell)
+source <(goforge completion bash)
 ```
 
 ## 📁 Generated Project Structure

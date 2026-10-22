@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -332,39 +333,79 @@ func TestAddResource(t *testing.T) {
 	runGo(t, project, "build", "-o", binary, ".")
 	baseURL := startServer(t, binary)
 
-	body := `{"name":"Gopher plush","image_url":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
-	resp, err := http.Post(baseURL+"/products", "application/json", strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST /products: %v", err)
+	// Every endpoint works straight after `add resource` and a build: no manual wiring
+	product := `{"name":"Gopher plush","image_url":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
+	status, header, _ := request(t, http.MethodPost, baseURL+"/products", product)
+	if status != http.StatusCreated {
+		t.Fatalf("POST /products = %d, want %d", status, http.StatusCreated)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("POST /products = %d, want %d", resp.StatusCode, http.StatusCreated)
-	}
+	item := baseURL + header.Get("Location")
 
-	resp, err = http.Get(baseURL + resp.Header.Get("Location"))
-	if err != nil {
-		t.Fatalf("GET created product: %v", err)
-	}
-	defer resp.Body.Close()
-	var product struct {
+	var got struct {
 		Name  string  `json:"name"`
 		Price float64 `json:"price"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&product); err != nil || product.Name != "Gopher plush" || product.Price != 19.5 {
-		t.Errorf("GET created product = %+v (decode error: %v)", product, err)
+	if status, _, body := request(t, http.MethodGet, item, ""); status != http.StatusOK || json.Unmarshal(body, &got) != nil || got.Name != "Gopher plush" {
+		t.Errorf("GET created product = %d %s", status, body)
 	}
 
+	request(t, http.MethodPost, baseURL+"/products", product)
+	var page struct {
+		Items []json.RawMessage `json:"items"`
+		Total int               `json:"total"`
+	}
+	if status, _, body := request(t, http.MethodGet, baseURL+"/products?limit=1&offset=1", ""); status != http.StatusOK || json.Unmarshal(body, &page) != nil || len(page.Items) != 1 || page.Total != 2 {
+		t.Errorf("GET /products?limit=1&offset=1 = %d %s, want 1 of 2 items", status, body)
+	}
+
+	replaced := strings.Replace(product, `"Gopher plush"`, `"Gopher plush XL"`, 1)
+	if status, _, body := request(t, http.MethodPut, item, replaced); status != http.StatusOK {
+		t.Errorf("PUT product = %d %s", status, body)
+	}
+
+	if status, _, body := request(t, http.MethodPatch, item, `{"price": 24.5}`); status != http.StatusOK || json.Unmarshal(body, &got) != nil || got.Price != 24.5 || got.Name != "Gopher plush XL" {
+		t.Errorf("PATCH product = %d %s, want only the price changed", status, body)
+	}
+
+	if status, _, _ := request(t, http.MethodDelete, item, ""); status != http.StatusNoContent {
+		t.Errorf("DELETE product = %d, want %d", status, http.StatusNoContent)
+	}
+	if status, _, _ := request(t, http.MethodGet, item, ""); status != http.StatusNotFound {
+		t.Errorf("GET deleted product = %d, want %d", status, http.StatusNotFound)
+	}
+
+	// The other resources are registered alongside it
 	for _, path := range []string{"/people", "/counters"} {
-		resp, err := http.Get(baseURL + path)
-		if err != nil {
-			t.Fatalf("GET %s: %v", path, err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("GET %s = %d, want %d", path, resp.StatusCode, http.StatusOK)
+		if status, _, _ := request(t, http.MethodGet, baseURL+path, ""); status != http.StatusOK {
+			t.Errorf("GET %s = %d, want %d", path, status, http.StatusOK)
 		}
 	}
+}
+
+// request sends an HTTP request with an optional JSON body and returns the
+// status, headers, and body of the response.
+func request(t *testing.T, method, url, body string) (int, http.Header, []byte) {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), method, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("building %s %s: %v", method, url, err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading %s %s response: %v", method, url, err)
+	}
+	return resp.StatusCode, resp.Header, respBody
 }
 
 // startServer runs the binary on a free port until the test ends and returns its base URL.

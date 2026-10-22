@@ -39,8 +39,10 @@ func newAddResourceCmd() *cobra.Command {
 
 The resource gets its own package with a model and validation rules, a storage
 interface with an in-memory implementation, a service for business logic, HTTP
-handlers for list/create/get/update/delete, and tests. Its routes are registered
-in server/routes.go automatically.
+handlers for list (paginated), create, get, replace (PUT), partial update (PATCH),
+and delete, tests, and a requests.http file of example requests. Its routes are
+registered in server/routes.go automatically, so they work as soon as the server
+starts.
 
 <name> is the singular resource name in snake_case, e.g. product or blog_post.
 Field types: %s. String fields are required unless marked
@@ -116,15 +118,20 @@ func runAddResource(out io.Writer, name string, opts *addResourceOptions) error 
 
 	path := config.RoutePath()
 	fmt.Fprintf(out, "\n🌐 Endpoints:\n")
-	fmt.Fprintf(out, "   GET    %s\n", path)
+	fmt.Fprintf(out, "   GET    %s?limit=20&offset=0\n", path)
 	fmt.Fprintf(out, "   POST   %s\n", path)
 	fmt.Fprintf(out, "   GET    %s/{id}\n", path)
 	fmt.Fprintf(out, "   PUT    %s/{id}\n", path)
+	fmt.Fprintf(out, "   PATCH  %s/{id}\n", path)
 	fmt.Fprintf(out, "   DELETE %s/{id}\n", path)
 
 	if !opts.dryRun {
-		fmt.Fprintf(out, "\n🧪 Run its tests with: go test ./%s\n", config.PackageName())
-		fmt.Fprintf(out, "💾 Data is stored in memory. Implement %s.Repository to use a database.\n", config.PackageName())
+		pkg := config.PackageName()
+		fmt.Fprintf(out, "\n🚀 The routes are registered in server/routes.go, so they're live as soon as\n")
+		fmt.Fprintf(out, "   you start (or restart) the server: go run .\n")
+		fmt.Fprintf(out, "📮 Try them with %s/requests.http (VS Code REST Client or JetBrains HTTP client)\n", pkg)
+		fmt.Fprintf(out, "🧪 Run its tests with: go test ./%s\n", pkg)
+		fmt.Fprintf(out, "💾 Data is stored in memory. Implement %s.Repository to use a database.\n", pkg)
 	}
 
 	return nil

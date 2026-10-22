@@ -11,6 +11,7 @@ import (
 const (
 	validBody   = `{ {{- range $i, $f := .Fields}}{{if $i}}, {{end}}"{{$f.JSON}}": {{$f.SampleJSON}}{{end -}} }`
 	updatedBody = `{ {{- range $i, $f := .Fields}}{{if $i}}, {{end}}"{{$f.JSON}}": {{$f.UpdatedJSON}}{{end -}} }`
+	patchBody   = `{"{{.First.JSON}}": {{.First.UpdatedJSON}}}`
 )
 
 // newTestMux returns a mux with the {{.Human}} routes backed by an in-memory repository.
@@ -50,14 +51,18 @@ func TestHandlerCRUD(t *testing.T) {
 		t.Errorf("GET %s = %d, want %d", location, rec.Code, http.StatusOK)
 	}
 
-	rec = do(t, mux, http.MethodGet, "{{.Path}}", "")
-	var list []{{.Type}}
-	if err := json.NewDecoder(rec.Body).Decode(&list); err != nil || len(list) != 1 {
-		t.Errorf("GET {{.Path}} = %d %v, want one {{.Human}} (decode error: %v)", rec.Code, list, err)
+	rec = do(t, mux, http.MethodGet, "{{.Path}}?limit=10", "")
+	var page Page
+	if err := json.NewDecoder(rec.Body).Decode(&page); err != nil || len(page.Items) != 1 || page.Total != 1 || page.Limit != 10 {
+		t.Errorf("GET {{.Path}} = %d %+v, want one {{.Human}} with limit 10 (decode error: %v)", rec.Code, page, err)
 	}
 
 	if rec := do(t, mux, http.MethodPut, location, updatedBody); rec.Code != http.StatusOK {
 		t.Errorf("PUT %s = %d, want %d: %s", location, rec.Code, http.StatusOK, rec.Body)
+	}
+
+	if rec := do(t, mux, http.MethodPatch, location, patchBody); rec.Code != http.StatusOK {
+		t.Errorf("PATCH %s = %d, want %d: %s", location, rec.Code, http.StatusOK, rec.Body)
 	}
 
 	if rec := do(t, mux, http.MethodDelete, location, ""); rec.Code != http.StatusNoContent {
@@ -78,11 +83,15 @@ func TestHandlerErrors(t *testing.T) {
 	}{
 		{"malformed JSON", http.MethodPost, "{{.Path}}", `{`, http.StatusBadRequest},
 		{"unknown field", http.MethodPost, "{{.Path}}", `{"not_a_field": 1}`, http.StatusBadRequest},
-{{- if .HasRequired}}
+{{- if .RequiredField}}
 		{"failed validation", http.MethodPost, "{{.Path}}", `{}`, http.StatusUnprocessableEntity},
 {{- end}}
+		{"limit not a number", http.MethodGet, "{{.Path}}?limit=ten", "", http.StatusBadRequest},
+		{"negative offset", http.MethodGet, "{{.Path}}?offset=-1", "", http.StatusBadRequest},
 		{"get missing", http.MethodGet, "{{.Path}}/missing", "", http.StatusNotFound},
 		{"update missing", http.MethodPut, "{{.Path}}/missing", validBody, http.StatusNotFound},
+		{"patch missing", http.MethodPatch, "{{.Path}}/missing", patchBody, http.StatusNotFound},
+		{"patch unknown field", http.MethodPatch, "{{.Path}}/missing", `{"not_a_field": 1}`, http.StatusBadRequest},
 		{"delete missing", http.MethodDelete, "{{.Path}}/missing", "", http.StatusNotFound},
 	}
 

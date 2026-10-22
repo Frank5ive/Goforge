@@ -58,7 +58,6 @@ func init() {
 	}
 	rootCmd.Version = version
 
-	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	// main prints returned errors once, to stderr
 	rootCmd.SilenceErrors = true
 	rootCmd.AddCommand(newGenerateCmd())

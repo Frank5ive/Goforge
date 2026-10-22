@@ -43,7 +43,7 @@ func TestAddResource(t *testing.T) {
 		t.Fatalf("add resource failed: %v\n%s", err, output)
 	}
 
-	for _, want := range []string{"products/product.go", "products/handler_test.go", "server/routes.go", "POST   /products"} {
+	for _, want := range []string{"products/product.go", "products/handler_test.go", "products/requests.http", "server/routes.go", "POST   /products", "PATCH  /products/{id}"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("output does not mention %q:\n%s", want, output)
 		}
@@ -110,5 +110,27 @@ func TestAddResource_AcceptsHyphenatedName(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(project, "blogposts", "blog_post.go")); err != nil {
 		t.Errorf("expected blogposts/blog_post.go: %v", err)
+	}
+}
+
+func TestAddResource_RequestsFileUsesProjectPort(t *testing.T) {
+	dir := t.TempDir()
+	if output, err := runGenerateCmd(t, "--name", "shop", "--port", "3000", "--output", dir, "--yes"); err != nil {
+		t.Fatalf("generate failed: %v\n%s", err, output)
+	}
+	project := filepath.Join(dir, "shop")
+
+	if output, err := runAddResourceCmd(t, "product", "--dir", project); err != nil {
+		t.Fatalf("add resource failed: %v\n%s", err, output)
+	}
+
+	requests, err := os.ReadFile(filepath.Join(project, "products", "requests.http"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"@baseUrl = http://localhost:3000", "PATCH {{baseUrl}}/products/{{id}}", `"name": "example name"`} {
+		if !strings.Contains(string(requests), want) {
+			t.Errorf("requests.http does not contain %q:\n%s", want, requests)
+		}
 	}
 }

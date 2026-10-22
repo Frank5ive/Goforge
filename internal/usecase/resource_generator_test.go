@@ -51,7 +51,7 @@ func TestResourceGenerator_Add(t *testing.T) {
 	}
 
 	pkgDir := filepath.Join("/proj", "blogposts")
-	for _, name := range []string{"blog_post.go", "memory.go", "service.go", "handler.go", "service_test.go", "handler_test.go"} {
+	for _, name := range []string{"blog_post.go", "memory.go", "service.go", "handler.go", "service_test.go", "handler_test.go", "requests.http"} {
 		if _, ok := writer.FilesWritten[filepath.Join(pkgDir, name)]; !ok {
 			t.Errorf("Expected %s to be written", name)
 		}
@@ -201,8 +201,14 @@ func TestNewResourceData(t *testing.T) {
 	if data.Package != "blogposts" || data.Type != "BlogPost" || data.Path != "/blog-posts" || data.Human != "blog post" {
 		t.Errorf("unexpected names: %+v", data)
 	}
-	if !data.HasRequired {
-		t.Error("HasRequired = false, want true")
+	if data.RequiredField != "Title" {
+		t.Errorf("RequiredField = %q, want Title", data.RequiredField)
+	}
+	if data.First.GoName != "Title" {
+		t.Errorf("First = %+v, want the title field", data.First)
+	}
+	if want := "{\n  \"title\": \"example title\",\n  \"image_url\": \"example image url\",\n  \"published_at\": \"2026-01-02T15:04:05Z\"\n}"; data.SampleBody != want {
+		t.Errorf("SampleBody = %q, want %q", data.SampleBody, want)
 	}
 	if !data.Fields[0].Required || data.Fields[1].Required {
 		t.Errorf("Required = %t, %t; want title required and image_url optional", data.Fields[0].Required, data.Fields[1].Required)
@@ -212,5 +218,19 @@ func TestNewResourceData(t *testing.T) {
 	}
 	if f := data.Fields[2]; f.GoType != "time.Time" || !strings.HasPrefix(f.SampleJSON, `"2026-`) {
 		t.Errorf("time field = %+v", f)
+	}
+}
+
+func TestResourceGenerator_ReadDefaultPort(t *testing.T) {
+	writer := newProjectWriter()
+	usecase := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer)
+
+	if got := usecase.readDefaultPort("/proj"); got != fallbackPort {
+		t.Errorf("without config.go: port = %d, want %d", got, fallbackPort)
+	}
+
+	writer.FilesWritten[filepath.Join("/proj", "config", "config.go")] = "const (\n\tdefaultPort            = 3000\n)\n"
+	if got := usecase.readDefaultPort("/proj"); got != 3000 {
+		t.Errorf("with config.go: port = %d, want 3000", got)
 	}
 }
