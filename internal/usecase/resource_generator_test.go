@@ -333,3 +333,21 @@ func TestAddSQL(t *testing.T) {
 		t.Errorf("float SQL type = %q, want double precision", data.Fields[1].SQLType)
 	}
 }
+
+func TestStorage(t *testing.T) {
+	tests := []struct {
+		engine *engine
+		want   string
+	}{
+		{nil, "Data is stored in memory."},
+		{postgresEngine, "Data is stored in PostgreSQL; its table is created by the new migration"},
+		{mysqlEngine, "Data is stored in MySQL"},
+		{sqliteEngine, "Data is stored in SQLite; its table"},
+		{mongoEngine, "Data is stored in MongoDB; its collection is created on the first write."},
+	}
+	for _, tt := range tests {
+		if got := storage(tt.engine); !strings.HasPrefix(got, tt.want) {
+			t.Errorf("storage(%v) = %q, want it to start with %q", tt.engine, got, tt.want)
+		}
+	}
+}

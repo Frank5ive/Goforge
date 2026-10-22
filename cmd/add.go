@@ -122,10 +122,8 @@ func runAddResource(out io.Writer, name string, opts *addResourceOptions) error 
 		fmt.Fprintf(out, "   you start (or restart) the server: go run .\n")
 		fmt.Fprintf(out, "📮 Try them with %s/requests.http (VS Code REST Client or JetBrains HTTP client)\n", pkg)
 		fmt.Fprintf(out, "🧪 Run its tests with: go test ./%s\n", pkg)
-		if storedInPostgres(changes) {
-			fmt.Fprintln(out, "🐘 Data is stored in PostgreSQL; its table is created by the new migration when the server starts.")
-		} else {
-			fmt.Fprintln(out, "💾 Data is stored in memory. Run `goforge add db postgres` to store it in PostgreSQL.")
+		if changes.Storage != "" {
+			fmt.Fprintln(out, "💾 "+changes.Storage)
 		}
 	}
 
@@ -138,15 +136,4 @@ func fieldTypeNames() string {
 		names[i] = string(t)
 	}
 	return strings.Join(names, ", ")
-}
-
-// storedInPostgres reports whether a resource was generated with a PostgreSQL
-// repository, i.e. it came with a migration.
-func storedInPostgres(changes domain.Changes) bool {
-	for _, path := range changes.Created {
-		if strings.HasPrefix(path, "db/migrations/") {
-			return true
-		}
-	}
-	return false
 }

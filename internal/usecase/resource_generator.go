@@ -134,7 +134,7 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Ch
 	if err := cs.apply(nil, nil); err != nil {
 		return domain.Changes{}, domain.NewGenerationError("apply", "the project was left unchanged", err)
 	}
-	return domain.Changes{Created: cs.createdIn(dir), Updated: cs.editedIn(dir)}, nil
+	return domain.Changes{Created: cs.createdIn(dir), Updated: cs.editedIn(dir), Storage: storage(eng)}, nil
 }
 
 // readDefaultPort returns the default port from the project's config/config.go, or
@@ -299,4 +299,17 @@ func prettyBody(fields []resourceField, value func(resourceField) string) string
 		lines[i] = fmt.Sprintf("  %q: %s", f.JSON, value(f))
 	}
 	return "{\n" + strings.Join(lines, ",\n") + "\n}"
+}
+
+// storage describes where a resource generated for eng keeps its data, with nil
+// meaning the in-memory repository.
+func storage(eng *engine) string {
+	switch {
+	case eng == nil:
+		return "Data is stored in memory. Run `goforge add db <postgres|mysql|sqlite|mongo>` to store it in a database."
+	case eng.dialect != nil:
+		return "Data is stored in " + eng.label + "; its table is created by the new migration when the server starts."
+	default:
+		return "Data is stored in " + eng.label + "; its collection is created on the first write."
+	}
 }

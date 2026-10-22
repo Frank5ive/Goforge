@@ -78,6 +78,8 @@ type Changes struct {
 	Updated []string
 	// Notes are follow-up steps the command could not do itself.
 	Notes []string
+	// Storage says where a new resource keeps its data; empty for other commands.
+	Storage string
 }
 
 // DatabaseGenerator defines the contract for adding a database to an existing
