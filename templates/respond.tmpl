@@ -1,0 +1,21 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+)
+
+// writeJSON writes v as a JSON response with the given status code.
+// The body is encoded before any headers are sent, so an encoding failure
+// can still be reported as a 500.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(append(body, '\n'))
+}

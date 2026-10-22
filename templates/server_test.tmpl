@@ -1,0 +1,89 @@
+package server
+
+import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+// testHandler returns the full handler (router and middleware) with logs discarded.
+func testHandler() http.Handler {
+	return newHandler(slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+func TestRoutes(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		want   int
+	}{
+		{"health", http.MethodGet, "/health", http.StatusOK},
+		{"health HEAD", http.MethodHead, "/health", http.StatusOK},
+		{"health wrong method", http.MethodPost, "/health", http.StatusMethodNotAllowed},
+		{"unknown path", http.MethodGet, "/does-not-exist", http.StatusNotFound},
+	}
+
+	handler := testHandler()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, nil))
+
+			if rec.Code != tt.want {
+				t.Errorf("%s %s = %d, want %d", tt.method, tt.path, rec.Code, tt.want)
+			}
+		})
+	}
+}
+
+func TestRequestID(t *testing.T) {
+	handler := testHandler()
+
+	t.Run("generated when missing", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil))
+
+		if id := rec.Header().Get(RequestIDHeader); len(id) != 32 {
+			t.Errorf("expected a generated 32-character request ID, got %q", id)
+		}
+	})
+
+	t.Run("reused when valid", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil)
+		req.Header.Set(RequestIDHeader, "trace-123")
+		handler.ServeHTTP(rec, req)
+
+		if id := rec.Header().Get(RequestIDHeader); id != "trace-123" {
+			t.Errorf("expected incoming request ID to be reused, got %q", id)
+		}
+	})
+
+	t.Run("replaced when invalid", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil)
+		req.Header.Set(RequestIDHeader, "has spaces")
+		handler.ServeHTTP(rec, req)
+
+		if id := rec.Header().Get(RequestIDHeader); id == "has spaces" {
+			t.Error("expected invalid request ID to be replaced")
+		}
+	})
+}
+
+func TestRecovery(t *testing.T) {
+	panicking := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic("boom")
+	})
+	handler := recovery(panicking, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}

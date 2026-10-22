@@ -1,0 +1,42 @@
+APP := {{.AppName}}
+
+.DEFAULT_GOAL := help
+
+.PHONY: help run build test cover lint fmt tidy clean{{if .IncludeDocker}} docker-build docker-run{{end}}
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+
+run: ## Run the server
+	go run .
+
+build: ## Build the binary into bin/
+	go build -trimpath -o bin/$(APP) .
+
+test: ## Run tests
+	go test ./...
+
+cover: ## Run tests and open the coverage report
+	go test -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out
+
+lint: ## Run go vet and golangci-lint (https://golangci-lint.run)
+	go vet ./...
+	golangci-lint run
+
+fmt: ## Format code
+	go fmt ./...
+
+tidy: ## Tidy go.mod and go.sum
+	go mod tidy
+
+clean: ## Remove build output
+	rm -rf bin/ coverage.out
+{{- if .IncludeDocker}}
+
+docker-build: ## Build the Docker image
+	docker build -t $(APP):latest .
+
+docker-run: docker-build ## Run the Docker image on port {{.Port}}
+	docker run --rm -p {{.Port}}:{{.Port}} $(APP):latest
+{{- end}}

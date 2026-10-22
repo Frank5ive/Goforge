@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -56,12 +58,50 @@ func TestServerConfig_Validate(t *testing.T) {
 		{
 			name: "app name with special characters",
 			config: ServerConfig{
-				AppName:   "my-app",
+				AppName:   "my.app",
 				Port:      8080,
 				OutputDir: "/tmp",
 			},
 			wantErr: true,
 			errMsg:  "must start with a lowercase letter",
+		},
+		{
+			name: "app name with spaces",
+			config: ServerConfig{
+				AppName:   "my app",
+				Port:      8080,
+				OutputDir: "/tmp",
+			},
+			wantErr: true,
+			errMsg:  "must start with a lowercase letter",
+		},
+		{
+			name: "app name ending in hyphen",
+			config: ServerConfig{
+				AppName:   "my-app-",
+				Port:      8080,
+				OutputDir: "/tmp",
+			},
+			wantErr: true,
+			errMsg:  "end with a letter or number",
+		},
+		{
+			name: "valid app name with hyphens",
+			config: ServerConfig{
+				AppName:   "user-service",
+				Port:      8080,
+				OutputDir: "/tmp",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid single letter app name",
+			config: ServerConfig{
+				AppName:   "a",
+				Port:      8080,
+				OutputDir: "/tmp",
+			},
+			wantErr: false,
 		},
 		{
 			name: "app name is reserved keyword",
@@ -122,7 +162,7 @@ func TestServerConfig_Validate(t *testing.T) {
 				return
 			}
 			if tt.wantErr && err != nil {
-				if tt.errMsg != "" && !containsString(err.Error(), tt.errMsg) {
+				if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
 					t.Errorf("ServerConfig.Validate() error = %v, expected to contain %v", err.Error(), tt.errMsg)
 				}
 			}
@@ -131,15 +171,51 @@ func TestServerConfig_Validate(t *testing.T) {
 }
 
 func TestServerConfig_GetModuleName(t *testing.T) {
-	config := ServerConfig{
-		AppName: "testapp",
+	tests := []struct {
+		name       string
+		modulePath string
+		want       string
+	}{
+		{"defaults to app name", "", "testapp"},
+		{"uses explicit module path", "github.com/acme/testapp", "github.com/acme/testapp"},
 	}
-	
-	expected := "github.com/yourorg/testapp"
-	got := config.GetModuleName()
-	
-	if got != expected {
-		t.Errorf("GetModuleName() = %v, want %v", got, expected)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := ServerConfig{AppName: "testapp", ModulePath: tt.modulePath}
+
+			if got := config.GetModuleName(); got != tt.want {
+				t.Errorf("GetModuleName() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestServerConfig_ValidateModulePath(t *testing.T) {
+	tests := []struct {
+		modulePath string
+		wantErr    bool
+	}{
+		{"github.com/acme/my-api", false},
+		{"example.com/team/service_v2", false},
+		{"my-api", false},
+		{"github.com/acme/my api", true},
+		{"/github.com/acme", true},
+		{"github.com//acme", true},
+		{"github.com/acme/", true},
+		{"github.com/.hidden", true},
+		{"github.com/acme/api!", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.modulePath, func(t *testing.T) {
+			config := ServerConfig{AppName: "myapp", ModulePath: tt.modulePath, Port: 8080, OutputDir: "."}
+
+			err := config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -148,10 +224,10 @@ func TestServerConfig_GetProjectPath(t *testing.T) {
 		AppName:   "testapp",
 		OutputDir: "/home/user/projects",
 	}
-	
-	expected := "/home/user/projects/testapp"
+
+	expected := filepath.Join("/home/user/projects", "testapp")
 	got := config.GetProjectPath()
-	
+
 	if got != expected {
 		t.Errorf("GetProjectPath() = %v, want %v", got, expected)
 	}
@@ -188,26 +264,11 @@ func TestValidationError_Error(t *testing.T) {
 func TestGenerationError_Error(t *testing.T) {
 	baseErr := NewValidationError("invalid config")
 	err := NewGenerationError("template_rendering", "failed to render template", baseErr)
-	
+
 	expected := "generation error at step [template_rendering]: failed to render template"
 	got := err.Error()
-	
-	if !containsString(got, expected) {
+
+	if !strings.Contains(got, expected) {
 		t.Errorf("Error() = %v, expected to contain %v", got, expected)
 	}
-}
-
-// Helper function
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || 
-		(len(s) > 0 && len(substr) > 0 && indexOf(s, substr) >= 0))
-}
-
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
 }

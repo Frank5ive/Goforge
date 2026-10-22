@@ -1,19 +1,19 @@
 <div align="center">
 
-# ⚒️ GoForge
+<img src="docs/logo.svg" alt="GoForge: a pixel-art Go gopher next to the GOFORGE wordmark, with the tagline 'Forge production-ready Go servers in seconds'" width="100%">
 
-**Forge production-ready Go HTTP servers in seconds**
-
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![CI](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Frank5ive/goforge)](https://github.com/Frank5ive/goforge/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Frank5ive/goforge.svg)](https://pkg.go.dev/github.com/Frank5ive/goforge)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Clean Architecture](https://img.shields.io/badge/Architecture-Clean-brightgreen.svg)](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [Features](#-features) •
 [Installation](#-installation) •
 [Quick Start](#-quick-start) •
 [Documentation](#-documentation) •
-[Architecture](#-architecture) •
+[Architecture](#-goforge-architecture) •
 [Contributing](#-contributing)
 
 </div>
@@ -22,55 +22,59 @@
 
 ## 🎯 What is GoForge?
 
-GoForge is a powerful CLI tool that generates production-ready Go HTTP servers following Clean Architecture principles. Stop copying boilerplate code and start forging quality servers instantly.
+GoForge is a CLI tool that generates production-ready Go HTTP servers using only the standard library: structured logging with `log/slog`, Go 1.22+ routing, graceful shutdown, tests, linting, CI, and a hardened Dockerfile. Stop copying boilerplate code and start forging quality servers instantly.
 
 ### Why GoForge?
 
-✅ **Clean Architecture** - Domain-driven design out of the box  
-✅ **Production Ready** - Graceful shutdown, health checks, middleware  
-✅ **Zero Configuration** - Works immediately after installation  
-✅ **Fully Tested** - 80%+ test coverage on generated code  
-✅ **Docker Support** - Optional Dockerfile generation  
-✅ **Structured Logging** - Built-in logging capabilities  
+✅ **Production Ready** - Graceful shutdown, request IDs, panic recovery, and timeouts  
+✅ **Zero Dependencies** - Generated servers use only the Go standard library  
+✅ **Tested and Linted** - Generated projects ship with tests and pass their own golangci-lint config  
+✅ **Verified Output** - Every option combination is generated, linted, tested, built, and booted by GoForge's test suite  
+✅ **Ready for CI/CD** - Optional GitHub Actions workflow and non-root Docker image  
 
 ---
 
 ## 🚀 Features
 
 ### Core Features
-- 🏗️ **Clean Architecture** - Proper separation of concerns (Domain, Usecase, Infrastructure)
-- 🔌 **Health Endpoint** - Built-in `/health` endpoint with JSON response
-- 🛑 **Graceful Shutdown** - Proper signal handling and connection draining
-- ⚡ **Fast Generation** - Creates projects in under 1 second
-- 📦 **Single Binary** - No external dependencies, templates embedded
+- 🔌 **Health Endpoint** - `GET /health` with a JSON response
+- 🛑 **Graceful Shutdown** - Handles SIGINT/SIGTERM and drains in-flight requests
+- 🧭 **Modern Routing** - Go 1.22+ `http.ServeMux` patterns like `GET /users/{id}`, with automatic 405s
+- 🪪 **Request IDs** - Every response carries an `X-Request-ID`; incoming IDs are reused for tracing
+- 🧯 **Panic Recovery** - Panics become 500s and are logged with a stack trace
+- ⏱️ **Timeouts** - Read, write, idle, and read-header timeouts
+- ⚙️ **12-Factor Config** - `PORT` (and `LOG_LEVEL`/`LOG_FORMAT` with logging) from the environment
+- 🧪 **Tests and Tooling** - Handler and middleware tests, a Makefile, and a golangci-lint config
 
 ### Optional Features
-- 📝 **Structured Logging** - Request/response logging with timestamps
-- 🐳 **Docker Support** - Multi-stage Dockerfile for production
-- 📖 **Documentation** - Auto-generated README with usage examples
-- 🔧 **Middleware** - Panic recovery and request logging
+- 📝 **Structured Logging** - `log/slog` in text or JSON, with one log line per request
+- 🐳 **Docker** - Multi-stage build, non-root user, health check, and `.dockerignore`
+- 🤖 **GitHub Actions CI** - Vet, race-enabled tests, lint, and Docker build
+- 📖 **README** - Documentation for the generated project
 
 ---
 
 ## 📦 Installation
 
-### Option 1: From Source
+### Option 1: Go Install
+
+Requires Go 1.24 or newer.
 
 ```bash
 go install github.com/Frank5ive/goforge@latest
 ```
 
-### Option 2: Download Binary
+### Option 2: Download a Binary
 
-Download the latest release from the [releases page](https://github.com/Frank5ive/goforge/releases).
+Prebuilt binaries for Linux, macOS, and Windows (amd64 and arm64) are on the
+[releases page](https://github.com/Frank5ive/goforge/releases), with a `checksums.txt` to verify them.
 
 ```bash
-# Linux/macOS
-chmod +x goforge
+# Linux/macOS: extract and move onto your PATH
+tar -xzf goforge_*_linux_amd64.tar.gz
 sudo mv goforge /usr/local/bin/
 
-# Windows
-# Add goforge.exe to your PATH
+# Windows: extract the .zip and add goforge.exe to your PATH
 ```
 
 ### Option 3: Build from Source
@@ -88,19 +92,21 @@ go build -o goforge .
 ### Generate Your First Server
 
 ```bash
-# Interactive mode (recommended for first time)
-goforge generate --name=my-api --port=8080
+# Interactive mode: prompts for the module path and features
+goforge generate --name=my-api
 
-# Non-interactive mode (perfect for CI/CD)
-goforge generate --name=my-api --port=8080 --yes
+# Non-interactive mode (scripts and CI)
+goforge generate --name=my-api --module=github.com/you/my-api --yes
+
+# Preview the files without writing anything
+goforge generate --name=my-api --dry-run --yes
 ```
 
 ### Run Your Server
 
 ```bash
 cd my-api
-go mod download
-go run main.go
+go run .
 ```
 
 Your server is now running at `http://localhost:8080` 🎉
@@ -134,18 +140,26 @@ goforge generate [flags]
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--name` | `-n` | `myapp` | Name of the application |
-| `--port` | `-p` | `8080` | Port number for the server |
-| `--output` | `-o` | `.` | Output directory |
-| `--yes` | | `false` | Skip interactive prompts |
+| `--name` | `-n` | `myapp` | Name of the application (also the project directory) |
+| `--module` | `-m` | app name | Go module path, e.g. `github.com/acme/my-api` |
+| `--port` | `-p` | `8080` | Default port (the `PORT` env var overrides it at runtime) |
+| `--output` | `-o` | `.` | Directory to create the project in |
+| `--logger` | | `true` | Include request logging |
+| `--docker` | | `true` | Include a Dockerfile |
+| `--readme` | | `true` | Include a README.md |
+| `--yes` | `-y` | `false` | Skip prompts and use flag values and defaults |
+| `--dry-run` | | `false` | List the files that would be created without writing anything |
+| `--git` | | `false` | Run `git init` in the new project |
 
 #### Interactive Prompts
 
-When running without `--yes`, GoForge will ask:
+When running in a terminal without `--yes`, GoForge asks for anything not already set by flag:
 
-1. **Include structured logger?** - Adds request/response logging
-2. **Generate Dockerfile?** - Creates production-ready Docker image
-3. **Generate README.md?** - Auto-generates documentation
+1. **Go module path** - Leave empty to use the app name
+2. **Features** - Toggle request logging, Dockerfile, and README
+
+Prompts need a terminal. In scripts and CI, pass `--yes` and set options with flags.
+If generation fails partway, GoForge removes the partially created project directory.
 
 ### Examples
 
@@ -155,17 +169,16 @@ When running without `--yes`, GoForge will ask:
 goforge generate --name=hello-api --port=3000
 ```
 
-#### Production Server with All Features
+#### Minimal Server Without Docker or Logging
 
 ```bash
-goforge generate --name=production-api --port=8080
-# Answer "Yes" to all prompts
+goforge generate --name=worker --logger=false --docker=false --yes
 ```
 
 #### CI/CD Ready
 
 ```bash
-goforge generate --name=ci-api --port=8080 --yes --output=./services
+goforge generate --name=ci-api --module=github.com/acme/ci-api --output=./services --yes --git
 ```
 
 ---
@@ -174,25 +187,32 @@ goforge generate --name=ci-api --port=8080 --yes --output=./services
 
 ```
 my-api/
-├── main.go                 # Application entry point
-├── go.mod                  # Go module file
-├── .gitignore             # Git ignore patterns
-├── Dockerfile             # Docker configuration (optional)
-├── README.md              # Project documentation (optional)
-├── handlers/              # HTTP request handlers
-│   └── health.go         # Health check endpoint
-├── server/                # Server configuration
-│   ├── server.go         # HTTP server with graceful shutdown
-│   └── middleware.go     # HTTP middleware
-└── logger/                # Logging utilities (optional)
-    └── logger.go         # Structured logger
+├── main.go                    # Entry point: config, startup, graceful shutdown
+├── server/
+│   ├── server.go              # HTTP server and middleware chain
+│   ├── routes.go              # Route registration (add endpoints here)
+│   ├── middleware.go          # Request ID, panic recovery, request logging
+│   └── server_test.go
+├── handlers/
+│   ├── health.go              # GET /health
+│   ├── respond.go             # JSON response helper
+│   └── health_test.go
+├── logger/                    # slog setup from LOG_LEVEL / LOG_FORMAT (optional)
+├── Makefile                   # run, build, test, cover, lint, docker-build, ...
+├── .golangci.yml              # golangci-lint v2 config
+├── .github/workflows/ci.yml   # GitHub Actions CI (optional)
+├── Dockerfile                 # Multi-stage, non-root (optional)
+├── .dockerignore              # (optional)
+├── README.md                  # (optional)
+├── .gitignore
+└── go.mod
 ```
 
 ---
 
-## 🎨 Architecture
+## 🎨 GoForge Architecture
 
-GoForge generates servers following **Clean Architecture** principles:
+GoForge itself is built following **Clean Architecture** principles:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -262,19 +282,16 @@ curl http://localhost:8080/health
 
 ## 🧪 Testing
 
-The generated server includes a complete testing setup:
+GoForge's test suite generates a project for every combination of options using the
+real embedded templates, then checks that each one is gofmt-clean, passes `go vet`,
+compiles, serves `/health`, and shuts down gracefully on `SIGTERM`.
 
 ```bash
-cd my-api
-
-# Run all tests
+# Full suite, including the end-to-end generation test
 go test ./...
 
-# Run with coverage
-go test -cover ./...
-
-# Verbose output
-go test -v ./...
+# Skip the end-to-end test for a quick run
+go test -short ./...
 ```
 
 ---
@@ -283,9 +300,9 @@ go test -v ./...
 
 ### Project Stack
 
-- **Language**: Go 1.21+
+- **Language**: Go 1.24+
 - **CLI Framework**: Cobra
-- **Interactive Prompts**: Survey
+- **Interactive Prompts**: Huh
 - **Architecture**: Clean Architecture
 - **Testing**: Go testing package
 - **Template Engine**: Go text/template
@@ -323,6 +340,8 @@ goforge/
 ├── templates/             # Go server templates
 └── main.go               # Entry point
 ```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how generation works and how to add templates or options.
 
 ---
 
@@ -372,7 +391,8 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 - Inspired by [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) by Uncle Bob
 - Built with [Cobra](https://github.com/spf13/cobra) CLI framework
-- Uses [Survey](https://github.com/AlecAivazis/survey) for interactive prompts
+- Uses [Huh](https://github.com/charmbracelet/huh) for interactive prompts
+- The Go gopher was designed by [Renée French](https://reneefrench.blogspot.com/) and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The pixel-art gopher in GoForge's terminal banner is adapted from it.
 
 ---
 
@@ -380,8 +400,6 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 - 🐛 **Issues**: [GitHub Issues](https://github.com/Frank5ive/goforge/issues)
 - 💬 **Discussions**: [GitHub Discussions](https://github.com/Frank5ive/goforge/discussions)
-- 📧 **Email**: [your-email@example.com](mailto:your-email@example.com)
-- 🐦 **Twitter**: [@yourhandle](https://twitter.com/yourhandle)
 
 ---
 
@@ -395,20 +413,19 @@ It helps others discover the project and motivates continued development.
 
 ## 🗺️ Roadmap
 
-### Version 1.0 (Current)
+### v0.1 (Current)
 - ✅ Basic server generation
-- ✅ Clean Architecture
 - ✅ Health endpoints
 - ✅ Docker support
 - ✅ Logging
 
-### Version 1.1 (Planned)
+### Next
 - [ ] Database integration (PostgreSQL, MySQL)
 - [ ] Authentication middleware (JWT)
 - [ ] API documentation generation (Swagger/OpenAPI)
 - [ ] Configuration file support (YAML/TOML)
 
-### Version 2.0 (Future)
+### Future
 - [ ] gRPC server support
 - [ ] GraphQL server support
 - [ ] Kubernetes manifests
@@ -421,6 +438,6 @@ It helps others discover the project and motivates continued development.
 
 **Built with ❤️ by Frank Gondwe**
 
-[⬆ Back to Top](#-goforge)
+[⬆ Back to Top](#top)
 
 </div>

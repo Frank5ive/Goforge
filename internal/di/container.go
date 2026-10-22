@@ -1,8 +1,8 @@
 package di
 
 import (
-	"embed"
-	"log"
+	"fmt"
+	"io/fs"
 
 	"github.com/Frank5ive/goforge/internal/domain"
 	"github.com/Frank5ive/goforge/internal/infrastructure/filesystem"
@@ -10,41 +10,34 @@ import (
 	"github.com/Frank5ive/goforge/internal/usecase"
 )
 
+// Options configures how the container is built.
+type Options struct {
+	// DryRun makes generation record the files it would write without writing them.
+	DryRun bool
+}
+
 // Container holds the application's dependencies.
 type Container struct {
 	ServerGeneratorUsecase domain.ServerGenerator
+
+	// Files records every file written by ServerGeneratorUsecase
+	// (or that would be written, in dry-run mode).
+	Files *filesystem.RecordingWriter
 }
 
 // BuildContainer creates and wires the application's dependencies.
-func BuildContainer(templateDir string) *Container {
-	// Instantiate infrastructure components
-	fileWriter := filesystem.NewFileSystemWriter()
-	templateRenderer, err := template.NewGoTemplateRenderer(templateDir)
+// templates must contain the *.tmpl files at its root, e.g. os.DirFS(dir)
+// or fs.Sub(embedded, "templates").
+func BuildContainer(templates fs.FS, opts Options) (*Container, error) {
+	templateRenderer, err := template.NewGoTemplateRenderer(templates)
 	if err != nil {
-		log.Fatalf("failed to create template renderer: %v", err)
+		return nil, fmt.Errorf("failed to create template renderer: %w", err)
 	}
 
-	// Instantiate usecase and inject dependencies
-	serverGeneratorUsecase := usecase.NewServerGeneratorUsecase(templateRenderer, fileWriter)
+	files := filesystem.NewRecordingWriter(filesystem.NewFileSystemWriter(), opts.DryRun)
 
 	return &Container{
-		ServerGeneratorUsecase: serverGeneratorUsecase,
-	}
-}
-
-// BuildContainerWithEmbed creates and wires dependencies using embedded templates.
-func BuildContainerWithEmbed(embeddedFS embed.FS, subdirectory string) *Container {
-	// Instantiate infrastructure components
-	fileWriter := filesystem.NewFileSystemWriter()
-	templateRenderer, err := template.NewGoTemplateRendererWithEmbed(embeddedFS, subdirectory)
-	if err != nil {
-		log.Fatalf("failed to create template renderer with embedded templates: %v", err)
-	}
-
-	// Instantiate usecase and inject dependencies
-	serverGeneratorUsecase := usecase.NewServerGeneratorUsecase(templateRenderer, fileWriter)
-
-	return &Container{
-		ServerGeneratorUsecase: serverGeneratorUsecase,
-	}
+		ServerGeneratorUsecase: usecase.NewServerGeneratorUsecase(templateRenderer, files),
+		Files:                  files,
+	}, nil
 }

@@ -1,7 +1,10 @@
 package usecase
 
 import (
+	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Frank5ive/goforge/internal/domain"
@@ -29,11 +32,13 @@ func (m *MockTemplateRenderer) Render(templateName string, data interface{}) (st
 }
 
 type MockFileWriter struct {
-	WriteFileFunc      func(path string, content string) error
+	WriteFileFunc       func(path string, content string) error
 	CreateDirectoryFunc func(path string) error
-	FileExistsFunc     func(path string) bool
-	FilesWritten       map[string]string
-	DirsCreated        []string
+	FileExistsFunc      func(path string) bool
+	RemoveAllFunc       func(path string) error
+	FilesWritten        map[string]string
+	DirsCreated         []string
+	PathsRemoved        []string
 }
 
 func NewMockFileWriter() *MockFileWriter {
@@ -66,22 +71,52 @@ func (m *MockFileWriter) FileExists(path string) bool {
 	return false
 }
 
+func (m *MockFileWriter) RemoveAll(path string) error {
+	m.PathsRemoved = append(m.PathsRemoved, path)
+	if m.RemoveAllFunc != nil {
+		return m.RemoveAllFunc(path)
+	}
+	return nil
+}
+
+func testConfig() *domain.ServerConfig {
+	return &domain.ServerConfig{
+		AppName:   "testapp",
+		Port:      8080,
+		OutputDir: "/tmp",
+	}
+}
+
+// projectFilePath returns the absolute path of a generated file in the test project.
+func projectFilePath(relative string) string {
+	return filepath.Join("/tmp", "testapp", filepath.FromSlash(relative))
+}
+
+// assertGenerationStep checks that err is a GenerationError at the given step.
+func assertGenerationStep(t *testing.T, err error, step string) *domain.GenerationError {
+	t.Helper()
+
+	var genErr *domain.GenerationError
+	if !errors.As(err, &genErr) {
+		t.Fatalf("Expected GenerationError, got %T: %v", err, err)
+	}
+	if genErr.Step != step {
+		t.Errorf("Expected error step '%s', got '%s'", step, genErr.Step)
+	}
+	return genErr
+}
+
 // Tests
 
 func TestNewServerGeneratorUsecase(t *testing.T) {
-	renderer := NewMockTemplateRenderer()
-	writer := NewMockFileWriter()
-
-	usecase := NewServerGeneratorUsecase(renderer, writer)
+	usecase := NewServerGeneratorUsecase(NewMockTemplateRenderer(), NewMockFileWriter())
 
 	if usecase == nil {
 		t.Fatal("Expected usecase to be created, got nil")
 	}
-
 	if usecase.templateRenderer == nil {
 		t.Error("Expected templateRenderer to be set")
 	}
-
 	if usecase.fileWriter == nil {
 		t.Error("Expected fileWriter to be set")
 	}
@@ -92,282 +127,206 @@ func TestServerGeneratorUsecase_Generate_Success(t *testing.T) {
 	writer := NewMockFileWriter()
 	usecase := NewServerGeneratorUsecase(renderer, writer)
 
-	config := &domain.ServerConfig{
-		AppName:       "testapp",
-		Port:          8080,
-		OutputDir:     "/tmp",
-		IncludeLogger: true,
-		IncludeDocker: true,
-		IncludeReadme: true,
-	}
+	config := testConfig()
+	config.IncludeLogger = true
+	config.IncludeDocker = true
+	config.IncludeReadme = true
+	config.IncludeCI = true
 
-	err := usecase.Generate(config)
-
-	if err != nil {
+	if err := usecase.Generate(config); err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	// Verify directories were created
-	expectedDirs := 4 // projectPath, handlers, server, logger
-	if len(writer.DirsCreated) != expectedDirs {
-		t.Errorf("Expected %d directories to be created, got %d", expectedDirs, len(writer.DirsCreated))
+	if len(writer.DirsCreated) != 1 || writer.DirsCreated[0] != projectFilePath("") {
+		t.Errorf("Expected only the project directory to be created, got %v", writer.DirsCreated)
 	}
 
-	// Verify files were written
-	expectedFiles := []string{"main.go", "server.go", "health.go", "go.mod", "logger.go", 
-		"middleware.go", "Dockerfile", "README.md", ".gitignore"}
-	
-	if len(writer.FilesWritten) != len(expectedFiles) {
-		t.Errorf("Expected %d files to be written, got %d", len(expectedFiles), len(writer.FilesWritten))
+	if len(writer.FilesWritten) != len(projectFiles) {
+		t.Errorf("Expected %d files to be written, got %d", len(projectFiles), len(writer.FilesWritten))
 	}
 
-	// Verify templates were rendered
-	expectedTemplates := []string{"main.tmpl", "server.tmpl", "handler.tmpl", "gomod.tmpl",
-		"logger.tmpl", "middleware.tmpl", "dockerfile.tmpl", "readme.tmpl", "gitignore.tmpl"}
-	
-	for _, tmpl := range expectedTemplates {
-		if renderer.CallCount[tmpl] == 0 {
-			t.Errorf("Expected template %s to be rendered", tmpl)
+	for _, file := range projectFiles {
+		if _, ok := writer.FilesWritten[projectFilePath(file.path)]; !ok {
+			t.Errorf("Expected %s to be written", file.path)
 		}
+		if renderer.CallCount[file.template] != 1 {
+			t.Errorf("Expected template %s to be rendered once, got %d", file.template, renderer.CallCount[file.template])
+		}
+	}
+
+	if len(writer.PathsRemoved) != 0 {
+		t.Errorf("Expected no cleanup on success, got %v", writer.PathsRemoved)
 	}
 }
 
 func TestServerGeneratorUsecase_Generate_WithoutOptionalFeatures(t *testing.T) {
-	renderer := NewMockTemplateRenderer()
 	writer := NewMockFileWriter()
-	usecase := NewServerGeneratorUsecase(renderer, writer)
+	usecase := NewServerGeneratorUsecase(NewMockTemplateRenderer(), writer)
 
-	config := &domain.ServerConfig{
-		AppName:       "testapp",
-		Port:          8080,
-		OutputDir:     "/tmp",
-		IncludeLogger: false,
-		IncludeDocker: false,
-		IncludeReadme: false,
-	}
-
-	err := usecase.Generate(config)
-
-	if err != nil {
+	if err := usecase.Generate(testConfig()); err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	// Verify logger directory was not created
-	expectedDirs := 3 // projectPath, handlers, server (no logger)
-	if len(writer.DirsCreated) != expectedDirs {
-		t.Errorf("Expected %d directories to be created, got %d", expectedDirs, len(writer.DirsCreated))
+	for _, optional := range []string{"logger/logger.go", "logger/logger_test.go", "Dockerfile", ".dockerignore", "README.md", ".github/workflows/ci.yml"} {
+		if _, exists := writer.FilesWritten[projectFilePath(optional)]; exists {
+			t.Errorf("%s should not be generated when its option is disabled", optional)
+		}
 	}
 
-	// Verify optional files were not written
-	if _, exists := writer.FilesWritten["/tmp/testapp/logger/logger.go"]; exists {
-		t.Error("Logger should not be generated when IncludeLogger is false")
-	}
-
-	if _, exists := writer.FilesWritten["/tmp/testapp/Dockerfile"]; exists {
-		t.Error("Dockerfile should not be generated when IncludeDocker is false")
-	}
-
-	if _, exists := writer.FilesWritten["/tmp/testapp/README.md"]; exists {
-		t.Error("README should not be generated when IncludeReadme is false")
+	for _, required := range []string{"main.go", "go.mod", "server/server.go", "handlers/health.go", ".gitignore"} {
+		if _, exists := writer.FilesWritten[projectFilePath(required)]; !exists {
+			t.Errorf("Expected %s to be generated", required)
+		}
 	}
 }
 
 func TestServerGeneratorUsecase_Generate_InvalidConfig(t *testing.T) {
-	renderer := NewMockTemplateRenderer()
-	writer := NewMockFileWriter()
-	usecase := NewServerGeneratorUsecase(renderer, writer)
+	usecase := NewServerGeneratorUsecase(NewMockTemplateRenderer(), NewMockFileWriter())
 
-	config := &domain.ServerConfig{
-		AppName:   "", // Invalid: empty name
-		Port:      8080,
-		OutputDir: "/tmp",
-	}
+	config := testConfig()
+	config.AppName = "" // Invalid: empty name
 
 	err := usecase.Generate(config)
-
 	if err == nil {
 		t.Fatal("Expected validation error, got nil")
 	}
 
-	// Verify it's a generation error with validation step
-	genErr, ok := err.(*domain.GenerationError)
-	if !ok {
-		t.Fatalf("Expected GenerationError, got %T", err)
-	}
-
-	if genErr.Step != "validation" {
-		t.Errorf("Expected error step 'validation', got '%s'", genErr.Step)
-	}
+	assertGenerationStep(t, err, "validation")
 }
 
 func TestServerGeneratorUsecase_Generate_ProjectExists(t *testing.T) {
-	renderer := NewMockTemplateRenderer()
 	writer := NewMockFileWriter()
-	
-	// Mock FileExists to return true
-	writer.FileExistsFunc = func(path string) bool {
-		return true
-	}
+	writer.FileExistsFunc = func(path string) bool { return true }
+	usecase := NewServerGeneratorUsecase(NewMockTemplateRenderer(), writer)
 
-	usecase := NewServerGeneratorUsecase(renderer, writer)
-
-	config := &domain.ServerConfig{
-		AppName:   "testapp",
-		Port:      8080,
-		OutputDir: "/tmp",
-	}
-
-	err := usecase.Generate(config)
-
+	err := usecase.Generate(testConfig())
 	if err == nil {
 		t.Fatal("Expected error when project exists, got nil")
 	}
 
-	genErr, ok := err.(*domain.GenerationError)
-	if !ok {
-		t.Fatalf("Expected GenerationError, got %T", err)
-	}
+	assertGenerationStep(t, err, "directory_check")
 
-	if genErr.Step != "directory_check" {
-		t.Errorf("Expected error step 'directory_check', got '%s'", genErr.Step)
+	if len(writer.PathsRemoved) != 0 {
+		t.Errorf("Must never remove a directory that already existed, removed %v", writer.PathsRemoved)
 	}
 }
 
 func TestServerGeneratorUsecase_Generate_TemplateRenderError(t *testing.T) {
 	renderer := NewMockTemplateRenderer()
-	writer := NewMockFileWriter()
-
-	// Mock template render to fail
 	renderer.RenderFunc = func(templateName string, data interface{}) (string, error) {
 		return "", fmt.Errorf("template not found")
 	}
-
+	writer := NewMockFileWriter()
 	usecase := NewServerGeneratorUsecase(renderer, writer)
 
-	config := &domain.ServerConfig{
-		AppName:   "testapp",
-		Port:      8080,
-		OutputDir: "/tmp",
-	}
-
-	err := usecase.Generate(config)
-
+	err := usecase.Generate(testConfig())
 	if err == nil {
 		t.Fatal("Expected template render error, got nil")
 	}
 
-	genErr, ok := err.(*domain.GenerationError)
-	if !ok {
-		t.Fatalf("Expected GenerationError, got %T", err)
-	}
-
-	if genErr.Step != "generate_main" {
-		t.Errorf("Expected error at 'generate_main', got '%s'", genErr.Step)
+	genErr := assertGenerationStep(t, err, "generate_files")
+	if !strings.Contains(genErr.Message, "main.go") {
+		t.Errorf("Expected error to name the failing file, got: %s", genErr.Message)
 	}
 }
 
-func TestServerGeneratorUsecase_Generate_FileWriteError(t *testing.T) {
+func TestServerGeneratorUsecase_Generate_CleansUpOnFailure(t *testing.T) {
 	renderer := NewMockTemplateRenderer()
-	writer := NewMockFileWriter()
-
-	// Mock file write to fail
-	writer.WriteFileFunc = func(path string, content string) error {
-		return fmt.Errorf("permission denied")
+	renderer.RenderFunc = func(templateName string, data interface{}) (string, error) {
+		if templateName == "handler.tmpl" {
+			return "", fmt.Errorf("boom")
+		}
+		return "// ok", nil
 	}
-
+	writer := NewMockFileWriter()
 	usecase := NewServerGeneratorUsecase(renderer, writer)
 
-	config := &domain.ServerConfig{
-		AppName:   "testapp",
-		Port:      8080,
-		OutputDir: "/tmp",
+	if err := usecase.Generate(testConfig()); err == nil {
+		t.Fatal("Expected error, got nil")
 	}
 
-	err := usecase.Generate(config)
+	if len(writer.PathsRemoved) != 1 || writer.PathsRemoved[0] != projectFilePath("") {
+		t.Errorf("Expected the project directory to be removed, got %v", writer.PathsRemoved)
+	}
+}
 
+func TestServerGeneratorUsecase_Generate_ReportsCleanupFailure(t *testing.T) {
+	writer := NewMockFileWriter()
+	writer.WriteFileFunc = func(path string, content string) error {
+		return fmt.Errorf("disk full")
+	}
+	writer.RemoveAllFunc = func(path string) error {
+		return fmt.Errorf("permission denied")
+	}
+	usecase := NewServerGeneratorUsecase(NewMockTemplateRenderer(), writer)
+
+	err := usecase.Generate(testConfig())
 	if err == nil {
-		t.Fatal("Expected file write error, got nil")
+		t.Fatal("Expected error, got nil")
 	}
 
-	_, ok := err.(*domain.GenerationError)
-	if !ok {
-		t.Fatalf("Expected GenerationError, got %T", err)
+	if !strings.Contains(err.Error(), "cleanup") || !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("Expected cleanup failure in error, got: %v", err)
+	}
+}
+
+func TestServerGeneratorUsecase_Generate_InvalidGoOutput(t *testing.T) {
+	renderer := NewMockTemplateRenderer()
+	// Mock template render to produce Go that does not parse
+	renderer.RenderFunc = func(templateName string, data interface{}) (string, error) {
+		return "package main\nfunc main() {", nil
+	}
+	writer := NewMockFileWriter()
+	usecase := NewServerGeneratorUsecase(renderer, writer)
+
+	err := usecase.Generate(testConfig())
+	if err == nil {
+		t.Fatal("Expected error for invalid Go output, got nil")
+	}
+
+	genErr := assertGenerationStep(t, err, "generate_files")
+	if !strings.Contains(genErr.Error(), "not valid Go") {
+		t.Errorf("Expected 'not valid Go' in error, got: %v", genErr)
+	}
+
+	if len(writer.FilesWritten) != 0 {
+		t.Errorf("Expected no files to be written, got %d", len(writer.FilesWritten))
+	}
+}
+
+func TestServerGeneratorUsecase_Generate_FormatsGoOutput(t *testing.T) {
+	renderer := NewMockTemplateRenderer()
+	renderer.RenderFunc = func(templateName string, data interface{}) (string, error) {
+		return "package main\nfunc   main( ) {\n}\n", nil
+	}
+	writer := NewMockFileWriter()
+	usecase := NewServerGeneratorUsecase(renderer, writer)
+
+	if err := usecase.Generate(testConfig()); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if got := writer.FilesWritten[projectFilePath("main.go")]; got != "package main\n\nfunc main() {\n}\n" {
+		t.Errorf("Expected gofmt-formatted main.go, got %q", got)
+	}
+
+	// Non-Go files are written exactly as rendered
+	if got := writer.FilesWritten[projectFilePath("go.mod")]; got != "package main\nfunc   main( ) {\n}\n" {
+		t.Errorf("Expected go.mod to be written unchanged, got %q", got)
 	}
 }
 
 func TestServerGeneratorUsecase_Generate_DirectoryCreationError(t *testing.T) {
-	renderer := NewMockTemplateRenderer()
 	writer := NewMockFileWriter()
-
-	// Mock directory creation to fail
 	writer.CreateDirectoryFunc = func(path string) error {
 		return fmt.Errorf("permission denied")
 	}
+	usecase := NewServerGeneratorUsecase(NewMockTemplateRenderer(), writer)
 
-	usecase := NewServerGeneratorUsecase(renderer, writer)
-
-	config := &domain.ServerConfig{
-		AppName:   "testapp",
-		Port:      8080,
-		OutputDir: "/tmp",
-	}
-
-	err := usecase.Generate(config)
-
+	err := usecase.Generate(testConfig())
 	if err == nil {
 		t.Fatal("Expected directory creation error, got nil")
 	}
 
-	genErr, ok := err.(*domain.GenerationError)
-	if !ok {
-		t.Fatalf("Expected GenerationError, got %T", err)
-	}
-
-	if genErr.Step != "create_structure" {
-		t.Errorf("Expected error step 'create_structure', got '%s'", genErr.Step)
-	}
-}
-
-func TestServerGeneratorUsecase_CreateProjectStructure(t *testing.T) {
-	renderer := NewMockTemplateRenderer()
-	writer := NewMockFileWriter()
-	usecase := NewServerGeneratorUsecase(renderer, writer)
-
-	config := &domain.ServerConfig{
-		AppName:       "testapp",
-		Port:          8080,
-		OutputDir:     "/tmp",
-		IncludeLogger: true,
-	}
-
-	err := usecase.createProjectStructure(config)
-
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	// Verify correct directories were created
-	expectedDirs := []string{
-		"/tmp/testapp",
-		"/tmp/testapp/handlers",
-		"/tmp/testapp/server",
-		"/tmp/testapp/logger",
-	}
-
-	if len(writer.DirsCreated) != len(expectedDirs) {
-		t.Errorf("Expected %d directories, got %d", len(expectedDirs), len(writer.DirsCreated))
-	}
-
-	for _, expectedDir := range expectedDirs {
-		found := false
-		for _, createdDir := range writer.DirsCreated {
-			if createdDir == expectedDir {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("Expected directory %s to be created", expectedDir)
-		}
-	}
+	assertGenerationStep(t, err, "create_structure")
 }

@@ -1,0 +1,47 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestHealth(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil)
+
+	Health("{{.AppName}}").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+
+	var body HealthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if body.Status != "healthy" {
+		t.Errorf("status = %q, want healthy", body.Status)
+	}
+	if body.Service != "{{.AppName}}" {
+		t.Errorf("service = %q, want {{.AppName}}", body.Service)
+	}
+	if body.Timestamp.IsZero() {
+		t.Error("timestamp is not set")
+	}
+}
+
+func TestWriteJSON_EncodingFailure(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	// Channels cannot be encoded as JSON
+	writeJSON(rec, http.StatusOK, make(chan int))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}

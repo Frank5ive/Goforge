@@ -36,15 +36,13 @@ goforge --version
 
 ```
 my-api/
-├── main.go              # Entry point
-├── go.mod               # Dependencies
-├── handlers/
-│   └── health.go       # Health endpoint
-├── server/
-│   ├── server.go       # HTTP server
-│   └── middleware.go   # Middleware
-├── logger/             # Optional
-│   └── logger.go
+├── main.go             # Entry point
+├── go.mod
+├── Makefile            # make run / test / lint / build
+├── server/             # Server, routes, middleware, tests
+├── handlers/           # Handlers, JSON helper, tests
+├── logger/             # Optional: slog setup
+├── .github/workflows/  # Optional: CI
 ├── Dockerfile          # Optional
 └── README.md           # Optional
 ```
@@ -53,11 +51,13 @@ my-api/
 
 ```bash
 cd my-api
-go mod download
-go run main.go
+make run            # or: go run .
 
 # In another terminal
 curl http://localhost:8080/health
+
+make test           # run the generated tests
+make help           # list all commands
 ```
 
 ## 🔧 Development
@@ -88,16 +88,18 @@ go vet ./...
 
 ## 🎯 Features Generated
 
-- ✅ Clean Architecture
-- ✅ Health endpoint (`/health`)
+- ✅ Health endpoint (`GET /health`)
 - ✅ Graceful shutdown
-- ✅ Request logging (optional)
-- ✅ Panic recovery middleware
-- ✅ Configurable timeouts
-- ✅ Docker support (optional)
+- ✅ Go 1.22+ routing patterns with automatic 405s
+- ✅ Request IDs and panic recovery middleware
+- ✅ `PORT` environment variable override
+- ✅ Tests, Makefile, and golangci-lint config
+- ✅ Structured `log/slog` logging (optional)
+- ✅ Non-root Docker image (optional)
+- ✅ GitHub Actions CI (optional)
 - ✅ README with usage (optional)
 
-## 🏗️ Architecture Layers
+## 🏗️ GoForge Architecture Layers
 
 1. **Domain** - Business entities & interfaces
 2. **Usecase** - Application logic

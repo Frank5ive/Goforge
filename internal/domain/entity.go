@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -9,12 +10,16 @@ import (
 // ServerConfig represents the configuration for a generated server project.
 // It encapsulates all user preferences and settings for server generation.
 type ServerConfig struct {
-	AppName       string
+	AppName string
+	// ModulePath is the Go module path (e.g. "github.com/acme/my-api").
+	// When empty, AppName is used as the module path.
+	ModulePath    string
 	Port          int
 	OutputDir     string
 	IncludeLogger bool
 	IncludeDocker bool
 	IncludeReadme bool
+	IncludeCI     bool
 }
 
 // Validate performs business rule validation on the ServerConfig.
@@ -23,34 +28,39 @@ func (c *ServerConfig) Validate() error {
 	if err := c.validateAppName(); err != nil {
 		return err
 	}
-	
+
+	if err := c.validateModulePath(); err != nil {
+		return err
+	}
+
 	if err := c.validatePort(); err != nil {
 		return err
 	}
-	
+
 	if err := c.validateOutputDir(); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
-// validateAppName ensures the application name follows Go package naming conventions.
+// validateAppName ensures the application name is usable as a directory name and
+// as the last element of a Go module path (e.g. "my-api" or "user_service").
 func (c *ServerConfig) validateAppName() error {
 	if c.AppName == "" {
 		return NewValidationError("app name cannot be empty")
 	}
-	
+
 	if len(c.AppName) > 50 {
 		return NewValidationError("app name cannot exceed 50 characters")
 	}
-	
-	// Go package naming convention: lowercase letters, numbers, and underscores
-	matched, _ := regexp.MatchString(`^[a-z][a-z0-9_]*$`, c.AppName)
+
+	// Lowercase letters, numbers, hyphens, and underscores; must not end in a separator
+	matched, _ := regexp.MatchString(`^[a-z]([a-z0-9_-]*[a-z0-9])?$`, c.AppName)
 	if !matched {
-		return NewValidationError("app name must start with a lowercase letter and contain only lowercase letters, numbers, and underscores")
+		return NewValidationError("app name must start with a lowercase letter, end with a letter or number, and contain only lowercase letters, numbers, hyphens, and underscores")
 	}
-	
+
 	// Reserved Go keywords
 	reservedKeywords := []string{
 		"break", "case", "chan", "const", "continue",
@@ -59,13 +69,40 @@ func (c *ServerConfig) validateAppName() error {
 		"interface", "map", "package", "range", "return",
 		"select", "struct", "switch", "type", "var",
 	}
-	
+
 	for _, keyword := range reservedKeywords {
 		if c.AppName == keyword {
 			return NewValidationError(fmt.Sprintf("app name cannot be a Go reserved keyword: %s", keyword))
 		}
 	}
-	
+
+	return nil
+}
+
+// modulePathPattern matches slash-separated path elements made of the characters
+// Go allows in module paths: letters, digits, '.', '-', '_' and '~'.
+var modulePathPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$`)
+
+// validateModulePath ensures an explicit module path is a valid Go module path.
+func (c *ServerConfig) validateModulePath() error {
+	if c.ModulePath == "" {
+		return nil
+	}
+	return ValidateModulePath(c.ModulePath)
+}
+
+// ValidateModulePath reports whether path is a valid Go module path.
+func ValidateModulePath(path string) error {
+	if !modulePathPattern.MatchString(path) {
+		return NewValidationErrorWithField("module", fmt.Sprintf("invalid module path %q: use slash-separated elements of letters, digits, '.', '-', '_' or '~' (e.g. github.com/acme/my-api)", path))
+	}
+
+	for _, element := range strings.Split(path, "/") {
+		if strings.HasPrefix(element, ".") || strings.HasSuffix(element, ".") {
+			return NewValidationErrorWithField("module", fmt.Sprintf("invalid module path %q: path elements cannot start or end with a dot", path))
+		}
+	}
+
 	return nil
 }
 
@@ -74,11 +111,11 @@ func (c *ServerConfig) validatePort() error {
 	if c.Port < 1024 {
 		return NewValidationError("port must be >= 1024 (ports below 1024 require root privileges)")
 	}
-	
+
 	if c.Port > 65535 {
 		return NewValidationError("port must be <= 65535")
 	}
-	
+
 	return nil
 }
 
@@ -87,17 +124,20 @@ func (c *ServerConfig) validateOutputDir() error {
 	if strings.TrimSpace(c.OutputDir) == "" {
 		return NewValidationError("output directory cannot be empty")
 	}
-	
+
 	return nil
 }
 
-// GetModuleName returns the Go module name based on app name.
-// This follows Go module naming conventions.
+// GetModuleName returns the Go module path for the generated project:
+// the explicit ModulePath if set, otherwise the app name.
 func (c *ServerConfig) GetModuleName() string {
-	return fmt.Sprintf("github.com/yourorg/%s", c.AppName)
+	if c.ModulePath != "" {
+		return c.ModulePath
+	}
+	return c.AppName
 }
 
 // GetProjectPath returns the full path where the project will be generated.
 func (c *ServerConfig) GetProjectPath() string {
-	return fmt.Sprintf("%s/%s", c.OutputDir, c.AppName)
+	return filepath.Join(c.OutputDir, c.AppName)
 }

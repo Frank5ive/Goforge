@@ -1,98 +1,61 @@
+// Package server wires routes and middleware into an HTTP server with graceful shutdown.
 package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
-	{{if .IncludeLogger}}
-	"{{.GetModuleName}}/logger"
-	{{end}}
 )
 
-// Server represents the HTTP server
+// Server is the HTTP server for {{.AppName}}.
 type Server struct {
 	httpServer *http.Server
-	port       int
-	{{if .IncludeLogger}}logger     *logger.Logger{{end}}
 }
 
-// New creates a new Server instance
-func New(port int{{if .IncludeLogger}}, log *logger.Logger{{end}}) *Server {
+// New creates a Server listening on port, with all routes and middleware registered.
+func New(port int, log *slog.Logger) *Server {
 	return &Server{
-		port: port,
-		{{if .IncludeLogger}}logger: log,{{end}}
+		httpServer: &http.Server{
+			Addr:              fmt.Sprintf(":%d", port),
+			Handler:           newHandler(log),
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      15 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		},
 	}
 }
 
-// RegisterRoutes sets up the HTTP routes with middleware
-func (s *Server) RegisterRoutes(healthHandler http.HandlerFunc{{if .IncludeLogger}}, log *logger.Logger{{end}}) {
+// newHandler builds the router and wraps it in middleware.
+// Middleware applied last runs first, so requests flow:
+// requestID → recovery{{if .IncludeLogger}} → logging{{end}} → router.
+func newHandler(log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
+	registerRoutes(mux)
 
-	// Health check endpoint
-	mux.HandleFunc("/health", healthHandler)
-
-	// Apply middleware
 	var handler http.Handler = mux
-	{{if .IncludeLogger}}handler = loggingMiddleware(handler, log)
-	{{end}}handler = recoveryMiddleware(handler{{if .IncludeLogger}}, log{{end}})
+{{- if .IncludeLogger}}
+	handler = logging(handler, log)
+{{- end}}
+	handler = recovery(handler, log)
+	handler = requestID(handler)
 
-	s.httpServer = &http.Server{
-		Addr:         fmt.Sprintf(":%d", s.port),
-		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
+	return handler
 }
 
-// Start begins listening for HTTP requests
+// Start listens for HTTP requests until the server is shut down.
+// It returns nil after a graceful Shutdown and an error for any other failure.
 func (s *Server) Start() error {
-	return s.httpServer.ListenAndServe()
+	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
-// Shutdown gracefully stops the server
+// Shutdown gracefully stops the server, waiting for in-flight requests to finish.
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
-
-// recoveryMiddleware recovers from panics and returns 500
-func recoveryMiddleware(next http.Handler{{if .IncludeLogger}}, log *logger.Logger{{end}}) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if err := recover(); err != nil {
-				{{if .IncludeLogger}}log.Error(fmt.Sprintf("Panic recovered: %v", err))
-				{{end}}w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte("Internal Server Error"))
-			}
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-{{if .IncludeLogger}}// loggingMiddleware logs HTTP requests
-func loggingMiddleware(next http.Handler, log *logger.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		
-		// Wrap response writer to capture status code
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		
-		next.ServeHTTP(wrapped, r)
-		
-		duration := time.Since(start)
-		log.Info(fmt.Sprintf("%s %s - %d (%v)", r.Method, r.URL.Path, wrapped.statusCode, duration))
-	})
-}
-
-// responseWriter wraps http.ResponseWriter to capture status code
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-{{end}}

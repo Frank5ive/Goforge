@@ -64,12 +64,14 @@ git checkout -b feature/my-new-feature
 # Make your changes
 # ... edit files ...
 
-# Run tests
+# Run tests (the end-to-end test generates and builds every option combination;
+# add -short to skip it for a quick run)
 go test ./...
 
-# Run linter
-go vet ./...
+# Format and lint (https://golangci-lint.run, config in .golangci.yml)
 go fmt ./...
+go vet ./...
+golangci-lint run
 
 # Commit your changes
 git commit -am 'Add some feature'
@@ -150,9 +152,25 @@ goforge/
 * **DI** → All layers
 * **CLI/Main** → All layers
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how generation works, and for step-by-step
+guides to adding a template or a new option.
+
+## Releasing
+
+Releases are built and published by GoReleaser when a version tag is pushed:
+
+1. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new version heading
+   and commit.
+2. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
+3. The Release workflow runs the tests, builds binaries for Linux, macOS, and
+   Windows, and publishes them with checksums on the GitHub releases page.
+
+To check the GoReleaser config locally without publishing:
+`goreleaser release --snapshot --clean` (output goes to `dist/`).
+
 ## Questions?
 
-Feel free to open an issue with your question or reach out via email.
+Feel free to open an issue with your question.
 
 ## License
 

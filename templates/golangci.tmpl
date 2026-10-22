@@ -1,0 +1,17 @@
+# golangci-lint v2 configuration: https://golangci-lint.run/usage/configuration/
+version: "2"
+
+linters:
+  # The standard set (errcheck, govet, ineffassign, staticcheck, unused) plus:
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - revive
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

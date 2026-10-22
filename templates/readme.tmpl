@@ -1,192 +1,138 @@
 # {{.AppName}}
 
-A production-ready HTTP server built with Go, featuring clean architecture and best practices.
+A production-ready Go HTTP server, generated with [GoForge](https://github.com/Frank5ive/goforge).
 
-## 🚀 Features
+## Features
 
-- ✅ Health check endpoint
-- ✅ Graceful shutdown
-- ✅ HTTP request/response logging{{if .IncludeLogger}}
-- ✅ Structured logging{{end}}
-- ✅ Panic recovery middleware
-- ✅ Configurable timeouts{{if .IncludeDocker}}
-- ✅ Docker support{{end}}
+- `GET /health` endpoint returning JSON
+- Graceful shutdown on SIGINT/SIGTERM (in-flight requests get 30 seconds to finish)
+- Request IDs (`X-Request-ID`) and panic recovery middleware
+- HTTP timeouts, including `ReadHeaderTimeout` against slow-header attacks{{if .IncludeLogger}}
+- Structured logging with `log/slog` (text or JSON) and per-request logs{{end}}
+- Tests, a Makefile, and a golangci-lint config{{if .IncludeDocker}}
+- Multi-stage Dockerfile running as a non-root user, with a health check{{end}}{{if .IncludeCI}}
+- GitHub Actions CI: vet, race-enabled tests, and lint{{if .IncludeDocker}}, plus a Docker build{{end}}{{end}}
 
-## 📋 Prerequisites
+## Requirements
 
-- Go 1.21 or higher{{if .IncludeDocker}}
+- Go 1.24 or newer{{if .IncludeDocker}}
 - Docker (optional){{end}}
 
-## 🛠️ Installation
+## Getting started
 
 ```bash
-# Clone or navigate to the project
-cd {{.AppName}}
-
-# Download dependencies
-go mod download
-
-# Build the application
-go build -o server .
+make run          # or: go run .
+curl http://localhost:{{.Port}}/health
 ```
 
-## 🏃 Running
+Run `make help` to see all commands:
 
-### Local Development
+| Command | Description |
+|---------|-------------|
+| `make run` | Run the server |
+| `make build` | Build the binary into `bin/` |
+| `make test` | Run tests |
+| `make cover` | Run tests and open the coverage report |
+| `make lint` | Run `go vet` and [golangci-lint](https://golangci-lint.run) |
+| `make fmt` | Format code |{{if .IncludeDocker}}
+| `make docker-build` | Build the Docker image |
+| `make docker-run` | Run the Docker image on port {{.Port}} |{{end}}
 
-```bash
-# Run directly
-go run main.go
+## Configuration
 
-# Or run the built binary
-./server
-```
+Configuration comes from environment variables:
 
-The server will start on port **{{.Port}}**.
-{{if .IncludeDocker}}
-### Docker
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Port the server listens on | `{{.Port}}` |{{if .IncludeLogger}}
+| `LOG_LEVEL` | `debug`, `info`, `warn`, or `error` | `info` |
+| `LOG_FORMAT` | `text` or `json` (use `json` in production) | `text` |{{end}}
 
-```bash
-# Build the Docker image
-docker build -t {{.AppName}}:latest .
+## API
 
-# Run the container
-docker run -p {{.Port}}:{{.Port}} {{.AppName}}:latest
-```
-{{end}}
-## 📡 API Endpoints
+### `GET /health`
 
-### Health Check
+Reports that the service is up.
 
-Check if the server is running and healthy.
-
-```bash
-GET /health
-```
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-01T12:00:00Z",
-  "service": "{{.AppName}}"
-}
-```
-
-**Example:**
 ```bash
 curl http://localhost:{{.Port}}/health
 ```
 
-## 🏗️ Project Structure
-
-```
-{{.AppName}}/
-├── main.go              # Application entry point
-├── go.mod               # Go module file
-├── handlers/            # HTTP request handlers
-│   └── health.go        # Health check handler
-├── server/              # Server setup and configuration
-│   ├── server.go        # HTTP server with graceful shutdown
-│   └── middleware.go    # HTTP middleware{{if .IncludeLogger}}
-├── logger/              # Logging utilities
-│   └── logger.go        # Structured logger{{end}}{{if .IncludeDocker}}
-└── Dockerfile           # Docker configuration{{end}}
-```
-
-## 🔧 Configuration
-
-The server can be configured through environment variables:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Server port | {{.Port}} |
-
-## 🧪 Testing
-
-```bash
-# Run tests
-go test ./...
-
-# Run tests with coverage
-go test -cover ./...
-```
-
-## 📝 Adding New Endpoints
-
-1. Create a new handler in `handlers/` directory:
-
-```go
-package handlers
-
-import "net/http"
-
-func NewMyHandler() http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte("Hello, World!"))
-    }
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-01-01T12:00:00Z",
+  "service": "{{.AppName}}"
 }
 ```
 
-2. Register the handler in `main.go`:
+Every response includes an `X-Request-ID` header. Send your own `X-Request-ID` to
+trace a request across services; otherwise one is generated.
 
-```go
-mux.HandleFunc("/my-endpoint", handlers.NewMyHandler())
+## Project structure
+
+```
+{{.AppName}}/
+├── main.go                 # Entry point: config, startup, graceful shutdown
+├── server/
+│   ├── server.go           # HTTP server and middleware chain
+│   ├── routes.go           # Route registration (add endpoints here)
+│   ├── middleware.go       # Request ID, panic recovery{{if .IncludeLogger}}, request logging{{end}}
+│   └── server_test.go
+├── handlers/
+│   ├── health.go           # GET /health
+│   ├── respond.go          # JSON response helper
+│   └── health_test.go{{if .IncludeLogger}}
+├── logger/
+│   └── logger.go           # slog setup from LOG_LEVEL and LOG_FORMAT{{end}}
+├── Makefile
+├── .golangci.yml{{if .IncludeDocker}}
+├── Dockerfile{{end}}{{if .IncludeCI}}
+├── .github/workflows/ci.yml{{end}}
+└── go.mod
 ```
 
-## 🔐 Security
+## Adding an endpoint
 
-- Request timeouts configured (15s read, 15s write, 60s idle)
-- Panic recovery middleware
-- Method validation on endpoints
+1. Add a handler in `handlers/`:
 
-## 🚦 Health Checks
+   ```go
+   // Greet responds with a greeting for the {name} path value.
+   func Greet() http.HandlerFunc {
+       return func(w http.ResponseWriter, r *http.Request) {
+           writeJSON(w, http.StatusOK, map[string]string{
+               "message": "Hello, " + r.PathValue("name") + "!",
+           })
+       }
+   }
+   ```
 
-The `/health` endpoint returns:
-- **200 OK** when the service is healthy
-- JSON response with status and timestamp
+2. Register it in `server/routes.go`:
 
-## 📊 Monitoring
-{{if .IncludeLogger}}
-The server includes structured logging for:
-- Server startup/shutdown events
-- HTTP requests (method, path, status, duration)
-- Error conditions and panics
-{{else}}
-Consider adding logging for production monitoring.
-{{end}}
-## 🐛 Troubleshooting
+   ```go
+   mux.HandleFunc("GET /greet/{name}", handlers.Greet())
+   ```
 
-### Port already in use
+3. Add a test next to it in `handlers/`, then run `make test`.
+
+Route patterns use Go 1.22+ routing: the method in the pattern is enforced (other
+methods get `405 Method Not Allowed`) and `{name}` segments are read with
+`r.PathValue`.
+{{- if .IncludeDocker}}
+
+## Docker
+
 ```bash
-# Find process using the port
-lsof -i :{{.Port}}
-
-# Kill the process
-kill -9 <PID>
+make docker-build
+make docker-run
 ```
 
-### Build errors
+Or directly:
+
 ```bash
-# Clean and rebuild
-go clean
-go mod tidy
-go build
+docker build -t {{.AppName}} .
+docker run --rm -p {{.Port}}:{{.Port}} {{.AppName}}
 ```
 
-## 📄 License
-
-MIT License - feel free to use this project as you wish.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📮 Support
-
-For issues and questions, please open an issue in the repository.
-
----
-
-**Built with ❤️ using Go**
+The container runs as an unprivileged user, and Docker's health check calls `/health`.
+{{- end}}

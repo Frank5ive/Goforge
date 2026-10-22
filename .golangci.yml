@@ -1,0 +1,29 @@
+# golangci-lint v2 configuration: https://golangci-lint.run/usage/configuration/
+# Generated projects get a stricter config (templates/golangci.tmpl); GoForge is a
+# CLI that intentionally writes files and runs subprocesses, so gosec/noctx don't apply.
+version: "2"
+
+linters:
+  # The standard set (errcheck, govet, ineffassign, staticcheck, unused) plus:
+  enable:
+    - bodyclose
+    - errorlint
+    - misspell
+  settings:
+    errcheck:
+      exclude-functions:
+        # Writing CLI output to the terminal
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    rules:
+      # Best-effort cleanup in tests (Kill, Close, RemoveAll)
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

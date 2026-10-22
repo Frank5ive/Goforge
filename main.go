@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/Frank5ive/goforge/cmd"
@@ -12,11 +13,16 @@ import (
 var TemplatesFS embed.FS
 
 func main() {
-	// Set the embedded templates for cmd package to use
-	cmd.SetTemplatesFS(TemplatesFS)
-	
+	// Hand the embedded templates to the cmd package, rooted at templates/
+	templates, err := fs.Sub(TemplatesFS, "templates")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
+		os.Exit(1)
+	}
+	cmd.SetTemplatesFS(templates)
+
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 		os.Exit(1)
 	}
 }
