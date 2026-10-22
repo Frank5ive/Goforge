@@ -22,6 +22,7 @@ type Container struct {
 	ServerGeneratorUsecase   domain.ServerGenerator
 	ResourceGeneratorUsecase domain.ResourceGenerator
 	DatabaseGeneratorUsecase domain.DatabaseGenerator
+	ProjectInspector         domain.ProjectInspector
 
 	// Files records every file written by ServerGeneratorUsecase
 	// (or that would be written, in dry-run mode).
@@ -43,6 +44,7 @@ func BuildContainer(templates fs.FS, opts Options) (*Container, error) {
 		ServerGeneratorUsecase:   usecase.NewServerGeneratorUsecase(templateRenderer, files),
 		ResourceGeneratorUsecase: usecase.NewResourceGeneratorUsecase(templateRenderer, files),
 		DatabaseGeneratorUsecase: usecase.NewDatabaseGeneratorUsecase(templateRenderer, files, gomod.New(opts.DryRun)),
+		ProjectInspector:         usecase.NewProjectInspectorUsecase(files),
 		Files:                    files,
 	}, nil
 }

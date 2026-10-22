@@ -10,9 +10,18 @@ import (
 	"testing"
 )
 
-// runJSON runs goforge with args (plus --json) through Execute, as the binary
+// runJSON runs goforge with args (plus --json) through execute, as the binary
 // does, and decodes the JSON result it prints.
 func runJSON(t *testing.T, args ...string) (result, int) {
+	t.Helper()
+
+	var r result
+	code := runJSONInto(t, &r, args...)
+	return r, code
+}
+
+// runJSONInto runs goforge with args (plus --json) and decodes its output into v.
+func runJSONInto(t *testing.T, v any, args ...string) int {
 	t.Helper()
 
 	SetTemplatesFS(os.DirFS(filepath.Join("..", "templates")))
@@ -22,11 +31,10 @@ func runJSON(t *testing.T, args ...string) (result, int) {
 	root.SetErr(&out)
 	code := execute(root, append(args, "--json"))
 
-	var r result
-	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
-		t.Fatalf("output is not a JSON result: %v\n%s", err, out.String())
+	if err := json.Unmarshal(out.Bytes(), v); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out.String())
 	}
-	return r, code
+	return code
 }
 
 func TestJSON_Generate(t *testing.T) {

@@ -17,6 +17,8 @@ Add `--json` to any command to get its result as JSON on stdout: `ok`, `created`
 - `goforge add resource <name> --fields "<field>:<type>,..."`: add a REST resource in its own package, with a model, validation, a repository (in memory, or the project's database), a service, handlers, tests, and a requests.http file. Its routes are registered automatically. `<name>` is singular snake_case, e.g. `product` or `blog_post`. Types: `string`, `int`, `float`, `bool`, `time`. A trailing `?` makes a string optional, e.g. `image_url:string?`. Use `--plural` for irregular plurals and `--dir` to point at the project.
 - `goforge add db <postgres|mysql|sqlite|mongo>`: add a database. Existing resources get a database repository (and a migration for SQL databases); later resources use it automatically. Adds docker-compose.yml and Makefile targets (except for SQLite), and a test database in CI.
 
+- `goforge inspect`: describe a project without reading its code: module, Go version, features, database, resources with their fields, every route, the environment variables it reads, its marker comments, and `problems` that would stop `goforge add` from working. Use `--json` to read it programmatically.
+
 Each resource serves `GET /<plural>?limit=&offset=`, `POST /<plural>`, `GET /<plural>/{id}`, `PUT /<plural>/{id}`, `PATCH /<plural>/{id}`, and `DELETE /<plural>/{id}`.
 
 ## Working in a generated project

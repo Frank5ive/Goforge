@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Panics return a JSON error with the request ID instead of a plain-text 500
 - `--json` on `generate`, `add resource`, and `add db`: the result (files created and updated,
   endpoints, notes, and next steps) as JSON on stdout, for scripts and AI agents
+- `goforge inspect` describes a project (module, Go version, features, database, resources and
+  fields, routes, environment variables, and marker comments) as text or JSON, and reports
+  anything that would stop `goforge add` from working, such as a deleted marker
 - Failed commands report a stable error code (such as `not_a_goforge_project` or
   `marker_missing`) and a hint on how to fix the problem, in text and in JSON
 

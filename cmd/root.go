@@ -27,6 +27,7 @@ func newRootCmd() *cobra.Command {
                           request IDs, health checks, tests, CI, and Docker
   goforge add resource    add a REST resource with validation, pagination, and tests
   goforge add db          store data in PostgreSQL, MySQL, SQLite, or MongoDB
+  goforge inspect         describe a project: resources, routes, database, settings
 
 Generated code uses the standard library's net/http, is tested, and passes its
 own lint config. Every command accepts --dry-run to preview its changes and
@@ -58,6 +59,7 @@ Example:
 	})
 	root.AddCommand(newGenerateCmd())
 	root.AddCommand(newAddCmd())
+	root.AddCommand(newInspectCmd())
 	return root
 }
 

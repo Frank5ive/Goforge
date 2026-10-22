@@ -194,6 +194,8 @@ Go backend, use GoForge for the infrastructure and spend your effort on the busi
 3. **Add a database** with `goforge add db <postgres|mysql|sqlite|mongo>`. Existing resources move
    onto it.
 4. **Preview first** with `--dry-run` on any command; it lists every file it would create or change.
+   **Understand an existing project** with `goforge inspect --json`: its resources and fields,
+   routes, database, environment variables, and anything stopping `goforge add` from working.
 5. **Verify** with `go test ./...` (and `make lint`). Generated projects pass both.
 6. **Leave the `// goforge:` marker comments in place.** GoForge edits files only at those markers,
    and `.goforge.json` records the project's resources and database; both let later `goforge add`
@@ -354,6 +356,41 @@ any step fails, including downloading the driver, the project is left exactly as
 > The generated `docker-compose.yml` and CI service set `GLIBC_TUNABLES=glibc.pthread.rseq=1`,
 > which hands `rseq` to glibc so MongoDB starts at a small cost in allocator speed. Set the
 > same variable for a MongoDB you run some other way, or use kernel 7.0.14 or later.
+
+---
+
+## 🔎 Inspecting a Project
+
+`goforge inspect` describes a project without reading its code: its module and Go version,
+features, database, resources and their fields, every route it serves, the environment variables
+it reads, and whether `goforge add` can still extend it.
+
+```bash
+goforge inspect            # in the project directory, or pass --dir
+goforge inspect --json     # the same, as JSON
+```
+
+```
+🔎 shop · github.com/you/shop · Go 1.26.0
+   Port 8080 · Database: SQLite · Features: request logging, Dockerfile, README, GitHub Actions CI
+
+📦 Resources (1):
+   product      /products        products/    name string, price float
+
+🌐 Routes (8):
+   GET    /health
+   GET    /readyz
+   GET    /products
+   ...
+
+⚙️  Environment: APP_ENV, PORT, CORS_ALLOWED_ORIGINS, MAX_BODY_BYTES, SHUTDOWN_TIMEOUT, LOG_LEVEL, LOG_FORMAT, DATABASE_URL
+🧩 Markers: 7 of 7 present
+
+✅ No problems: `goforge add` commands can extend this project.
+```
+
+If a file lost a `// goforge:` marker comment that a command needs, `inspect` says which one and
+which command it affects.
 
 ---
 
