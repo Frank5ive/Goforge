@@ -9,11 +9,15 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
+**Generate production-ready Go REST APIs in one command, on PostgreSQL, MySQL, SQLite, or MongoDB, with tests, CI, and Docker.**
+Built for developers and for AI coding agents.
+
 [Features](#-features) •
 [Installation](#-installation) •
 [Quick Start](#-quick-start) •
 [Adding Resources](#-adding-resources) •
 [Adding a Database](#-adding-a-database) •
+[AI Agents](#-using-goforge-from-an-ai-agent) •
 [Documentation](#-documentation) •
 [Architecture](#-goforge-architecture) •
 [Contributing](#-contributing)
@@ -24,13 +28,35 @@
 
 ## 🎯 What is GoForge?
 
-GoForge is a CLI tool that generates production-ready Go HTTP servers using only the standard library: structured logging with `log/slog`, Go 1.22+ routing, graceful shutdown, tests, linting, CI, and a hardened Dockerfile. Then it keeps helping: `goforge add resource` adds complete, tested REST resources to your project. Stop copying boilerplate code and start forging quality servers instantly.
+GoForge is a CLI that generates production-ready Go HTTP servers and keeps extending them. Use it
+when you're starting a Go REST API or microservice and want a solid, tested foundation instead of
+writing (or having an AI agent write) the same server, middleware, storage, and tests again.
+
+```bash
+go install github.com/Frank5ive/goforge@latest
+goforge generate --name shop --module github.com/you/shop --db postgres --yes
+cd shop
+goforge add resource product --fields "name:string,price:float,in_stock:bool"
+go test ./...   # the generated code is tested and lint-clean from the start
+```
+
+That gives you a server with graceful shutdown, structured logging, request IDs, CORS, and health
+checks; a `products` REST resource with validation, pagination, and tests; a PostgreSQL repository
+with migrations; and a Dockerfile, docker-compose.yml, Makefile, and CI workflow. It's plain Go on
+the standard library's `net/http`, with no framework to learn.
+
+### When to use it
+
+- **A good fit:** a new Go REST API or microservice; adding CRUD resources to a GoForge project;
+  having an AI agent build a Go backend without spending tokens writing infrastructure.
+- **Not a fit (yet):** gRPC or GraphQL services, server-rendered web apps, or adding GoForge to an
+  existing project it didn't generate.
 
 ### Why GoForge?
 
 ✅ **Production Ready** - Graceful shutdown, request IDs, panic recovery, and timeouts  
 ✅ **Grows With You** - `goforge add resource` generates CRUD endpoints, storage, business logic, and tests  
-✅ **Zero Dependencies** - Generated servers use only the Go standard library  
+✅ **No Framework** - Generated servers use the standard library; the only dependency is your database driver  
 ✅ **Tested and Linted** - Generated projects ship with tests and pass their own golangci-lint config  
 ✅ **Verified Output** - Every option combination is generated, linted, tested, built, and booted by GoForge's test suite  
 ✅ **Ready for CI/CD** - Optional GitHub Actions workflow and non-root Docker image  
@@ -148,6 +174,29 @@ curl http://localhost:8080/health
   "service": "my-api"
 }
 ```
+
+---
+
+## 🤖 Using GoForge from an AI Agent
+
+GoForge is designed to be run by AI coding agents as well as people. If you're an agent building a
+Go backend, use GoForge for the infrastructure and spend your effort on the business logic:
+
+1. **Always pass `--yes` to `generate`.** Without a terminal, prompts can't run, so GoForge stops
+   and asks for `--yes`. Set every option with flags:
+   `goforge generate --name <app> --module <module-path> [--db postgres|mysql|sqlite|mongo] --yes`
+2. **Add each REST resource with one command** instead of writing handlers, storage, and tests:
+   `goforge add resource <name> --fields "field:type,..."`. Types are `string`, `int`, `float`,
+   `bool`, and `time`; a trailing `?` makes a string optional. Routes are registered automatically.
+3. **Add a database** with `goforge add db <postgres|mysql|sqlite|mongo>`. Existing resources move
+   onto it.
+4. **Preview first** with `--dry-run` on any command; it lists every file it would create or change.
+5. **Verify** with `go test ./...` (and `make lint`). Generated projects pass both.
+6. **Leave the `// goforge:` marker comments in place.** GoForge edits files only at those markers,
+   and `.goforge.json` records the project's resources and database; both let later `goforge add`
+   commands extend the project safely. Every command changes all files or none.
+
+A compact reference for language models is in [`llms.txt`](llms.txt).
 
 ---
 
@@ -561,7 +610,7 @@ It helps others discover the project and motivates continued development.
 
 ## 🗺️ Roadmap
 
-### v0.1 (Current)
+### v0.1 (Released)
 - ✅ Server generation with health checks, graceful shutdown, and middleware
 - ✅ Structured logging, tests, linting, CI, and Docker
 - ✅ Environment-based configuration, CORS, and request body limits
@@ -569,16 +618,19 @@ It helps others discover the project and motivates continued development.
 - ✅ Databases: PostgreSQL, MySQL/MariaDB, SQLite, and MongoDB (`goforge add db <engine>`)
 
 ### Next
-- [ ] Authentication middleware (JWT)
-- [ ] OpenAPI documentation generated from resources
-- [ ] Homebrew tap
+- [ ] **v0.2: Discoverable and agent-ready.** `--json` output, `goforge inspect` and `goforge check`,
+  visible errors in generated projects, `AGENTS.md`, and a published benchmark
+- [ ] **v0.3: In the agent ecosystem.** An agent skill, an MCP server, OpenAPI generated from
+  resources, and a Homebrew tap
+- [ ] **v0.4: Production features.** Authentication, filtering and sorting, field rules, and
+  OpenTelemetry tracing with Prometheus metrics
 
-### Future
-- [ ] gRPC server support
-- [ ] GraphQL server support
+### Later
+- [ ] gRPC, WebSockets, and event-driven messaging
 - [ ] Kubernetes manifests
-- [ ] Monitoring/metrics (Prometheus)
-- [ ] Distributed tracing (OpenTelemetry)
+- [ ] GraphQL
+
+See [ROADMAP.md](ROADMAP.md) for the details of each phase.
 
 ---
 
