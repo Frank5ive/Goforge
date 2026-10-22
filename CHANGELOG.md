@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Generated projects no longer hide the cause of unexpected errors: a 500 from a resource
+  (for example a failed database query) is now logged with its cause, method, path, and request
+  ID. Previously the error was discarded. A failed readiness check now logs its cause too.
+
+### Added
+- Error responses include a `request_id` matching the `X-Request-ID` header and the server's log
+  lines, so an error can be traced to its logs
+- `APP_ENV` (`production` by default, or `development`): in development, 500 responses include
+  their cause in `detail`; `make run` uses development
+- Every log line written during a request carries its request ID; `handlers.Logger(ctx)` gives
+  application code the same logger
+- Panics return a JSON error with the request ID instead of a plain-text 500
+
 ## [0.1.0] - 2026-10-22
 
 ### Added

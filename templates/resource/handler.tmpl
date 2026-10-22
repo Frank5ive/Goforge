@@ -46,7 +46,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 
 	page, err := h.svc.List(r.Context(), limit, offset)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 	handlers.WriteJSON(w, http.StatusOK, page)
@@ -60,7 +60,7 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 
 	item, err := h.svc.Create(r.Context(), in)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 	item, err := h.svc.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 	handlers.WriteJSON(w, http.StatusOK, item)
@@ -85,7 +85,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 
 	item, err := h.svc.Update(r.Context(), r.PathValue("id"), in)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 	handlers.WriteJSON(w, http.StatusOK, item)
@@ -99,7 +99,7 @@ func (h *handler) patch(w http.ResponseWriter, r *http.Request) {
 
 	item, err := h.svc.Patch(r.Context(), r.PathValue("id"), p)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 	handlers.WriteJSON(w, http.StatusOK, item)
@@ -107,7 +107,7 @@ func (h *handler) patch(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.Delete(r.Context(), r.PathValue("id")); err != nil {
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -127,15 +127,16 @@ func queryInt(r *http.Request, name string) (int, error) {
 	return n, nil
 }
 
-// writeServiceError maps service errors to HTTP responses. Unexpected errors
-// return a generic 500 so internal details are not exposed to clients.
-func writeServiceError(w http.ResponseWriter, err error) {
+// writeServiceError maps service errors to HTTP responses. Unexpected errors are
+// logged with their cause and return a generic 500, so internal details are not
+// exposed to clients (except with APP_ENV=development).
+func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		handlers.WriteError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrInvalid):
 		handlers.WriteError(w, http.StatusUnprocessableEntity, err.Error())
 	default:
-		handlers.WriteError(w, http.StatusInternalServerError, "internal server error")
+		handlers.InternalError(w, r, err)
 	}
 }

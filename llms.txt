@@ -24,7 +24,8 @@ Each resource serves `GET /<plural>?limit=&offset=`, `POST /<plural>`, `GET /<pl
 - Verify changes with `go test ./...` and `make lint`; a generated project passes both.
 - Keep the `// goforge:` marker comments: GoForge edits files only at those markers, so later `goforge add` commands depend on them.
 - `.goforge.json` records the project's options, resources, and database. Don't edit it by hand.
-- Configuration comes from environment variables: `PORT`, `DATABASE_URL`, `LOG_LEVEL`, `LOG_FORMAT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, `SHUTDOWN_TIMEOUT`.
+- Configuration comes from environment variables: `APP_ENV` (`production` or `development`), `PORT`, `DATABASE_URL`, `LOG_LEVEL`, `LOG_FORMAT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, `SHUTDOWN_TIMEOUT`.
+- Run the server with `make run` while developing: it sets `APP_ENV=development`, so a 500 response includes its cause in `detail`. Every error response has a `request_id`; the server's log lines for that request carry the same ID, and unexpected errors are logged with their cause. Log from your own code with `handlers.Logger(ctx)` to include the request ID.
 - `GET /health` reports liveness and `GET /readyz` readiness, including the database.
 - With Docker databases: `make db-up` starts the database, `make test-db` runs the tests against it.
 

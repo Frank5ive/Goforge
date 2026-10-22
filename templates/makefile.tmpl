@@ -7,8 +7,8 @@ APP := {{.AppName}}
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-run: ## Run the server
-	go run .
+run: ## Run the server in development mode (500 responses show their cause)
+	APP_ENV=development go run .
 
 build: ## Build the binary into bin/
 	go build -trimpath -o bin/$(APP) .

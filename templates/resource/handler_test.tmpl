@@ -1,11 +1,17 @@
 package {{.Package}}
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"{{.Module}}/handlers"
 )
 
 const (
@@ -102,5 +108,54 @@ func TestHandlerErrors(t *testing.T) {
 				t.Errorf("%s %s = %d, want %d: %s", tt.method, tt.path, rec.Code, tt.want, rec.Body)
 			}
 		})
+	}
+}
+
+var errDatabaseDown = errors.New("database is down")
+
+// failingRepository fails every call, like a database that is down.
+type failingRepository struct{}
+
+func (failingRepository) List(context.Context, int, int) ([]{{.Type}}, int, error) {
+	return nil, 0, errDatabaseDown
+}
+func (failingRepository) Get(context.Context, string) ({{.Type}}, error) {
+	return {{.Type}}{}, errDatabaseDown
+}
+func (failingRepository) Create(context.Context, {{.Type}}) error { return errDatabaseDown }
+func (failingRepository) Update(context.Context, {{.Type}}) error { return errDatabaseDown }
+func (failingRepository) Delete(context.Context, string) error { return errDatabaseDown }
+
+func TestHandlerUnexpectedErrors(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, NewService(failingRepository{}))
+
+	for _, development := range []bool{false, true} {
+		var logs bytes.Buffer
+		ctx := handlers.WithRequest(t.Context(), slog.New(slog.NewTextHandler(&logs, nil)), development)
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "{{.Path}}/some-id", nil)
+		rec := httptest.NewRecorder()
+		rec.Header().Set(handlers.RequestIDHeader, "req-1") // set by the server's middleware
+		mux.ServeHTTP(rec, req)
+
+		var body handlers.ErrorResponse
+		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding body: %v", err)
+		}
+		if rec.Code != http.StatusInternalServerError || body.Error != "internal server error" || body.RequestID != "req-1" {
+			t.Errorf("got %d %+v, want 500 with a generic error and the request ID", rec.Code, body)
+		}
+
+		// The cause is always logged, and only shown to clients in development
+		if !strings.Contains(logs.String(), errDatabaseDown.Error()) {
+			t.Errorf("the cause of the 500 was not logged: %s", logs.String())
+		}
+		wantDetail := ""
+		if development {
+			wantDetail = errDatabaseDown.Error()
+		}
+		if body.Detail != wantDetail {
+			t.Errorf("development=%t: detail = %q, want %q", development, body.Detail, wantDetail)
+		}
 	}
 }

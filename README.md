@@ -69,10 +69,11 @@ the standard library's `net/http`, with no framework to learn.
 - 🔌 **Health and Readiness** - `GET /health` for liveness and `GET /readyz` for readiness (checks dependencies such as the database)
 - 🛑 **Graceful Shutdown** - Handles SIGINT/SIGTERM and drains in-flight requests
 - 🧭 **Modern Routing** - Go 1.22+ `http.ServeMux` patterns like `GET /users/{id}`, with automatic 405s
-- 🪪 **Request IDs** - Every response carries an `X-Request-ID`; incoming IDs are reused for tracing
-- 🧯 **Panic Recovery** - Panics become 500s and are logged with a stack trace
+- 🪪 **Request IDs** - Every response carries an `X-Request-ID`, incoming IDs are reused for tracing, and every log line for a request includes it
+- 🔎 **Traceable Errors** - Error responses include the request ID; unexpected errors are logged with their cause, and with `APP_ENV=development` the response shows it too
+- 🧯 **Panic Recovery** - Panics become JSON 500s and are logged with a stack trace
 - ⏱️ **Timeouts** - Read, write, idle, and read-header timeouts
-- ⚙️ **12-Factor Config** - A `config` package loads `PORT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, and `SHUTDOWN_TIMEOUT` from the environment
+- ⚙️ **12-Factor Config** - A `config` package loads `APP_ENV`, `PORT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, and `SHUTDOWN_TIMEOUT` from the environment
 - 🌐 **CORS** - Opt-in with `CORS_ALLOWED_ORIGINS`, including preflight handling
 - 📏 **Body Limits** - Request bodies are capped (1 MiB by default) and oversized ones get `413`
 - 🧰 **JSON Helpers** - `WriteJSON`, `WriteError`, and a strict `DecodeJSON` that rejects unknown fields

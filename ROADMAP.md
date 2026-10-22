@@ -40,7 +40,7 @@ within seconds that it fits, and can drive it without a human at the keyboard.
      which leaves the developer or agent guessing.
    - Error responses include the request ID; with `APP_ENV=development` they also include the cause
    - A request-scoped logger, so every log line from a request carries its request ID
-   - Startup reports every invalid setting at once
+   - (Startup already reports every invalid setting at once.)
 3. **One result, two renderings**
    - Every command returns a structured result: files created and changed, notes, next steps
    - `--json` prints it as JSON, and errors carry stable codes (such as `marker_missing`)
@@ -65,10 +65,9 @@ within seconds that it fits, and can drive it without a human at the keyboard.
 - `inspect` and `check` work on every option combination the end-to-end tests generate
 - The benchmark has a baseline and a first comparison, and its harness is in the repo
 
-### Decisions needed
+### Order
 
-- **Benchmark budget:** which agents to run (for example Claude Code and Codex), and how many runs
-  per task. Running agents costs API usage, so this sets the cost.
+The benchmark comes last, after every other Phase 4 item, so it measures the finished phase.
 
 ---
 
