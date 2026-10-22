@@ -736,9 +736,14 @@ It helps others discover the project and motivates continued development.
 - ✅ `goforge add resource` for tested CRUD resources
 - ✅ Databases: PostgreSQL, MySQL/MariaDB, SQLite, and MongoDB (`goforge add db <engine>`)
 
+### v0.2 (Released)
+- ✅ `--json` output and stable error codes for every command that changes or reports on a project
+- ✅ `goforge inspect` and `goforge check`
+- ✅ Traceable errors in generated projects: logged causes and request IDs
+- ✅ `AGENTS.md` in generated projects, and `llms.txt` for language models
+
 ### Next
-- [ ] **v0.2: Discoverable and agent-ready.** `--json` output, `goforge inspect` and `goforge check`,
-  visible errors in generated projects, `AGENTS.md`, and a published benchmark
+- [ ] **Published benchmark:** agents building Go backends with and without GoForge
 - [ ] **v0.3: In the agent ecosystem.** An agent skill, an MCP server, OpenAPI generated from
   resources, and a Homebrew tap
 - [ ] **v0.4: Production features.** Authentication, filtering and sorting, field rules, and

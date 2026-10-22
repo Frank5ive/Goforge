@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
 ### Fixed
 - Generated projects no longer hide the cause of unexpected errors: a 500 from a resource
   (for example a failed database query) is now logged with its cause, method, path, and request
@@ -124,5 +126,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
-[Unreleased]: https://github.com/Frank5ive/goforge/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Frank5ive/goforge/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Frank5ive/goforge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Frank5ive/goforge/releases/tag/v0.1.0
