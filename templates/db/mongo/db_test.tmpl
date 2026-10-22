@@ -1,0 +1,21 @@
+package db
+
+import "testing"
+
+func TestDatabaseName(t *testing.T) {
+	tests := []struct {
+		uri, name, where string
+		wantErr          bool
+	}{
+		{"mongodb://localhost:27017/shop", "shop", "localhost:27017/shop", false},
+		{"mongodb://app:secret@db.example:27017/shop?authSource=admin", "shop", "db.example:27017/shop", false},
+		{"mongodb://localhost:27017", "", "", true},
+	}
+
+	for _, tt := range tests {
+		name, where, err := databaseName(tt.uri)
+		if (err != nil) != tt.wantErr || name != tt.name || where != tt.where {
+			t.Errorf("databaseName(%q) = %q, %q, %v", tt.uri, name, where, err)
+		}
+	}
+}

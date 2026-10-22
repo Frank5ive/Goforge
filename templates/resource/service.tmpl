@@ -19,8 +19,9 @@ type Service struct {
 func NewService(repo Repository) *Service {
 	return &Service{
 		repo: repo,
-		// Microsecond precision matches what PostgreSQL stores
-		now: func() time.Time { return time.Now().UTC().Truncate(time.Microsecond) },
+		// Millisecond precision is what every supported database stores (MongoDB
+		// keeps milliseconds), so values read back match the ones returned
+		now: func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) },
 	}
 }
 

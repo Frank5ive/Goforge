@@ -1,0 +1,30 @@
+# Local development services. `make db-up` starts MongoDB;
+{{- if .Docker}} `docker compose up --build` also builds and runs the app.{{else}} the app runs with `go run .`.{{end}}
+services:
+  db:
+    image: mongo:8.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - db-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+{{- if .Docker}}
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: mongodb://db:27017/{{.DBName}}
+      PORT: "{{.Port}}"
+    ports:
+      - "{{.Port}}:{{.Port}}"
+    depends_on:
+      db:
+        condition: service_healthy
+{{- end}}
+
+volumes:
+  db-data:

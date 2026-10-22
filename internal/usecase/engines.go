@@ -237,11 +237,53 @@ var sqliteEngine = &engine{
 	dockerNote: "SQLite stores data in a file inside the container, which is lost when the container is replaced. Mount a volume and point DATABASE_URL at it, e.g. `docker run -v ./data:/data -e DATABASE_URL=/data/app.db ...`.",
 }
 
+var mongoEngine = &engine{
+	name:    domain.DatabaseMongo,
+	label:   domain.DatabaseLabel(domain.DatabaseMongo),
+	module:  "go.mongodb.org/mongo-driver/v2",
+	version: "v2.9.2",
+	dbFiles: []fileTemplate{
+		{"db/mongo/db.tmpl", "db/db.go"},
+		{"db/mongo/db_test.tmpl", "db/db_test.go"},
+		{"db/mongo/dbtest.tmpl", "db/dbtest/dbtest.go"},
+	},
+	repositoryFiles: []fileTemplate{
+		{"db/mongo/repository.tmpl", "mongo.go"},
+		{"db/mongo/repository_test.tmpl", "mongo_test.go"},
+	},
+	repoType:        "MongoRepository",
+	depsImport:      "go.mongodb.org/mongo-driver/v2/mongo",
+	depsType:        "*mongo.Database",
+	readyCheck:      "d.DB.Client().Ping(ctx, nil)",
+	defaultURL:      func(db string) string { return "mongodb://localhost:27017/" + db },
+	testURL:         func(db string) string { return "mongodb://localhost:27017/" + db + "_test" },
+	composeTemplate: "db/mongo/compose.tmpl",
+	ciService: func(_, testURL string) string {
+		return fmt.Sprintf(`services:
+  mongo:
+    image: mongo:8.0
+    ports:
+      - 27017:27017
+    options: >-
+      --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+      --health-interval 2s
+      --health-timeout 5s
+      --health-retries 30
+env:
+  TEST_DATABASE_URL: %s
+`, testURL)
+	},
+	makeTargets: func(_, testURL string) []string {
+		return dockerMakeTargets("MongoDB", "", testURL)
+	},
+}
+
 // engines lists the supported databases by name.
 var engines = map[string]*engine{
 	postgresEngine.name: postgresEngine,
 	mysqlEngine.name:    mysqlEngine,
 	sqliteEngine.name:   sqliteEngine,
+	mongoEngine.name:    mongoEngine,
 }
 
 // engineFor returns the engine for a database name from .goforge.json or the

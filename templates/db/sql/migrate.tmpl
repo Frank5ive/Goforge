@@ -24,9 +24,18 @@ const migrationLock = "goforge_migrations"
 {{- end}}
 
 // Migrate applies every db/migrations/*.sql file that has not been applied yet,
-// in file name order, each in its own transaction, and records it in the
-// schema_migrations table. Applied migrations never run again, so change the
-// schema by adding a new file rather than editing an applied one.
+// in file name order, and records it in the schema_migrations table. Applied
+// migrations never run again, so change the schema by adding a new file rather
+// than editing an applied one.
+{{- if eq .Engine "sqlite"}}
+//
+// All pending migrations apply in one transaction that takes SQLite's write
+// lock up front (BEGIN IMMEDIATE, waiting up to the busy timeout), so two
+// processes sharing the database file can't apply the same migration twice.
+{{- else}}
+//
+// Each migration runs in its own transaction.
+{{- end}}
 {{- if eq .Engine "mysql"}}
 //
 // MySQL commits schema changes (CREATE, ALTER, DROP) immediately, so a migration
@@ -38,6 +47,18 @@ func Migrate(ctx context.Context, database *sql.DB, log *slog.Logger) error {
 		return fmt.Errorf("acquiring a connection for migrations: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
+{{- if eq .Engine "sqlite"}}
+
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return fmt.Errorf("locking migrations: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
+		}
+	}()
+{{- end}}
 {{- if eq .Engine "mysql"}}
 
 	var locked sql.NullInt64
@@ -85,6 +106,13 @@ func Migrate(ctx context.Context, database *sql.DB, log *slog.Logger) error {
 		}
 		log.Info("applied migration", "version", version)
 	}
+{{- if eq .Engine "sqlite"}}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return fmt.Errorf("committing migrations: %w", err)
+	}
+	committed = true
+{{- end}}
 
 	return nil
 }
@@ -108,6 +136,18 @@ func appliedVersions(ctx context.Context, conn *sql.Conn) (map[string]bool, erro
 	return applied, rows.Err()
 }
 
+{{- if eq .Engine "sqlite"}}
+
+// applyMigration runs one migration and records it, inside Migrate's transaction.
+func applyMigration(ctx context.Context, conn *sql.Conn, version, script string) error {
+	if _, err := conn.ExecContext(ctx, script); err != nil {
+		return err
+	}
+	_, err := conn.ExecContext(ctx, "INSERT INTO schema_migrations (version) VALUES (?)", version)
+	return err
+}
+{{- else}}
+
 // applyMigration runs one migration and records it, in a single transaction.
 func applyMigration(ctx context.Context, conn *sql.Conn, version, script string) error {
 	tx, err := conn.BeginTx(ctx, nil)
@@ -125,3 +165,4 @@ func applyMigration(ctx context.Context, conn *sql.Conn, version, script string)
 	}
 	return tx.Commit()
 }
+{{- end}}

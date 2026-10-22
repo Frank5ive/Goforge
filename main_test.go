@@ -456,6 +456,7 @@ var databaseEngines = []struct {
 	{domain.DatabasePostgres, startPostgres},
 	{domain.DatabaseMySQL, startMySQL},
 	{domain.DatabaseSQLite, func(t *testing.T) string { return filepath.Join(t.TempDir(), "shop.db") }},
+	{domain.DatabaseMongo, startMongo},
 }
 
 // TestAddDatabase adds each database engine to a generated project with
@@ -568,6 +569,13 @@ func startMySQL(t *testing.T) string {
 		[]string{"MYSQL_ROOT_PASSWORD=root", "MYSQL_DATABASE=shop", "MYSQL_USER=app", "MYSQL_PASSWORD=app"},
 		[]string{"mysqladmin", "ping", "-h", "127.0.0.1", "-uapp", "-papp", "--silent"})
 	return fmt.Sprintf("app:app@tcp(%s)/shop", hostPort)
+}
+
+// startMongo starts a throwaway MongoDB container and returns its URL.
+func startMongo(t *testing.T) string {
+	hostPort := startContainer(t, "mongo:8.0", "27017/tcp", nil,
+		[]string{"mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"})
+	return fmt.Sprintf("mongodb://%s/shop", hostPort)
 }
 
 // startContainer runs image with env, publishing port on a random local port,
