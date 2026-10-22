@@ -21,7 +21,7 @@ A production-ready Go HTTP server, generated with [GoForge](https://github.com/F
 ## Getting started
 
 ```bash
-make run          # or: go run .
+make run          # development mode; plain `go run .` uses production settings
 curl http://localhost:{{.Port}}/health
 ```
 
@@ -29,7 +29,7 @@ Run `make help` to see all commands:
 
 | Command | Description |
 |---------|-------------|
-| `make run` | Run the server |
+| `make run` | Run the server in development mode (`APP_ENV=development`) |
 | `make build` | Build the binary into `bin/` |
 | `make test` | Run tests |
 | `make cover` | Run tests and open the coverage report |
@@ -54,8 +54,8 @@ Configuration comes from environment variables:
 
 ## Errors
 
-Error responses are JSON with a `request_id` that matches the `X-Request-ID` response header and
-the `request_id` on the server's log lines for that request:
+Error responses from the handlers are JSON with a `request_id` that matches the `X-Request-ID`
+response header and the `request_id` on the server's log lines for that request:
 
 ```json
 {"error": "internal server error", "request_id": "4f9c2a7e8b1d4c3a9e6f0b2d7a5c8e1f"}
@@ -64,6 +64,9 @@ the `request_id` on the server's log lines for that request:
 Unexpected errors (500s) are logged with their cause. With `APP_ENV=development`, which `make run`
 sets, the response also includes the cause in `detail`; production responses never do. In your own
 code, log with `handlers.Logger(ctx)` so your log lines carry the request ID too.
+
+Requests for an unknown path or with an unsupported method get Go's plain-text `404` and `405`
+responses. They have no JSON body, but still carry the `X-Request-ID` header.
 
 ## API
 

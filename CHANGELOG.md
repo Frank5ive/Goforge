@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ID. Previously the error was discarded. A failed readiness check now logs its cause too.
 
 ### Added
-- Error responses include a `request_id` matching the `X-Request-ID` header and the server's log
-  lines, so an error can be traced to its logs
+- Error responses from the generated handlers include a `request_id` matching the `X-Request-ID`
+  header and the server's log lines, so an error can be traced to its logs
 - `APP_ENV` (`production` by default, or `development`): in development, 500 responses include
   their cause in `detail`; `make run` uses development
 - Every log line written during a request carries its request ID; `handlers.Logger(ctx)` gives
@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoints, notes, and next steps) as JSON on stdout, for scripts and AI agents
 - `goforge inspect` describes a project (module, Go version, features, database, resources and
   fields, routes, environment variables, and marker comments) as text or JSON, and reports
-  anything that would stop `goforge add` from working, such as a deleted marker
+  anything that would stop `goforge add` from working, such as a deleted marker or file
 - `goforge check` runs gofmt, `go vet`, the tests, and golangci-lint (when installed) and reports
   each problem with its file, line, and message (a failing test at the line that failed, a panic
   at the line that panicked), as text or JSON; tests and lint wait until the code compiles

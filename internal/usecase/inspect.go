@@ -95,7 +95,12 @@ func (u *ProjectInspectorUsecase) Inspect(dir string) (domain.ProjectInfo, error
 	for _, m := range markers {
 		src, err := u.fileWriter.ReadFile(filepath.Join(dir, filepath.FromSlash(m.file)))
 		if err != nil {
-			// An optional file the project was generated without, such as the CI workflow
+			// A missing file the command needs is a problem; others, such as the CI
+			// workflow, are optional
+			if m.needed(manifest) {
+				info.Problems = append(info.Problems, fmt.Sprintf(
+					"%s is missing, so `goforge %s` can't update it", m.file, m.usedBy))
+			}
 			continue
 		}
 		present := strings.Contains(src, m.marker)

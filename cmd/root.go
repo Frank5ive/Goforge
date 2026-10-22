@@ -33,8 +33,9 @@ func newRootCmd() *cobra.Command {
                           each problem with its file and line
 
 Generated code uses the standard library's net/http, is tested, and passes its
-own lint config. Every command accepts --dry-run to preview its changes and
---json for output that programs and AI agents can read.
+own lint config. generate and the add commands accept --dry-run to preview
+their changes, and generate, add, inspect, and check accept --json for output
+that programs and AI agents can read.
 
 Example:
   goforge generate --name shop --module github.com/you/shop --db postgres --yes

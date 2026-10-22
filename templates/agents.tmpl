@@ -13,11 +13,13 @@ GoForge generated this project and can extend it. Use it instead of writing thes
 - **Store data in a database:** `goforge add db <postgres|mysql|sqlite|mongo>`.
 - **Understand the project:** `goforge inspect --json` lists its resources and fields, routes,
   database, and environment variables.
-- **Check your work:** `goforge check --json` runs gofmt, go vet, the tests, and golangci-lint,
-  and reports each problem with its file and line. Fix every problem before you finish.
+- **Check your work:** `goforge check --json` runs gofmt, go vet, the tests, and golangci-lint
+  (when it is installed; otherwise the report marks lint as skipped), and reports each problem
+  with its file and line. Fix every problem before you finish.
 
-Every `goforge` command accepts `--json` (a machine-readable result) and never waits for input.
-`generate` and the `add` commands also accept `--dry-run` (a preview) and change all files or none.
+`generate`, `add resource`, `add db`, `inspect`, and `check` accept `--json` (a machine-readable
+result) and never wait for input. `generate` and the `add` commands also accept `--dry-run` (a
+preview) and change all files or none.
 Install GoForge with `go install github.com/Frank5ive/goforge@latest`.
 
 ## Rules
@@ -49,8 +51,10 @@ Install GoForge with `go install github.com/Frank5ive/goforge@latest`.
 ## Run and test
 
 - `make run` starts the server in development mode (`APP_ENV=development`), where a 500 response
-  includes its cause in `detail`. Every error response has a `request_id` that matches the
-  `X-Request-ID` header and the server's log lines.
+  includes its cause in `detail`; plain `go run .` uses production mode, without it. Error
+  responses from the handlers have a `request_id` that matches the `X-Request-ID` header and the
+  server's log lines. (Unknown routes and unsupported methods get Go's plain-text 404 and 405,
+  which still carry the header.)
 - `go test ./...` runs the tests. With a database in Docker, `make db-up` starts it and
   `make test-db` runs the database tests too.
 - `make help` lists every Makefile target.

@@ -68,6 +68,23 @@ func TestInspect_ReportsMissingMarker(t *testing.T) {
 	}
 }
 
+func TestInspect_ReportsMissingFile(t *testing.T) {
+	project := generatedProject(t)
+	if err := os.Remove(filepath.Join(project, "server", "routes.go")); err != nil {
+		t.Fatal(err)
+	}
+	// Optional files are not problems
+	if err := os.RemoveAll(filepath.Join(project, ".github")); err != nil {
+		t.Fatal(err)
+	}
+
+	var r inspectResult
+	runJSONInto(t, &r, "inspect", "--dir", project)
+	if len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "server/routes.go is missing") {
+		t.Errorf("problems = %v, want only the missing routes file", r.Problems)
+	}
+}
+
 func TestInspect_NotAProject(t *testing.T) {
 	r, code := runJSON(t, "inspect", "--dir", t.TempDir())
 	if code != 1 || r.Error == nil || r.Error.Code != "not_a_goforge_project" {

@@ -198,7 +198,7 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 		r.NextSteps = append(r.NextSteps, nextStep{Command: "make db-up", Description: "start " + domain.DatabaseLabel(opts.db) + " in Docker"})
 	}
 	r.NextSteps = append(r.NextSteps,
-		nextStep{Command: "make run", Description: "start the server in development mode (or: go run .)"},
+		nextStep{Command: "make run", Description: "start the server in development mode"},
 		nextStep{Command: `goforge add resource product --fields "name:string,price:float"`, Description: "add a REST resource"},
 	)
 	r.Info = append(r.Info,
