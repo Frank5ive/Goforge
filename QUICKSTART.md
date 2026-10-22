@@ -24,12 +24,18 @@ goforge generate --name=my-api --port=8080 --yes
 # Custom output directory
 goforge generate -n api -p 3000 -o ./services
 
+# Add a REST resource (run inside the generated project)
+goforge add resource product --fields "name:string,price:float"
+
 # Show help
 goforge --help
 goforge generate --help
 
 # Show version
 goforge --version
+
+# Enable tab completion (bash; also zsh, fish, powershell)
+source <(goforge completion bash)
 ```
 
 ## 📁 Generated Project Structure
@@ -37,6 +43,7 @@ goforge --version
 ```
 my-api/
 ├── main.go             # Entry point
+├── config/             # Settings from environment variables
 ├── go.mod
 ├── Makefile            # make run / test / lint / build
 ├── server/             # Server, routes, middleware, tests

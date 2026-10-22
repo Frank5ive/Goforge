@@ -30,6 +30,23 @@ templates/                  text/template sources for generated projects
    generated project directory is removed.
 4. The CLI prints the recorded file list and, with `--git`, runs `git init`.
 
+## How `goforge add resource` works
+
+`cmd/add.go` parses the name and `--fields` into a `domain.ResourceConfig`, which
+derives the package, type, and route names (`blog_post` → package `blogposts`, type
+`BlogPost`, path `/blog-posts`). `ResourceGeneratorUsecase.Add` then:
+
+1. Validates the config and reads the module path from the project's `go.mod`.
+2. Computes the new `server/routes.go` (import plus registration above the
+   `// goforge:routes` marker) before writing anything, so a missing marker fails
+   without side effects.
+3. Renders the `templates/resource/*.tmpl` files into the new package, then writes
+   the updated routes. If any step fails, the new package directory is removed.
+
+`TestAddResource` in `main_test.go` adds resources covering every field type to a
+generated project and checks that it vets, passes its tests, builds, and serves CRUD
+requests.
+
 ## Adding a file to generated projects
 
 1. Add `templates/<name>.tmpl`. Template data is `*domain.ServerConfig`, so you can

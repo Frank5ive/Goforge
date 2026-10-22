@@ -1,0 +1,141 @@
+package {{.Package}}
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+
+	"{{.Module}}/handlers"
+)
+
+// RegisterRoutes adds the {{.Human}} endpoints to mux:
+//
+//	GET    {{.Path}}       list {{.HumanPlural}} (?limit=20&offset=0)
+//	POST   {{.Path}}       create a {{.Human}}
+//	GET    {{.Path}}/{id}  get a {{.Human}}
+//	PUT    {{.Path}}/{id}  replace a {{.Human}}'s fields
+//	PATCH  {{.Path}}/{id}  change some of a {{.Human}}'s fields
+//	DELETE {{.Path}}/{id}  delete a {{.Human}}
+func RegisterRoutes(mux *http.ServeMux, svc *Service) {
+	h := &handler{svc: svc}
+
+	mux.HandleFunc("GET {{.Path}}", h.list)
+	mux.HandleFunc("POST {{.Path}}", h.create)
+	mux.HandleFunc("GET {{.Path}}/{id}", h.get)
+	mux.HandleFunc("PUT {{.Path}}/{id}", h.update)
+	mux.HandleFunc("PATCH {{.Path}}/{id}", h.patch)
+	mux.HandleFunc("DELETE {{.Path}}/{id}", h.delete)
+}
+
+type handler struct {
+	svc *Service
+}
+
+func (h *handler) list(w http.ResponseWriter, r *http.Request) {
+	limit, err := queryInt(r, "limit")
+	if err != nil {
+		handlers.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	offset, err := queryInt(r, "offset")
+	if err != nil {
+		handlers.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	page, err := h.svc.List(r.Context(), limit, offset)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	handlers.WriteJSON(w, http.StatusOK, page)
+}
+
+func (h *handler) create(w http.ResponseWriter, r *http.Request) {
+	var in Input
+	if !handlers.DecodeJSON(w, r, &in) {
+		return
+	}
+
+	item, err := h.svc.Create(r.Context(), in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Location", "{{.Path}}/"+item.ID)
+	handlers.WriteJSON(w, http.StatusCreated, item)
+}
+
+func (h *handler) get(w http.ResponseWriter, r *http.Request) {
+	item, err := h.svc.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	handlers.WriteJSON(w, http.StatusOK, item)
+}
+
+func (h *handler) update(w http.ResponseWriter, r *http.Request) {
+	var in Input
+	if !handlers.DecodeJSON(w, r, &in) {
+		return
+	}
+
+	item, err := h.svc.Update(r.Context(), r.PathValue("id"), in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	handlers.WriteJSON(w, http.StatusOK, item)
+}
+
+func (h *handler) patch(w http.ResponseWriter, r *http.Request) {
+	var p Patch
+	if !handlers.DecodeJSON(w, r, &p) {
+		return
+	}
+
+	item, err := h.svc.Patch(r.Context(), r.PathValue("id"), p)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	handlers.WriteJSON(w, http.StatusOK, item)
+}
+
+func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.Delete(r.Context(), r.PathValue("id")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// queryInt parses a non-negative integer query parameter, returning 0 when it is absent.
+func queryInt(r *http.Request, name string) (int, error) {
+	value := r.URL.Query().Get(name)
+	if value == "" {
+		return 0, nil
+	}
+
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer, got %q", name, value)
+	}
+	return n, nil
+}
+
+// writeServiceError maps service errors to HTTP responses. Unexpected errors
+// return a generic 500 so internal details are not exposed to clients.
+func writeServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		handlers.WriteError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, ErrInvalid):
+		handlers.WriteError(w, http.StatusUnprocessableEntity, err.Error())
+	default:
+		handlers.WriteError(w, http.StatusInternalServerError, "internal server error")
+	}
+}

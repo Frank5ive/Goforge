@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -76,8 +77,9 @@ func TestGeneratedProjects(t *testing.T) {
 			projectPath := config.GetProjectPath()
 			for _, file := range []string{
 				"main.go", "go.mod", ".gitignore", "Makefile", ".golangci.yml",
+				"config/config.go", "config/config_test.go",
 				"server/server.go", "server/routes.go", "server/middleware.go", "server/server_test.go",
-				"handlers/health.go", "handlers/respond.go", "handlers/health_test.go",
+				"handlers/health.go", "handlers/respond.go", "handlers/health_test.go", "handlers/respond_test.go",
 			} {
 				assertFileExists(t, filepath.Join(projectPath, file), true)
 			}
@@ -265,4 +267,173 @@ func assertFileExists(t *testing.T, path string, want bool) {
 	if exists := err == nil; exists != want {
 		t.Errorf("Expected %s to exist=%t, got exist=%t", path, want, exists)
 	}
+}
+
+// TestAddResource generates a project, adds resources covering every field type
+// with `goforge add resource`'s usecase, and checks the result is gofmt-clean,
+// passes go vet and its own tests, builds, and serves working CRUD endpoints.
+func TestAddResource(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping end-to-end resource test in short mode")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not found in PATH")
+	}
+
+	templates, err := fs.Sub(TemplatesFS, "templates")
+	if err != nil {
+		t.Fatalf("Failed to open embedded templates: %v", err)
+	}
+	container, err := di.BuildContainer(templates, di.Options{})
+	if err != nil {
+		t.Fatalf("Failed to build container: %v", err)
+	}
+
+	config := &domain.ServerConfig{
+		AppName:       "shop",
+		ModulePath:    "github.com/acme/shop",
+		Port:          8080,
+		OutputDir:     t.TempDir(),
+		IncludeLogger: true,
+	}
+	if err := container.ServerGeneratorUsecase.Generate(config); err != nil {
+		t.Fatalf("Failed to generate server: %v", err)
+	}
+	project := config.GetProjectPath()
+
+	resources := []*domain.ResourceConfig{
+		{Name: "product", Fields: []domain.Field{
+			{Name: "name", Type: domain.FieldString},
+			{Name: "image_url", Type: domain.FieldString, Optional: true},
+			{Name: "stock", Type: domain.FieldInt},
+			{Name: "price", Type: domain.FieldFloat},
+			{Name: "in_stock", Type: domain.FieldBool},
+			{Name: "released_at", Type: domain.FieldTime},
+		}},
+		// No required string fields, so Validate has no rules
+		{Name: "counter", Fields: []domain.Field{{Name: "count", Type: domain.FieldInt}}},
+		// Irregular plural
+		{Name: "person", Plural: "people", Fields: []domain.Field{{Name: "name", Type: domain.FieldString}}},
+	}
+	for _, r := range resources {
+		r.ProjectDir = project
+		if err := container.ResourceGeneratorUsecase.Add(r); err != nil {
+			t.Fatalf("Failed to add resource %s: %v", r.Name, err)
+		}
+	}
+
+	assertGofmtClean(t, project)
+	runGo(t, project, "vet", "./...")
+	runGo(t, project, "test", "./...")
+
+	binary := filepath.Join(t.TempDir(), "shop")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	runGo(t, project, "build", "-o", binary, ".")
+	baseURL := startServer(t, binary)
+
+	// Every endpoint works straight after `add resource` and a build: no manual wiring
+	product := `{"name":"Gopher plush","image_url":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
+	status, header, _ := request(t, http.MethodPost, baseURL+"/products", product)
+	if status != http.StatusCreated {
+		t.Fatalf("POST /products = %d, want %d", status, http.StatusCreated)
+	}
+	item := baseURL + header.Get("Location")
+
+	var got struct {
+		Name  string  `json:"name"`
+		Price float64 `json:"price"`
+	}
+	if status, _, body := request(t, http.MethodGet, item, ""); status != http.StatusOK || json.Unmarshal(body, &got) != nil || got.Name != "Gopher plush" {
+		t.Errorf("GET created product = %d %s", status, body)
+	}
+
+	request(t, http.MethodPost, baseURL+"/products", product)
+	var page struct {
+		Items []json.RawMessage `json:"items"`
+		Total int               `json:"total"`
+	}
+	if status, _, body := request(t, http.MethodGet, baseURL+"/products?limit=1&offset=1", ""); status != http.StatusOK || json.Unmarshal(body, &page) != nil || len(page.Items) != 1 || page.Total != 2 {
+		t.Errorf("GET /products?limit=1&offset=1 = %d %s, want 1 of 2 items", status, body)
+	}
+
+	replaced := strings.Replace(product, `"Gopher plush"`, `"Gopher plush XL"`, 1)
+	if status, _, body := request(t, http.MethodPut, item, replaced); status != http.StatusOK {
+		t.Errorf("PUT product = %d %s", status, body)
+	}
+
+	if status, _, body := request(t, http.MethodPatch, item, `{"price": 24.5}`); status != http.StatusOK || json.Unmarshal(body, &got) != nil || got.Price != 24.5 || got.Name != "Gopher plush XL" {
+		t.Errorf("PATCH product = %d %s, want only the price changed", status, body)
+	}
+
+	if status, _, _ := request(t, http.MethodDelete, item, ""); status != http.StatusNoContent {
+		t.Errorf("DELETE product = %d, want %d", status, http.StatusNoContent)
+	}
+	if status, _, _ := request(t, http.MethodGet, item, ""); status != http.StatusNotFound {
+		t.Errorf("GET deleted product = %d, want %d", status, http.StatusNotFound)
+	}
+
+	// The other resources are registered alongside it
+	for _, path := range []string{"/people", "/counters"} {
+		if status, _, _ := request(t, http.MethodGet, baseURL+path, ""); status != http.StatusOK {
+			t.Errorf("GET %s = %d, want %d", path, status, http.StatusOK)
+		}
+	}
+}
+
+// request sends an HTTP request with an optional JSON body and returns the
+// status, headers, and body of the response.
+func request(t *testing.T, method, url, body string) (int, http.Header, []byte) {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), method, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("building %s %s: %v", method, url, err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading %s %s response: %v", method, url, err)
+	}
+	return resp.StatusCode, resp.Header, respBody
+}
+
+// startServer runs the binary on a free port until the test ends and returns its base URL.
+func startServer(t *testing.T, binary string) string {
+	t.Helper()
+
+	port := freePort(t)
+	var output bytes.Buffer
+
+	cmd := exec.Command(binary)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-done
+	})
+
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	waitForHealth(t, baseURL+"/health", done, &output).Body.Close()
+	return baseURL
 }

@@ -5,13 +5,14 @@
 [![CI](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Frank5ive/goforge)](https://github.com/Frank5ive/goforge/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Frank5ive/goforge.svg)](https://pkg.go.dev/github.com/Frank5ive/goforge)
-[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [Features](#-features) •
 [Installation](#-installation) •
 [Quick Start](#-quick-start) •
+[Adding Resources](#-adding-resources) •
 [Documentation](#-documentation) •
 [Architecture](#-goforge-architecture) •
 [Contributing](#-contributing)
@@ -22,11 +23,12 @@
 
 ## 🎯 What is GoForge?
 
-GoForge is a CLI tool that generates production-ready Go HTTP servers using only the standard library: structured logging with `log/slog`, Go 1.22+ routing, graceful shutdown, tests, linting, CI, and a hardened Dockerfile. Stop copying boilerplate code and start forging quality servers instantly.
+GoForge is a CLI tool that generates production-ready Go HTTP servers using only the standard library: structured logging with `log/slog`, Go 1.22+ routing, graceful shutdown, tests, linting, CI, and a hardened Dockerfile. Then it keeps helping: `goforge add resource` adds complete, tested REST resources to your project. Stop copying boilerplate code and start forging quality servers instantly.
 
 ### Why GoForge?
 
 ✅ **Production Ready** - Graceful shutdown, request IDs, panic recovery, and timeouts  
+✅ **Grows With You** - `goforge add resource` generates CRUD endpoints, storage, business logic, and tests  
 ✅ **Zero Dependencies** - Generated servers use only the Go standard library  
 ✅ **Tested and Linted** - Generated projects ship with tests and pass their own golangci-lint config  
 ✅ **Verified Output** - Every option combination is generated, linted, tested, built, and booted by GoForge's test suite  
@@ -43,7 +45,10 @@ GoForge is a CLI tool that generates production-ready Go HTTP servers using only
 - 🪪 **Request IDs** - Every response carries an `X-Request-ID`; incoming IDs are reused for tracing
 - 🧯 **Panic Recovery** - Panics become 500s and are logged with a stack trace
 - ⏱️ **Timeouts** - Read, write, idle, and read-header timeouts
-- ⚙️ **12-Factor Config** - `PORT` (and `LOG_LEVEL`/`LOG_FORMAT` with logging) from the environment
+- ⚙️ **12-Factor Config** - A `config` package loads `PORT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`, and `SHUTDOWN_TIMEOUT` from the environment
+- 🌐 **CORS** - Opt-in with `CORS_ALLOWED_ORIGINS`, including preflight handling
+- 📏 **Body Limits** - Request bodies are capped (1 MiB by default) and oversized ones get `413`
+- 🧰 **JSON Helpers** - `WriteJSON`, `WriteError`, and a strict `DecodeJSON` that rejects unknown fields
 - 🧪 **Tests and Tooling** - Handler and middleware tests, a Makefile, and a golangci-lint config
 
 ### Optional Features
@@ -58,7 +63,7 @@ GoForge is a CLI tool that generates production-ready Go HTTP servers using only
 
 ### Option 1: Go Install
 
-Requires Go 1.24 or newer.
+Requires Go 1.26 or newer to install GoForge. Generated projects need Go 1.24 or newer.
 
 ```bash
 go install github.com/Frank5ive/goforge@latest
@@ -84,6 +89,23 @@ git clone https://github.com/Frank5ive/goforge.git
 cd goforge
 go build -o goforge .
 ```
+
+### Shell Completion
+
+Tab-complete commands and flags in bash, zsh, fish, or PowerShell:
+
+```bash
+# bash (current session; add to ~/.bashrc to keep it)
+source <(goforge completion bash)
+
+# zsh
+goforge completion zsh > "${fpath[1]}/_goforge"
+
+# fish
+goforge completion fish > ~/.config/fish/completions/goforge.fish
+```
+
+Run `goforge completion <shell> --help` for details.
 
 ---
 
@@ -125,6 +147,70 @@ curl http://localhost:8080/health
   "service": "my-api"
 }
 ```
+
+---
+
+## 🧩 Adding Resources
+
+Inside a project created by `goforge generate`, add a complete REST resource with one command:
+
+```bash
+goforge add resource product --fields "name:string,price:float,in_stock:bool,image_url:string?"
+```
+
+```
+✅ Added the product resource. Created 7 files:
+   products/product.go         # Product model, Input, Patch, validation rules, Repository interface
+   products/memory.go          # Thread-safe in-memory Repository
+   products/service.go         # Business logic: list, get, create, update, patch, delete
+   products/handler.go         # HTTP handlers and route registration
+   products/service_test.go
+   products/handler_test.go
+   products/requests.http      # Example requests to run from your editor
+
+📝 Updated:
+   server/routes.go            # Routes registered automatically
+
+🌐 Endpoints:
+   GET    /products?limit=20&offset=0
+   POST   /products
+   GET    /products/{id}
+   PUT    /products/{id}
+   PATCH  /products/{id}
+   DELETE /products/{id}
+```
+
+**Ready to go:** the routes are registered in `server/routes.go` for you, so the endpoints
+work as soon as you start (or restart) the server with `go run .`. No wiring needed. Open
+`products/requests.http` in VS Code (REST Client extension) or a JetBrains IDE to try every
+endpoint with one click; it already points at your project's port.
+
+Each resource uses Clean Architecture–style layering in a single package: handlers call
+the service, the service holds the business rules, and storage sits behind a `Repository`
+interface. Swap the in-memory repository for a database without touching the service or
+handlers. Keeping a resource in one package makes it easy to find and follow.
+
+**Fields** are `name:type` pairs. Types: `string`, `int`, `float`, `bool`, and `time`
+(RFC 3339 in JSON). String fields are required unless marked optional with `?`. `id`,
+`created_at`, and `updated_at` are added automatically.
+
+**Listing** is paginated: `GET /products?limit=20&offset=40` returns
+`{"items": [...], "total": 57, "limit": 20, "offset": 40}`, oldest first. `limit` defaults to
+20 and is capped at 100.
+
+**Updating:** `PUT` replaces every editable field, while `PATCH` changes only the fields you
+send (`{"price": 24.5}`). Both run the same validation rules.
+
+**Responses:** `201` with a `Location` header on create, `204` on delete, `404` for unknown
+IDs, `422` with every failed rule listed (`{"error":"invalid product: name is required"}`),
+and `400` for malformed JSON, unknown fields, or invalid `limit`/`offset`.
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--fields` | `-f` | `name:string` | Comma-separated `name:type` fields |
+| `--plural` | | derived | Plural for irregular words, e.g. `--plural people` for `person` |
+| `--dir` | `-d` | `.` | Project directory (the one containing `go.mod`) |
+| `--dry-run` | | `false` | Show the files that would be created or changed |
 
 ---
 
@@ -187,7 +273,8 @@ goforge generate --name=ci-api --module=github.com/acme/ci-api --output=./servic
 
 ```
 my-api/
-├── main.go                    # Entry point: config, startup, graceful shutdown
+├── main.go                    # Entry point: startup and graceful shutdown
+├── config/                    # Settings from environment variables
 ├── server/
 │   ├── server.go              # HTTP server and middleware chain
 │   ├── routes.go              # Route registration (add endpoints here)
@@ -300,7 +387,7 @@ go test -short ./...
 
 ### Project Stack
 
-- **Language**: Go 1.24+
+- **Language**: Go 1.26+
 - **CLI Framework**: Cobra
 - **Interactive Prompts**: Huh
 - **Architecture**: Clean Architecture
@@ -414,16 +501,16 @@ It helps others discover the project and motivates continued development.
 ## 🗺️ Roadmap
 
 ### v0.1 (Current)
-- ✅ Basic server generation
-- ✅ Health endpoints
-- ✅ Docker support
-- ✅ Logging
+- ✅ Server generation with health checks, graceful shutdown, and middleware
+- ✅ Structured logging, tests, linting, CI, and Docker
+- ✅ Environment-based configuration, CORS, and request body limits
+- ✅ `goforge add resource` for tested CRUD resources
 
 ### Next
-- [ ] Database integration (PostgreSQL, MySQL)
+- [ ] Database-backed repositories (`goforge add db postgres`)
 - [ ] Authentication middleware (JWT)
-- [ ] API documentation generation (Swagger/OpenAPI)
-- [ ] Configuration file support (YAML/TOML)
+- [ ] OpenAPI documentation generated from resources
+- [ ] Homebrew tap
 
 ### Future
 - [ ] gRPC server support

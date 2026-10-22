@@ -36,6 +36,7 @@ type MockFileWriter struct {
 	CreateDirectoryFunc func(path string) error
 	FileExistsFunc      func(path string) bool
 	RemoveAllFunc       func(path string) error
+	ReadFileFunc        func(path string) (string, error)
 	FilesWritten        map[string]string
 	DirsCreated         []string
 	PathsRemoved        []string
@@ -69,6 +70,16 @@ func (m *MockFileWriter) FileExists(path string) bool {
 		return m.FileExistsFunc(path)
 	}
 	return false
+}
+
+func (m *MockFileWriter) ReadFile(path string) (string, error) {
+	if m.ReadFileFunc != nil {
+		return m.ReadFileFunc(path)
+	}
+	if content, ok := m.FilesWritten[path]; ok {
+		return content, nil
+	}
+	return "", fmt.Errorf("%s: no such file", path)
 }
 
 func (m *MockFileWriter) RemoveAll(path string) error {

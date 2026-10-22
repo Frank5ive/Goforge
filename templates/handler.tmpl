@@ -16,7 +16,7 @@ type HealthResponse struct {
 // Health returns a handler that reports the service as healthy.
 func Health(service string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, HealthResponse{
+		WriteJSON(w, http.StatusOK, HealthResponse{
 			Status:    "healthy",
 			Timestamp: time.Now().UTC(),
 			Service:   service,

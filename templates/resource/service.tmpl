@@ -1,0 +1,122 @@
+package {{.Package}}
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"time"
+)
+
+// Service implements the {{.Human}} use cases on top of a Repository. Business
+// logic belongs here, not in the handlers or the repository.
+type Service struct {
+	repo Repository
+	now  func() time.Time
+}
+
+// NewService returns a Service that stores {{.HumanPlural}} in repo.
+func NewService(repo Repository) *Service {
+	return &Service{
+		repo: repo,
+		now:  func() time.Time { return time.Now().UTC() },
+	}
+}
+
+// Pagination limits for List.
+const (
+	DefaultLimit = 20
+	MaxLimit     = 100
+)
+
+// List returns one page of {{.HumanPlural}}, oldest first. A limit of 0 means
+// DefaultLimit, and limits above MaxLimit are capped.
+func (s *Service) List(ctx context.Context, limit, offset int) (Page, error) {
+	if limit < 0 || offset < 0 {
+		return Page{}, fmt.Errorf("%w: limit and offset must not be negative", ErrInvalid)
+	}
+	if limit == 0 {
+		limit = DefaultLimit
+	}
+	limit = min(limit, MaxLimit)
+
+	items, total, err := s.repo.List(ctx, limit, offset)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Items: items, Total: total, Limit: limit, Offset: offset}, nil
+}
+
+// Get returns the {{.Human}} with the given ID.
+func (s *Service) Get(ctx context.Context, id string) ({{.Type}}, error) {
+	return s.repo.Get(ctx, id)
+}
+
+// Create validates in and stores a new {{.Human}}.
+func (s *Service) Create(ctx context.Context, in Input) ({{.Type}}, error) {
+	if err := in.Validate(); err != nil {
+		return {{.Type}}{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	now := s.now()
+	item := {{.Type}}{ID: newID(), CreatedAt: now, UpdatedAt: now}
+	item.apply(in)
+
+	if err := s.repo.Create(ctx, item); err != nil {
+		return {{.Type}}{}, err
+	}
+	return item, nil
+}
+
+// Update validates in and replaces the fields of the {{.Human}} with the given ID.
+func (s *Service) Update(ctx context.Context, id string, in Input) ({{.Type}}, error) {
+	if err := in.Validate(); err != nil {
+		return {{.Type}}{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	item, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return {{.Type}}{}, err
+	}
+	item.apply(in)
+	item.UpdatedAt = s.now()
+
+	if err := s.repo.Update(ctx, item); err != nil {
+		return {{.Type}}{}, err
+	}
+	return item, nil
+}
+
+// Patch changes only the fields set in p on the {{.Human}} with the given ID. The
+// result is validated with the same rules as Create and Update.
+func (s *Service) Patch(ctx context.Context, id string, p Patch) ({{.Type}}, error) {
+	item, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return {{.Type}}{}, err
+	}
+
+	in := item.input()
+	p.applyTo(&in)
+	if err := in.Validate(); err != nil {
+		return {{.Type}}{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+	item.apply(in)
+	item.UpdatedAt = s.now()
+
+	if err := s.repo.Update(ctx, item); err != nil {
+		return {{.Type}}{}, err
+	}
+	return item, nil
+}
+
+// Delete removes the {{.Human}} with the given ID.
+func (s *Service) Delete(ctx context.Context, id string) error {
+	return s.repo.Delete(ctx, id)
+}
+
+// newID returns a random 128-bit ID encoded as 32 hex characters.
+func newID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}

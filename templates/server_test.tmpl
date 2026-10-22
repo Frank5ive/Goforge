@@ -5,12 +5,18 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"{{.GetModuleName}}/config"
+	"{{.GetModuleName}}/handlers"
 )
+
+var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // testHandler returns the full handler (router and middleware) with logs discarded.
 func testHandler() http.Handler {
-	return newHandler(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return newHandler(config.Config{MaxBodyBytes: 1 << 20}, discardLogger)
 }
 
 func TestRoutes(t *testing.T) {
@@ -78,12 +84,85 @@ func TestRecovery(t *testing.T) {
 	panicking := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		panic("boom")
 	})
-	handler := recovery(panicking, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := recovery(panicking, discardLogger)
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestCORS(t *testing.T) {
+	handler := newHandler(config.Config{
+		MaxBodyBytes:       1 << 20,
+		CORSAllowedOrigins: []string{"https://app.example"},
+	}, discardLogger)
+
+	t.Run("allowed origin", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil)
+		req.Header.Set("Origin", "https://app.example")
+		handler.ServeHTTP(rec, req)
+
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example" {
+			t.Errorf("Access-Control-Allow-Origin = %q, want the request origin", got)
+		}
+	})
+
+	t.Run("preflight", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodOptions, "/health", nil)
+		req.Header.Set("Origin", "https://app.example")
+		req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNoContent {
+			t.Errorf("preflight status = %d, want %d", rec.Code, http.StatusNoContent)
+		}
+		if rec.Header().Get("Access-Control-Allow-Methods") == "" {
+			t.Error("preflight response is missing Access-Control-Allow-Methods")
+		}
+	})
+
+	t.Run("other origin", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil)
+		req.Header.Set("Origin", "https://evil.example")
+		handler.ServeHTTP(rec, req)
+
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("Access-Control-Allow-Origin = %q, want none for a disallowed origin", got)
+		}
+	})
+
+	t.Run("disabled by default", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil)
+		req.Header.Set("Origin", "https://app.example")
+		testHandler().ServeHTTP(rec, req)
+
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("Access-Control-Allow-Origin = %q, want none when CORS is not configured", got)
+		}
+	})
+}
+
+func TestLimitBody(t *testing.T) {
+	decode := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var v map[string]any
+		if handlers.DecodeJSON(w, r, &v) {
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+	handler := limitBody(decode, 16)
+
+	rec := httptest.NewRecorder()
+	body := strings.NewReader(`{"name":"` + strings.Repeat("x", 100) + `"}`)
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", body))
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
 	}
 }

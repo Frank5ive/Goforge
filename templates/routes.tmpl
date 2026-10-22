@@ -13,4 +13,6 @@ import (
 // method get 405 Method Not Allowed automatically.
 func registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", handlers.Health("{{.AppName}}"))
+
+	// goforge:routes (`goforge add resource` registers new resources above this line)
 }

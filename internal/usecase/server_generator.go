@@ -29,12 +29,15 @@ func withCI(c *domain.ServerConfig) bool     { return c.IncludeCI }
 var projectFiles = []projectFile{
 	{template: "main.tmpl", path: "main.go", include: always},
 	{template: "gomod.tmpl", path: "go.mod", include: always},
+	{template: "config.tmpl", path: "config/config.go", include: always},
+	{template: "config_test.tmpl", path: "config/config_test.go", include: always},
 	{template: "server.tmpl", path: "server/server.go", include: always},
 	{template: "routes.tmpl", path: "server/routes.go", include: always},
 	{template: "middleware.tmpl", path: "server/middleware.go", include: always},
 	{template: "server_test.tmpl", path: "server/server_test.go", include: always},
 	{template: "handler.tmpl", path: "handlers/health.go", include: always},
 	{template: "respond.tmpl", path: "handlers/respond.go", include: always},
+	{template: "respond_test.tmpl", path: "handlers/respond_test.go", include: always},
 	{template: "health_test.tmpl", path: "handlers/health_test.go", include: always},
 	{template: "logger.tmpl", path: "logger/logger.go", include: withLogger},
 	{template: "logger_test.tmpl", path: "logger/logger_test.go", include: withLogger},
@@ -112,12 +115,13 @@ func (u *ServerGeneratorUsecase) generateFile(config *domain.ServerConfig, file 
 	}
 
 	path := filepath.Join(config.GetProjectPath(), filepath.FromSlash(file.path))
-	return u.writeFile(path, content)
+	return writeFormatted(u.fileWriter, path, content)
 }
 
-// writeFile writes generated content to path. Go source is run through gofmt first,
-// so output is formatted regardless of template whitespace and invalid Go is caught here.
-func (u *ServerGeneratorUsecase) writeFile(path string, content string) error {
+// writeFormatted writes generated content to path. Go source is run through gofmt
+// first, so output is formatted regardless of template whitespace and invalid Go
+// is caught here.
+func writeFormatted(w domain.FileWriter, path string, content string) error {
 	if filepath.Ext(path) == ".go" {
 		formatted, err := format.Source([]byte(content))
 		if err != nil {
@@ -126,5 +130,5 @@ func (u *ServerGeneratorUsecase) writeFile(path string, content string) error {
 		content = string(formatted)
 	}
 
-	return u.fileWriter.WriteFile(path, content)
+	return w.WriteFile(path, content)
 }

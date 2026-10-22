@@ -27,13 +27,29 @@ The first public release will be tagged `v0.1.0`.
   - Go 1.22+ routing patterns in `server/routes.go`
   - Request ID middleware (`X-Request-ID`) and panic recovery with stack traces
   - HTTP read, write, idle, and read-header timeouts
-  - `PORT` environment variable override
+  - A `config` package that loads `PORT`, `CORS_ALLOWED_ORIGINS`, `MAX_BODY_BYTES`,
+    and `SHUTDOWN_TIMEOUT` from the environment and reports every invalid value at once
+  - Opt-in CORS middleware with preflight handling
+  - Request body size limit (1 MiB by default) with `413` responses
+  - Exported JSON helpers: `WriteJSON`, `WriteError`, and a strict `DecodeJSON`
   - Handler and middleware tests, a Makefile, and a golangci-lint v2 config
   - Optional structured logging with `log/slog` (`LOG_LEVEL`, `LOG_FORMAT`) and request logs
   - Optional multi-stage Dockerfile running as a non-root user, with a health check
   - Optional GitHub Actions CI workflow (`--ci`)
   - Optional README
   - `.gitignore`
+- `goforge add resource <name> --fields "..."` adds a REST resource to a generated
+  project: a package with the model and validation rules, a `Repository` interface
+  with a thread-safe in-memory implementation, a service, CRUD handlers, and tests.
+  Routes are registered in `server/routes.go` automatically, so the endpoints work as
+  soon as the server starts. Supports `string`, `int`, `float`, `bool`, and `time`
+  fields, optional strings (`name:string?`), `--plural` for irregular words, and
+  `--dry-run`; a failed run leaves the project unchanged.
+  - Paginated lists: `?limit=&offset=` returning `{items, total, limit, offset}`
+    (default 20, max 100)
+  - `PATCH /{resource}/{id}` for partial updates, validated like full updates
+  - A `requests.http` file of example requests, pointed at the project's port
+- `goforge completion bash|zsh|fish|powershell` for shell tab completion
 - Generated Go code is always gofmt-formatted
 - Templates embedded in the binary (single-file distribution)
 - Terminal banner with a pixel-art Go gopher and wordmark; adapts to terminal width,

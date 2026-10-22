@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"strings"
 	"text/template"
 
 	"github.com/Frank5ive/goforge/internal/domain"
@@ -15,11 +16,22 @@ type GoTemplateRenderer struct {
 	templates map[string]*template.Template
 }
 
-// NewGoTemplateRenderer creates a renderer from every *.tmpl file at the root of fsys.
-// Pass os.DirFS(dir) for templates on disk, or fs.Sub(embedded, "templates") for
-// embedded ones. Templates are parsed once up front, so syntax errors fail fast.
+// NewGoTemplateRenderer creates a renderer from every *.tmpl file in fsys, including
+// subdirectories. Templates are named by their slash-separated path, e.g.
+// "main.tmpl" or "resource/model.tmpl". Pass os.DirFS(dir) for templates on disk,
+// or fs.Sub(embedded, "templates") for embedded ones. Templates are parsed once up
+// front, so syntax errors fail fast.
 func NewGoTemplateRenderer(fsys fs.FS) (*GoTemplateRenderer, error) {
-	names, err := fs.Glob(fsys, "*.tmpl")
+	var names []string
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".tmpl") {
+			names = append(names, path)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, domain.NewTemplateError("*.tmpl", "failed to list templates", err)
 	}
