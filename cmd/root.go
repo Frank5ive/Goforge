@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime/debug"
@@ -28,6 +29,8 @@ func newRootCmd() *cobra.Command {
   goforge add resource    add a REST resource with validation, pagination, and tests
   goforge add db          store data in PostgreSQL, MySQL, SQLite, or MongoDB
   goforge inspect         describe a project: resources, routes, database, settings
+  goforge check           run gofmt, go vet, the tests, and golangci-lint, and report
+                          each problem with its file and line
 
 Generated code uses the standard library's net/http, is tested, and passes its
 own lint config. Every command accepts --dry-run to preview its changes and
@@ -60,6 +63,7 @@ Example:
 	root.AddCommand(newGenerateCmd())
 	root.AddCommand(newAddCmd())
 	root.AddCommand(newInspectCmd())
+	root.AddCommand(newCheckCmd())
 	return root
 }
 
@@ -77,6 +81,9 @@ func execute(root *cobra.Command, args []string) int {
 	c, err := root.ExecuteC()
 	if err == nil {
 		return 0
+	}
+	if errors.Is(err, errReported) {
+		return 1
 	}
 
 	r := errorResult(c, err)

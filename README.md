@@ -196,7 +196,8 @@ Go backend, use GoForge for the infrastructure and spend your effort on the busi
 4. **Preview first** with `--dry-run` on any command; it lists every file it would create or change.
    **Understand an existing project** with `goforge inspect --json`: its resources and fields,
    routes, database, environment variables, and anything stopping `goforge add` from working.
-5. **Verify** with `go test ./...` (and `make lint`). Generated projects pass both.
+5. **Verify** with `goforge check --json`: it runs gofmt, vet, the tests, and golangci-lint, and
+   returns each problem with its file, line, and message. Generated projects pass it.
 6. **Leave the `// goforge:` marker comments in place.** GoForge edits files only at those markers,
    and `.goforge.json` records the project's resources and database; both let later `goforge add`
    commands extend the project safely. Every command changes all files or none.
@@ -391,6 +392,32 @@ goforge inspect --json     # the same, as JSON
 
 If a file lost a `// goforge:` marker comment that a command needs, `inspect` says which one and
 which command it affects.
+
+---
+
+## ✅ Checking a Project
+
+`goforge check` runs what CI runs (gofmt, `go vet`, the tests, and golangci-lint if it's installed)
+and reports each problem with its file, line, and message instead of the tools' raw output:
+
+```
+🔍 Checking /home/you/shop
+   ✓ format  0s
+   ✓ vet     600ms
+   ✗ test    500ms  1 problem
+   ✓ lint    1.7s
+
+❌ products/service_test.go:42  TestService_Create
+   service_test.go:42: name = "", want "widget"
+
+1 problem. Fix it and run `goforge check` again.
+```
+
+A failing test is reported once, at the line where it failed (for a panic, the line in your code
+that panicked). Tests and lint are skipped while the code doesn't compile, so a compile error isn't
+repeated by every step. The command exits with status 1 if anything fails; `--json` prints the
+report as JSON, and `--race` runs the tests with the race detector. It works in any Go module, not
+only GoForge projects.
 
 ---
 

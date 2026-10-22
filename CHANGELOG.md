@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `goforge inspect` describes a project (module, Go version, features, database, resources and
   fields, routes, environment variables, and marker comments) as text or JSON, and reports
   anything that would stop `goforge add` from working, such as a deleted marker
+- `goforge check` runs gofmt, `go vet`, the tests, and golangci-lint (when installed) and reports
+  each problem with its file, line, and message (a failing test at the line that failed, a panic
+  at the line that panicked), as text or JSON; tests and lint wait until the code compiles
 - Failed commands report a stable error code (such as `not_a_goforge_project` or
   `marker_missing`) and a hint on how to fix the problem, in text and in JSON
 
