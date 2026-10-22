@@ -65,9 +65,19 @@ func (m *MockFileWriter) CreateDirectory(path string) error {
 	return nil
 }
 
+// FileExists reports whether path is a written file, or a directory holding one.
 func (m *MockFileWriter) FileExists(path string) bool {
 	if m.FileExistsFunc != nil {
 		return m.FileExistsFunc(path)
+	}
+	if _, ok := m.FilesWritten[path]; ok {
+		return true
+	}
+	prefix := path + string(filepath.Separator)
+	for file := range m.FilesWritten {
+		if strings.HasPrefix(file, prefix) {
+			return true
+		}
 	}
 	return false
 }

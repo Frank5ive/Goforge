@@ -12,5 +12,5 @@ type ServerGenerator interface {
 // existing generated project.
 type ResourceGenerator interface {
 	// Add generates the resource package and registers its routes.
-	Add(config *ResourceConfig) error
+	Add(config *ResourceConfig) (Changes, error)
 }

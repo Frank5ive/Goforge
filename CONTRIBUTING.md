@@ -64,8 +64,8 @@ git checkout -b feature/my-new-feature
 # Make your changes
 # ... edit files ...
 
-# Run tests (the end-to-end test generates and builds every option combination;
-# add -short to skip it for a quick run)
+# Run tests (the end-to-end tests generate and build every option combination,
+# and on Linux with Docker also run against PostgreSQL; add -short to skip them)
 go test ./...
 
 # Format and lint (https://golangci-lint.run, config in .golangci.yml)

@@ -27,6 +27,9 @@ goforge generate -n api -p 3000 -o ./services
 # Add a REST resource (run inside the generated project)
 goforge add resource product --fields "name:string,price:float"
 
+# Store resources in PostgreSQL (then: make db-up && go run .)
+goforge add db postgres
+
 # Show help
 goforge --help
 goforge generate --help

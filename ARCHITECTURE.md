@@ -82,6 +82,31 @@ anything and explains what to add.
 3. Use the field in templates or in a `projectFiles` `include` function, and extend
    the option matrix in `TestGeneratedProjects` if it changes generated Go code.
 
+## How `goforge add db postgres` works
+
+`DatabaseGeneratorUsecase.Add` reads the project's `.goforge.json` to learn its options
+and resources, then plans every change in a `changeset` before touching the disk:
+
+1. Marker edits to `config/config.go` (`DatabaseURL`), `server/deps.go` (the pool and its
+   readiness check), `main.go` (connecting at startup), and `server/routes.go` (switching
+   each resource from `NewMemoryRepository()` to `NewPostgresRepository(deps.DB)`), plus
+   database targets appended to the Makefile and a PostgreSQL service in the CI workflow.
+2. New files: the `db` package from `templates/db/`, `docker-compose.yml`, and, for each
+   resource, `postgres.go`, `postgres_test.go`, and a migration from `templates/resource/`.
+3. The manifest, now recording `"database": "postgres"`.
+
+`changeset.apply` writes everything and then runs `go get` and `go mod tidy` (through the
+`domain.ModuleManager` interface). If any step fails, it removes the files and directories
+it created and restores every edited file, `go.mod`, and `go.sum`.
+
+`add resource` uses the same changeset and, when the manifest records a database, also
+plans the resource's PostgreSQL files and migration. `generate --db postgres` runs
+`generate` and then the same `add db` usecase.
+
+`TestAddDatabase` in `main_test.go` runs the whole flow against PostgreSQL in Docker (Linux
+only; skipped elsewhere): vet, the project's tests with `TEST_DATABASE_URL`, and data
+surviving a server restart.
+
 ## The banner and README logo
 
 The terminal banner (`cmd/banner.go`) draws the gopher from the `gopherPixels` grid

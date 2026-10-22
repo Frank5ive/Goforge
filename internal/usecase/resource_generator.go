@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Frank5ive/goforge/internal/domain"
 )
@@ -51,6 +52,7 @@ const fallbackPort = 8080
 type ResourceGeneratorUsecase struct {
 	templateRenderer domain.TemplateRenderer
 	fileWriter       domain.FileWriter
+	now              func() time.Time // dates migrations
 }
 
 // NewResourceGeneratorUsecase creates a new instance of ResourceGeneratorUsecase.
@@ -61,87 +63,83 @@ func NewResourceGeneratorUsecase(
 	return &ResourceGeneratorUsecase{
 		templateRenderer: renderer,
 		fileWriter:       writer,
+		now:              time.Now,
 	}
 }
 
-// Add implements domain.ResourceGenerator. Everything that can be checked is
-// checked before any file is written, and if a later step fails the new
-// resource package is removed, so a failed run leaves the project unchanged.
-func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) error {
+// Add implements domain.ResourceGenerator. Everything is rendered and checked
+// before any file is written, then applied as one changeset, so a failed run
+// leaves the project unchanged. In a project with a PostgreSQL database, the
+// resource is stored in PostgreSQL and gets a migration for its table.
+func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Changes, error) {
 	if err := config.Validate(); err != nil {
-		return domain.NewGenerationError("validation", "resource validation failed", err)
+		return domain.Changes{}, domain.NewGenerationError("validation", "resource validation failed", err)
+	}
+	dir := config.ProjectDir
+
+	modulePath, err := readModulePath(u.fileWriter, dir)
+	if err != nil {
+		return domain.Changes{}, domain.NewGenerationError("project_check",
+			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", dir), err)
 	}
 
-	modulePath, err := readModulePath(u.fileWriter, config.ProjectDir)
+	manifest, hasManifest, err := readManifest(u.fileWriter, dir)
 	if err != nil {
-		return domain.NewGenerationError("project_check",
-			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", config.ProjectDir), err)
-	}
-
-	manifest, hasManifest, err := readManifest(u.fileWriter, config.ProjectDir)
-	if err != nil {
-		return domain.NewGenerationError("project_check", "cannot read "+domain.ManifestFile, err)
+		return domain.Changes{}, domain.NewGenerationError("project_check", "cannot read "+domain.ManifestFile, err)
 	}
 	if !hasManifest {
 		// Projects from older GoForge versions have no manifest; start one
 		manifest = domain.Manifest{Module: modulePath}
 	}
+	postgres := manifest.Database == domain.DatabasePostgres
 
-	routesPath := filepath.Join(config.ProjectDir, "server", "routes.go")
+	routesPath := filepath.Join(dir, "server", "routes.go")
 	routes, err := u.fileWriter.ReadFile(routesPath)
 	if err != nil {
-		return domain.NewGenerationError("project_check",
+		return domain.Changes{}, domain.NewGenerationError("project_check",
 			"server/routes.go not found; run this inside a project created by goforge generate", err)
 	}
 
 	pkg := config.PackageName()
-	updatedRoutes, err := registerResource(routes, modulePath, pkg, pkg+".NewMemoryRepository()")
+	repo := pkg + ".NewMemoryRepository()"
+	if postgres {
+		repo = pkg + ".NewPostgresRepository(deps.DB)"
+	}
+	updatedRoutes, err := registerResource(routes, modulePath, pkg, repo)
 	if err != nil {
-		return domain.NewGenerationError("register_routes", "cannot register the resource in server/routes.go", err)
+		return domain.Changes{}, domain.NewGenerationError("register_routes", "cannot register the resource in server/routes.go", err)
 	}
 
-	pkgDir := filepath.Join(config.ProjectDir, config.PackageName())
+	pkgDir := filepath.Join(dir, pkg)
 	if u.fileWriter.FileExists(pkgDir) {
-		return domain.NewGenerationError("directory_check", fmt.Sprintf("%s already exists", pkgDir), nil)
-	}
-
-	if err := u.fileWriter.CreateDirectory(pkgDir); err != nil {
-		return domain.NewGenerationError("create_structure", "failed to create the resource package directory", err)
+		return domain.Changes{}, domain.NewGenerationError("directory_check", fmt.Sprintf("%s already exists", pkgDir), nil)
 	}
 
 	data := newResourceData(config, modulePath)
-	data.Port = u.readDefaultPort(config.ProjectDir)
-	for _, f := range resourceFiles {
-		content, err := u.templateRenderer.Render(f.template, data)
-		if err == nil {
-			err = writeFormatted(u.fileWriter, filepath.Join(pkgDir, f.file(config)), content)
-		}
-		if err != nil {
-			return u.cleanup(pkgDir, domain.NewGenerationError("generate_files", fmt.Sprintf("failed to generate %s", f.file(config)), err))
-		}
-	}
+	data.Port = u.readDefaultPort(dir)
 
-	if err := u.fileWriter.WriteFile(routesPath, updatedRoutes); err != nil {
-		return u.cleanup(pkgDir, domain.NewGenerationError("register_routes", "failed to update server/routes.go", err))
+	cs := newChangeset(u.fileWriter)
+	for _, f := range resourceFiles {
+		if err := planTemplate(u.templateRenderer, cs, filepath.Join(pkgDir, f.file(config)), f.template, data); err != nil {
+			return domain.Changes{}, domain.NewGenerationError("generate_files", fmt.Sprintf("failed to generate %s", f.file(config)), err)
+		}
 	}
+	if postgres {
+		if err := planPostgresResource(u.templateRenderer, cs, dir, config, data, u.now().UTC()); err != nil {
+			return domain.Changes{}, domain.NewGenerationError("generate_files", "failed to generate the PostgreSQL repository", err)
+		}
+	}
+	cs.edit(routesPath, updatedRoutes)
 
 	manifest.AddResource(config)
-	if err := writeManifest(u.fileWriter, config.ProjectDir, manifest); err != nil {
-		// The resource itself is complete and wired in, so keep it
-		return domain.NewGenerationError("manifest",
-			fmt.Sprintf("the resource was added, but %s could not be updated", domain.ManifestFile), err)
+	if err := planManifest(cs, dir, manifest); err != nil {
+		return domain.Changes{}, domain.NewGenerationError("manifest", "cannot update "+domain.ManifestFile, err)
 	}
 
-	return nil
-}
-
-// cleanup removes the partially generated resource package and returns genErr,
-// noting a cleanup failure if there was one.
-func (u *ResourceGeneratorUsecase) cleanup(pkgDir string, genErr *domain.GenerationError) error {
-	if err := u.fileWriter.RemoveAll(pkgDir); err != nil {
-		genErr.Message += fmt.Sprintf(" (cleanup of %s also failed: %v)", pkgDir, err)
+	if err := cs.apply(nil, nil); err != nil {
+		return domain.Changes{}, domain.NewGenerationError("apply", "the project was left unchanged", err)
 	}
-	return genErr
+	return domain.Changes{Created: cs.createdIn(dir), Updated: cs.editedIn(dir)}, nil
 }
 
 // readDefaultPort returns the default port from the project's config/config.go, or

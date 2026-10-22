@@ -54,6 +54,19 @@ The first public release will be tagged `v0.1.0`.
   which holds shared services such as a database pool
 - Generated projects record their options and resources in `.goforge.json`, so
   `goforge add` commands can extend them safely
+- `goforge add db postgres` (or `goforge generate --db postgres`) stores data in
+  PostgreSQL:
+  - a `db` package with a pgx connection pool and an embedded-SQL migration runner
+    (applied at startup, once each, in transactions, behind an advisory lock)
+  - startup wiring, `DATABASE_URL` in `config`, and `/readyz` checking the database
+  - every existing resource converted to a `PostgresRepository` with a migration;
+    resources added later use PostgreSQL automatically
+  - shared repository tests that run against the in-memory and PostgreSQL
+    repositories (PostgreSQL when `TEST_DATABASE_URL` is set)
+  - `docker-compose.yml`, `make db-up`/`db-down`/`db-reset`/`test-db`, and a
+    PostgreSQL service in the generated CI workflow
+  - planned in full before writing, and rolled back completely (including `go.mod`)
+    if any step fails
 - Generated Go code is always gofmt-formatted
 - Templates embedded in the binary (single-file distribution)
 - Terminal banner with a pixel-art Go gopher and wordmark; adapts to terminal width,

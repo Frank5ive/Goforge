@@ -106,7 +106,7 @@ func TestGenerate_NoPromptWhenAllOptionsSetByFlag(t *testing.T) {
 	dir := t.TempDir()
 
 	output, err := runGenerateCmd(t, "--name", "all-flags", "--output", dir,
-		"--module", "example.com/all-flags", "--logger=false", "--docker=false", "--readme=false", "--ci=false")
+		"--module", "example.com/all-flags", "--logger=false", "--docker=false", "--readme=false", "--ci=false", "--db=")
 	if err != nil {
 		t.Fatalf("Expected no prompt when every option is set by flag, got: %v\n%s", err, output)
 	}
@@ -128,5 +128,34 @@ func TestGenerate_RejectsInvalidModule(t *testing.T) {
 	_, err := runGenerateCmd(t, "--name", "bad-module", "--output", t.TempDir(), "--module", "not a path", "--yes")
 	if err == nil || !strings.Contains(err.Error(), "invalid module path") {
 		t.Errorf("Expected invalid module path error, got %v", err)
+	}
+}
+
+func TestGenerate_WithPostgres(t *testing.T) {
+	dir := t.TempDir()
+
+	output, err := runGenerateCmd(t, "--name", "pg-api", "--output", dir, "--db", "postgres", "--yes")
+	if err != nil {
+		t.Fatalf("generate --db postgres failed: %v\n%s", err, output)
+	}
+
+	project := filepath.Join(dir, "pg-api")
+	for _, rel := range []string{"db/db.go", "docker-compose.yml"} {
+		if _, err := os.Stat(filepath.Join(project, rel)); err != nil {
+			t.Errorf("expected %s: %v", rel, err)
+		}
+	}
+	if manifest, _ := os.ReadFile(filepath.Join(project, ".goforge.json")); !strings.Contains(string(manifest), `"database": "postgres"`) {
+		t.Errorf("manifest should record the database:\n%s", manifest)
+	}
+	if !strings.Contains(output, "make db-up") {
+		t.Errorf("next steps should start the database:\n%s", output)
+	}
+}
+
+func TestGenerate_RejectsUnknownDatabase(t *testing.T) {
+	_, err := runGenerateCmd(t, "--name", "x", "--output", t.TempDir(), "--db", "mongo", "--yes")
+	if err == nil || !strings.Contains(err.Error(), "unsupported --db") {
+		t.Errorf("error = %v, want unsupported --db", err)
 	}
 }

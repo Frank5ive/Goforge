@@ -13,6 +13,7 @@
 [Installation](#-installation) •
 [Quick Start](#-quick-start) •
 [Adding Resources](#-adding-resources) •
+[Adding a Database](#-adding-a-database) •
 [Documentation](#-documentation) •
 [Architecture](#-goforge-architecture) •
 [Contributing](#-contributing)
@@ -187,8 +188,9 @@ endpoint with one click; it already points at your project's port.
 
 Each resource uses Clean Architecture–style layering in a single package: handlers call
 the service, the service holds the business rules, and storage sits behind a `Repository`
-interface. Swap the in-memory repository for a database without touching the service or
-handlers. Keeping a resource in one package makes it easy to find and follow.
+interface, so resources move to PostgreSQL (see [Adding a Database](#-adding-a-database))
+without touching the service or handlers. Keeping a resource in one package makes it easy to
+find and follow.
 
 **Fields** are `name:type` pairs. Types: `string`, `int`, `float`, `bool`, and `time`
 (RFC 3339 in JSON). String fields are required unless marked optional with `?`. `id`,
@@ -214,6 +216,46 @@ and `400` for malformed JSON, unknown fields, or invalid `limit`/`offset`.
 
 ---
 
+## 🐘 Adding a Database
+
+Store your resources in PostgreSQL with one command, either when generating
+(`goforge generate --db postgres`) or later, inside an existing project:
+
+```bash
+goforge add db postgres
+make db-up     # start PostgreSQL in Docker
+go run .       # connects, applies migrations, and serves your resources from PostgreSQL
+```
+
+This adds:
+
+- **A `db` package:** a [pgx](https://github.com/jackc/pgx) connection pool and a small
+  migration runner. SQL files in `db/migrations` are embedded in the binary and applied in
+  order at startup, each once, in its own transaction. A PostgreSQL advisory lock stops two
+  instances from migrating at the same time.
+- **Startup wiring:** `main.go` connects before serving, `DATABASE_URL` joins the `config`
+  package (it defaults to the local Docker database), and `/readyz` returns `503` when the
+  database is unreachable.
+- **Every existing resource moved to PostgreSQL:** each gets a `PostgresRepository`, a
+  migration that creates its table, and updated wiring in `server/routes.go`. **Resources you
+  add afterwards use PostgreSQL automatically.**
+- **Tests that prove both storage layers behave the same:** each resource's
+  `repository_test.go` runs one set of tests against the in-memory and the PostgreSQL
+  repositories. The PostgreSQL run is skipped unless `TEST_DATABASE_URL` is set;
+  `make test-db` runs everything against PostgreSQL in Docker.
+- **Local tooling:** `docker-compose.yml` (PostgreSQL, plus the app when the project has a
+  Dockerfile) and `make db-up`, `db-down`, `db-reset`, and `test-db`.
+- **CI:** the generated GitHub Actions workflow gets a PostgreSQL service, so the database
+  tests run on every push.
+- **The pgx dependency** in `go.mod`. The project's minimum Go version becomes 1.25, which pgx
+  requires.
+
+Edits are made only at marker comments and are all planned before anything is written. If
+any step fails, including downloading pgx, the project is left exactly as it was. Use
+`--dry-run` to preview the changes.
+
+---
+
 ## 📚 Documentation
 
 ### Command Line Options
@@ -236,6 +278,7 @@ goforge generate [flags]
 | `--yes` | `-y` | `false` | Skip prompts and use flag values and defaults |
 | `--dry-run` | | `false` | List the files that would be created without writing anything |
 | `--git` | | `false` | Run `git init` in the new project |
+| `--db` | | none | Store data in a database: `postgres` (same as `goforge add db postgres`) |
 
 #### Interactive Prompts
 
@@ -505,9 +548,9 @@ It helps others discover the project and motivates continued development.
 - ✅ Structured logging, tests, linting, CI, and Docker
 - ✅ Environment-based configuration, CORS, and request body limits
 - ✅ `goforge add resource` for tested CRUD resources
+- ✅ PostgreSQL with migrations (`goforge add db postgres`)
 
 ### Next
-- [ ] Database-backed repositories (`goforge add db postgres`)
 - [ ] Authentication middleware (JWT)
 - [ ] OpenAPI documentation generated from resources
 - [ ] Homebrew tap

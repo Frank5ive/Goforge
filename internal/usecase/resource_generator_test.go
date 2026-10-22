@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Frank5ive/goforge/internal/domain"
 )
@@ -46,8 +47,13 @@ func TestResourceGenerator_Add(t *testing.T) {
 	writer := newProjectWriter()
 	usecase := NewResourceGeneratorUsecase(renderer, writer)
 
-	if err := usecase.Add(testResource()); err != nil {
+	changes, err := usecase.Add(testResource())
+	if err != nil {
 		t.Fatalf("Add() error = %v", err)
+	}
+	// The resource files, plus a new .goforge.json since the mock project has none
+	if len(changes.Created) != len(resourceFiles)+1 || len(changes.Updated) != 1 {
+		t.Errorf("changes = %+v, want %d created files and routes.go updated", changes, len(resourceFiles)+1)
 	}
 
 	pkgDir := filepath.Join("/proj", "blogposts")
@@ -68,12 +74,11 @@ func TestResourceGenerator_Add(t *testing.T) {
 	}
 }
 
-func TestResourceGenerator_Add_Failures(t *testing.T) {
+func TestResourceGenerator_Add_FailuresLeaveProjectUnchanged(t *testing.T) {
 	tests := []struct {
-		name     string
-		setup    func(w *MockFileWriter, r *MockTemplateRenderer)
-		step     string
-		cleansUp bool
+		name  string
+		setup func(w *MockFileWriter, r *MockTemplateRenderer)
+		step  string
 	}{
 		{
 			name: "not a go module",
@@ -92,7 +97,7 @@ func TestResourceGenerator_Add_Failures(t *testing.T) {
 		{
 			name: "package already exists",
 			setup: func(w *MockFileWriter, _ *MockTemplateRenderer) {
-				w.FileExistsFunc = func(path string) bool { return path == filepath.Join("/proj", "blogposts") }
+				w.FilesWritten[filepath.Join("/proj", "blogposts", "existing.go")] = "package blogposts\n"
 			},
 			step: "directory_check",
 		},
@@ -106,8 +111,7 @@ func TestResourceGenerator_Add_Failures(t *testing.T) {
 					return "package x\n", nil
 				}
 			},
-			step:     "generate_files",
-			cleansUp: true,
+			step: "generate_files",
 		},
 		{
 			name: "routes write fails",
@@ -120,8 +124,7 @@ func TestResourceGenerator_Add_Failures(t *testing.T) {
 					return nil
 				}
 			},
-			step:     "register_routes",
-			cleansUp: true,
+			step: "apply",
 		},
 	}
 
@@ -129,19 +132,55 @@ func TestResourceGenerator_Add_Failures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			renderer := NewMockTemplateRenderer()
 			writer := newProjectWriter()
+			writer.RemoveAllFunc = func(path string) error {
+				for file := range writer.FilesWritten {
+					if file == path || strings.HasPrefix(file, path+string(filepath.Separator)) {
+						delete(writer.FilesWritten, file)
+					}
+				}
+				return nil
+			}
 			tt.setup(writer, renderer)
+			before := map[string]string{}
+			for path, content := range writer.FilesWritten {
+				before[path] = content
+			}
 
-			err := NewResourceGeneratorUsecase(renderer, writer).Add(testResource())
+			_, err := NewResourceGeneratorUsecase(renderer, writer).Add(testResource())
 			if err == nil {
 				t.Fatal("Add() error = nil, want an error")
 			}
 			assertGenerationStep(t, err, tt.step)
 
-			removed := len(writer.PathsRemoved) == 1 && writer.PathsRemoved[0] == filepath.Join("/proj", "blogposts")
-			if removed != tt.cleansUp {
-				t.Errorf("package removed = %t, want %t (removed: %v)", removed, tt.cleansUp, writer.PathsRemoved)
+			if len(writer.FilesWritten) != len(before) {
+				t.Errorf("project has %d files after the failure, want the original %d", len(writer.FilesWritten), len(before))
+			}
+			for path, content := range before {
+				if writer.FilesWritten[path] != content {
+					t.Errorf("%s changed despite the failure", path)
+				}
 			}
 		})
+	}
+}
+
+func TestResourceGenerator_Add_UsesPostgresWhenTheProjectHasADatabase(t *testing.T) {
+	writer := newProjectWriter()
+	writer.FilesWritten[filepath.Join("/proj", ".goforge.json")] = `{"module": "example.com/app", "database": "postgres"}`
+	usecase := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer)
+	usecase.now = func() time.Time { return time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC) }
+
+	if _, err := usecase.Add(testResource()); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	for _, rel := range []string{"blogposts/postgres.go", "blogposts/postgres_test.go", "db/migrations/20260301120000_create_blog_posts.sql"} {
+		if _, ok := writer.FilesWritten[filepath.Join("/proj", filepath.FromSlash(rel))]; !ok {
+			t.Errorf("expected %s to be created", rel)
+		}
+	}
+	if routes := file(writer, "server/routes.go"); !strings.Contains(routes, "blogposts.NewPostgresRepository(deps.DB)") {
+		t.Errorf("routes.go should register the PostgreSQL repository:\n%s", routes)
 	}
 }
 
@@ -150,7 +189,7 @@ func TestResourceGenerator_Add_WritesNothingWhenInvalid(t *testing.T) {
 	config := testResource()
 	config.Name = "Bad-Name"
 
-	err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(config)
+	_, err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(config)
 	assertGenerationStep(t, err, "validation")
 
 	if len(writer.DirsCreated) != 0 {
@@ -241,12 +280,7 @@ func TestResourceGenerator_Add_RecordsResourceInManifest(t *testing.T) {
 	writer := newProjectWriter()
 	manifestPath := filepath.Join("/proj", ".goforge.json")
 	writer.FilesWritten[manifestPath] = `{"app_name": "app", "module": "example.com/app", "port": 3000, "features": {"logger": true}}`
-	writer.FileExistsFunc = func(path string) bool {
-		_, ok := writer.FilesWritten[path]
-		return ok
-	}
-
-	if err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(testResource()); err != nil {
+	if _, err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(testResource()); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
 
@@ -261,7 +295,7 @@ func TestResourceGenerator_Add_RecordsResourceInManifest(t *testing.T) {
 func TestResourceGenerator_Add_StartsManifestForOlderProjects(t *testing.T) {
 	writer := newProjectWriter()
 
-	if err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(testResource()); err != nil {
+	if _, err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(testResource()); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
 

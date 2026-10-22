@@ -73,7 +73,7 @@ func run(ctx context.Context) error {
 )
 
 // newDBProject returns a mock filesystem holding a generated project at /proj
-// with one in-memory resource, and a FileExists that reflects it.
+// with one in-memory resource.
 func newDBProject() *MockFileWriter {
 	w := newProjectWriter()
 	routes, _ := registerResource(testRoutes, "example.com/app", "products", "products.NewMemoryRepository()")
@@ -88,10 +88,6 @@ func newDBProject() *MockFileWriter {
 	}
 	for rel, content := range files {
 		w.FilesWritten[filepath.Join("/proj", filepath.FromSlash(rel))] = content
-	}
-	w.FileExistsFunc = func(path string) bool {
-		_, ok := w.FilesWritten[path]
-		return ok
 	}
 	return w
 }

@@ -317,7 +317,7 @@ func TestAddResource(t *testing.T) {
 	}
 	for _, r := range resources {
 		r.ProjectDir = project
-		if err := container.ResourceGeneratorUsecase.Add(r); err != nil {
+		if _, err := container.ResourceGeneratorUsecase.Add(r); err != nil {
 			t.Fatalf("Failed to add resource %s: %v", r.Name, err)
 		}
 	}
@@ -481,12 +481,19 @@ func TestAddDatabase(t *testing.T) {
 		{Name: "in_stock", Type: domain.FieldBool},
 		{Name: "released_at", Type: domain.FieldTime},
 	}}
-	if err := container.ResourceGeneratorUsecase.Add(product); err != nil {
+	if _, err := container.ResourceGeneratorUsecase.Add(product); err != nil {
 		t.Fatalf("Failed to add resource: %v", err)
 	}
 	if _, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: project, Engine: domain.DatabasePostgres}); err != nil {
 		t.Fatalf("Failed to add database: %v", err)
 	}
+
+	// And one after, which must use PostgreSQL from the start
+	category := &domain.ResourceConfig{ProjectDir: project, Name: "category", Fields: []domain.Field{{Name: "title", Type: domain.FieldString}}}
+	if _, err := container.ResourceGeneratorUsecase.Add(category); err != nil {
+		t.Fatalf("Failed to add resource after the database: %v", err)
+	}
+	assertFileExists(t, filepath.Join(project, "categories", "postgres.go"), true)
 
 	assertGofmtClean(t, project)
 	runGo(t, project, "vet", "./...")
@@ -500,6 +507,9 @@ func TestAddDatabase(t *testing.T) {
 	if status, _, resp := request(t, http.MethodPost, baseURL+"/products", body); status != http.StatusCreated {
 		t.Fatalf("POST /products = %d %s", status, resp)
 	}
+	if status, _, resp := request(t, http.MethodPost, baseURL+"/categories", `{"title":"Toys"}`); status != http.StatusCreated {
+		t.Fatalf("POST /categories = %d %s", status, resp)
+	}
 	if status, _, _ := request(t, http.MethodGet, baseURL+"/readyz", ""); status != http.StatusOK {
 		t.Errorf("GET /readyz = %d, want 200 with the database up", status)
 	}
@@ -510,8 +520,10 @@ func TestAddDatabase(t *testing.T) {
 	var page struct {
 		Total int `json:"total"`
 	}
-	if status, _, resp := request(t, http.MethodGet, baseURL+"/products", ""); status != http.StatusOK || json.Unmarshal(resp, &page) != nil || page.Total < 1 {
-		t.Errorf("GET /products after restart = %d %s, want the stored product", status, resp)
+	for _, path := range []string{"/products", "/categories"} {
+		if status, _, resp := request(t, http.MethodGet, baseURL+path, ""); status != http.StatusOK || json.Unmarshal(resp, &page) != nil || page.Total < 1 {
+			t.Errorf("GET %s after restart = %d %s, want the stored item", path, status, resp)
+		}
 	}
 }
 
