@@ -168,6 +168,19 @@ Releases are built and published by GoReleaser when a version tag is pushed:
 To check the GoReleaser config locally without publishing:
 `goreleaser release --snapshot --clean` (output goes to `dist/`).
 
+## Recording the demo
+
+`docs/demo.tape` is a [VHS](https://github.com/charmbracelet/vhs) script that records
+`generate` → `add resource` → `go test` to `docs/demo.gif`. VHS needs `ttyd` and
+`ffmpeg`, and records whichever `goforge` is on your PATH:
+
+```bash
+go install . && vhs docs/demo.tape
+```
+
+Then show it near the top of `README.md`:
+`<img src="docs/demo.gif" alt="GoForge generating a server and adding a resource" width="100%">`
+
 ## Questions?
 
 Feel free to open an issue with your question.
