@@ -24,10 +24,10 @@ var FieldTypes = []FieldType{FieldString, FieldInt, FieldFloat, FieldBool, Field
 
 // Field is one client-editable field of a resource.
 type Field struct {
-	Name string // snake_case, e.g. "in_stock"
-	Type FieldType
+	Name string    `json:"name"` // snake_case, e.g. "in_stock"
+	Type FieldType `json:"type"`
 	// Optional string fields may be empty; other string fields are required.
-	Optional bool
+	Optional bool `json:"optional,omitempty"`
 }
 
 // ResourceConfig describes a REST resource to add to an existing GoForge project.

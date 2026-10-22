@@ -13,6 +13,7 @@
 [Installation](#-installation) •
 [Quick Start](#-quick-start) •
 [Adding Resources](#-adding-resources) •
+[Adding a Database](#-adding-a-database) •
 [Documentation](#-documentation) •
 [Architecture](#-goforge-architecture) •
 [Contributing](#-contributing)
@@ -39,7 +40,7 @@ GoForge is a CLI tool that generates production-ready Go HTTP servers using only
 ## 🚀 Features
 
 ### Core Features
-- 🔌 **Health Endpoint** - `GET /health` with a JSON response
+- 🔌 **Health and Readiness** - `GET /health` for liveness and `GET /readyz` for readiness (checks dependencies such as the database)
 - 🛑 **Graceful Shutdown** - Handles SIGINT/SIGTERM and drains in-flight requests
 - 🧭 **Modern Routing** - Go 1.22+ `http.ServeMux` patterns like `GET /users/{id}`, with automatic 405s
 - 🪪 **Request IDs** - Every response carries an `X-Request-ID`; incoming IDs are reused for tracing
@@ -187,8 +188,9 @@ endpoint with one click; it already points at your project's port.
 
 Each resource uses Clean Architecture–style layering in a single package: handlers call
 the service, the service holds the business rules, and storage sits behind a `Repository`
-interface. Swap the in-memory repository for a database without touching the service or
-handlers. Keeping a resource in one package makes it easy to find and follow.
+interface, so resources move to a database (see [Adding a Database](#-adding-a-database))
+without touching the service or handlers. Keeping a resource in one package makes it easy to
+find and follow.
 
 **Fields** are `name:type` pairs. Types: `string`, `int`, `float`, `bool`, and `time`
 (RFC 3339 in JSON). String fields are required unless marked optional with `?`. `id`,
@@ -214,6 +216,64 @@ and `400` for malformed JSON, unknown fields, or invalid `limit`/`offset`.
 
 ---
 
+## 🐘 Adding a Database
+
+Store your resources in a real database with one command, either when generating
+(`goforge generate --db <engine>`) or later, inside an existing project:
+
+```bash
+goforge add db postgres    # or: mysql, sqlite, mongo
+make db-up                 # start the database in Docker (not needed for SQLite)
+go run .                   # connects and serves your resources from the database
+```
+
+| Engine | Command | Driver | Local database | Good for |
+|--------|---------|--------|----------------|----------|
+| **PostgreSQL** | `goforge add db postgres` | [pgx](https://github.com/jackc/pgx) | `postgres:18` in Docker | Most production APIs |
+| **MySQL / MariaDB** | `goforge add db mysql` | [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql) | `mysql:8.4` in Docker | Teams already on MySQL or MariaDB |
+| **SQLite** | `goforge add db sqlite` | [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) (pure Go) | A file; no server or Docker | Prototypes, small apps, single-server tools |
+| **MongoDB** | `goforge add db mongo` | [mongo-driver v2](https://github.com/mongodb/mongo-go-driver) | `mongo:8.0` in Docker | Document-shaped data |
+
+Aliases work too: `postgresql`, `mariadb`, `sqlite3`, `mongodb`.
+
+What `add db` does, for every engine:
+
+- **Adds a `db` package** that connects at startup, checks the database is reachable, and
+  closes it on shutdown. For SQL databases it also runs migrations: SQL files in
+  `db/migrations` are embedded in the binary and applied in order at startup, each once,
+  behind a lock so two instances never migrate at the same time.
+- **Moves every existing resource to the database.** Each gets a repository for the engine
+  and, for SQL databases, a migration that creates its table. **Resources you add afterwards
+  use the database automatically.**
+- **Wires it in:** `DATABASE_URL` joins the `config` package (it defaults to the local
+  development database), and `/readyz` returns `503` when the database is unreachable.
+- **Proves both storage layers behave the same:** each resource's `repository_test.go` runs
+  one set of tests against the in-memory and the database repositories. SQLite's tests always
+  run, on a temporary file. The others run when `TEST_DATABASE_URL` is set; `make test-db`
+  runs everything against the database in Docker.
+- **Adds local tooling and CI:** `docker-compose.yml` (the database, plus the app when the
+  project has a Dockerfile), `make db-up`, `db-down`, `db-reset`, and `test-db`, and a database
+  service in the generated GitHub Actions workflow. SQLite needs none of this: its
+  `make db-reset` deletes the file, and the files are git-ignored.
+- **Adds the driver to `go.mod`.** The project's minimum Go version rises to what the driver
+  requires (Go 1.25 for PostgreSQL and MongoDB, Go 1.26 for SQLite).
+
+Edits are made only at marker comments and are all planned before anything is written. If
+any step fails, including downloading the driver, the project is left exactly as it was. Use
+`--dry-run` to preview the changes.
+
+> **Already running a database locally?** The Docker databases use the standard ports
+> (5432, 3306, 27017). If one is taken, stop the local server or change the port in
+> `docker-compose.yml` and `DATABASE_URL`.
+
+> **MongoDB on Linux 6.19 to 7.0.13.** MongoDB refuses to start on these kernels while
+> its allocator uses `rseq` ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)).
+> The generated `docker-compose.yml` and CI service set `GLIBC_TUNABLES=glibc.pthread.rseq=1`,
+> which hands `rseq` to glibc so MongoDB starts at a small cost in allocator speed. Set the
+> same variable for a MongoDB you run some other way, or use kernel 7.0.14 or later.
+
+---
+
 ## 📚 Documentation
 
 ### Command Line Options
@@ -236,6 +296,7 @@ goforge generate [flags]
 | `--yes` | `-y` | `false` | Skip prompts and use flag values and defaults |
 | `--dry-run` | | `false` | List the files that would be created without writing anything |
 | `--git` | | `false` | Run `git init` in the new project |
+| `--db` | | none | Store data in a database: `postgres`, `mysql`, `sqlite`, or `mongo` (same as `goforge add db <engine>`) |
 
 #### Interactive Prompts
 
@@ -505,9 +566,9 @@ It helps others discover the project and motivates continued development.
 - ✅ Structured logging, tests, linting, CI, and Docker
 - ✅ Environment-based configuration, CORS, and request body limits
 - ✅ `goforge add resource` for tested CRUD resources
+- ✅ Databases: PostgreSQL, MySQL/MariaDB, SQLite, and MongoDB (`goforge add db <engine>`)
 
 ### Next
-- [ ] Database-backed repositories (`goforge add db postgres`)
 - [ ] Authentication middleware (JWT)
 - [ ] OpenAPI documentation generated from resources
 - [ ] Homebrew tap

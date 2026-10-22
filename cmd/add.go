@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -18,6 +17,7 @@ func newAddCmd() *cobra.Command {
 		Short: "Add code to a project created by goforge generate",
 	}
 	cmd.AddCommand(newAddResourceCmd())
+	cmd.AddCommand(newAddDBCmd())
 	return cmd
 }
 
@@ -86,34 +86,25 @@ func runAddResource(out io.Writer, name string, opts *addResourceOptions) error 
 		return err
 	}
 
-	if err := container.ResourceGeneratorUsecase.Add(config); err != nil {
+	changes, err := container.ResourceGeneratorUsecase.Add(config)
+	if err != nil {
 		return err
 	}
 
-	pkgDir := filepath.Join(config.ProjectDir, config.PackageName())
-	var created, updated []string
-	for _, file := range container.Files.Files() {
-		if rel, err := filepath.Rel(pkgDir, file); err == nil && !strings.HasPrefix(rel, "..") {
-			created = append(created, file)
-		} else {
-			updated = append(updated, file)
-		}
-	}
-
 	if opts.dryRun {
-		fmt.Fprintf(out, "🔍 Dry run: no files were written. GoForge would create %d files:\n", len(created))
+		fmt.Fprintf(out, "🔍 Dry run: no files were written. GoForge would create %d files:\n", len(changes.Created))
 	} else {
-		fmt.Fprintf(out, "✅ Added the %s resource. Created %d files:\n", config.Name, len(created))
+		fmt.Fprintf(out, "✅ Added the %s resource. Created %d files:\n", config.Name, len(changes.Created))
 	}
-	printFiles(out, config.ProjectDir, created)
+	printRelative(out, changes.Created)
 
-	if len(updated) > 0 {
+	if len(changes.Updated) > 0 {
 		if opts.dryRun {
 			fmt.Fprintln(out, "\n…and would update:")
 		} else {
 			fmt.Fprintln(out, "\n📝 Updated:")
 		}
-		printFiles(out, config.ProjectDir, updated)
+		printRelative(out, changes.Updated)
 	}
 
 	path := config.RoutePath()
@@ -131,7 +122,9 @@ func runAddResource(out io.Writer, name string, opts *addResourceOptions) error 
 		fmt.Fprintf(out, "   you start (or restart) the server: go run .\n")
 		fmt.Fprintf(out, "📮 Try them with %s/requests.http (VS Code REST Client or JetBrains HTTP client)\n", pkg)
 		fmt.Fprintf(out, "🧪 Run its tests with: go test ./%s\n", pkg)
-		fmt.Fprintf(out, "💾 Data is stored in memory. Implement %s.Repository to use a database.\n", pkg)
+		if changes.Storage != "" {
+			fmt.Fprintln(out, "💾 "+changes.Storage)
+		}
 	}
 
 	return nil

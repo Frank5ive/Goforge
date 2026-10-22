@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/format"
@@ -76,9 +77,9 @@ func TestGeneratedProjects(t *testing.T) {
 
 			projectPath := config.GetProjectPath()
 			for _, file := range []string{
-				"main.go", "go.mod", ".gitignore", "Makefile", ".golangci.yml",
+				"main.go", "go.mod", ".gitignore", "Makefile", ".golangci.yml", ".goforge.json",
 				"config/config.go", "config/config_test.go",
-				"server/server.go", "server/routes.go", "server/middleware.go", "server/server_test.go",
+				"server/server.go", "server/deps.go", "server/routes.go", "server/middleware.go", "server/server_test.go",
 				"handlers/health.go", "handlers/respond.go", "handlers/health_test.go", "handlers/respond_test.go",
 			} {
 				assertFileExists(t, filepath.Join(projectPath, file), true)
@@ -317,7 +318,7 @@ func TestAddResource(t *testing.T) {
 	}
 	for _, r := range resources {
 		r.ProjectDir = project
-		if err := container.ResourceGeneratorUsecase.Add(r); err != nil {
+		if _, err := container.ResourceGeneratorUsecase.Add(r); err != nil {
 			t.Fatalf("Failed to add resource %s: %v", r.Name, err)
 		}
 	}
@@ -331,7 +332,7 @@ func TestAddResource(t *testing.T) {
 		binary += ".exe"
 	}
 	runGo(t, project, "build", "-o", binary, ".")
-	baseURL := startServer(t, binary)
+	baseURL, _ := startServer(t, binary)
 
 	// Every endpoint works straight after `add resource` and a build: no manual wiring
 	product := `{"name":"Gopher plush","image_url":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
@@ -408,15 +409,17 @@ func request(t *testing.T, method, url, body string) (int, http.Header, []byte) 
 	return resp.StatusCode, resp.Header, respBody
 }
 
-// startServer runs the binary on a free port until the test ends and returns its base URL.
-func startServer(t *testing.T, binary string) string {
+// startServer runs the binary on a free port until the test ends (or until the
+// returned stop function is called) and returns its base URL. env adds
+// environment variables such as DATABASE_URL.
+func startServer(t *testing.T, binary string, env ...string) (string, func()) {
 	t.Helper()
 
 	port := freePort(t)
 	var output bytes.Buffer
 
 	cmd := exec.Command(binary)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
+	cmd.Env = append(append(os.Environ(), fmt.Sprintf("PORT=%d", port)), env...)
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	if err := cmd.Start(); err != nil {
@@ -428,12 +431,217 @@ func startServer(t *testing.T, binary string) string {
 		_ = cmd.Wait()
 		close(done)
 	}()
-	t.Cleanup(func() {
+	stop := func() {
 		_ = cmd.Process.Kill()
 		<-done
+	}
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		default:
+			stop()
+		}
 	})
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	waitForHealth(t, baseURL+"/health", done, &output).Body.Close()
-	return baseURL
+	return baseURL, stop
+}
+
+// databaseEngines are the engines TestAddDatabase covers, with a function that
+// starts a throwaway database and returns its URL (skipping when unavailable).
+var databaseEngines = []struct {
+	name  string
+	start func(t *testing.T) string
+}{
+	{domain.DatabasePostgres, startPostgres},
+	{domain.DatabaseMySQL, startMySQL},
+	{domain.DatabaseSQLite, func(t *testing.T) string { return filepath.Join(t.TempDir(), "shop.db") }},
+	{domain.DatabaseMongo, startMongo},
+}
+
+// TestAddDatabase adds each database engine to a generated project with
+// resources and checks that the project passes its tests against a real
+// database, that data survives a server restart, and that /readyz reports the
+// database. Server databases need Docker on Linux (skipped elsewhere); every
+// engine needs network access for `go get`.
+func TestAddDatabase(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping end-to-end database test in short mode")
+	}
+
+	for _, engine := range databaseEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			testAddDatabase(t, engine.name, engine.start(t))
+		})
+	}
+}
+
+func testAddDatabase(t *testing.T, engine, databaseURL string) {
+	templates, err := fs.Sub(TemplatesFS, "templates")
+	if err != nil {
+		t.Fatalf("Failed to open embedded templates: %v", err)
+	}
+	container, err := di.BuildContainer(templates, di.Options{})
+	if err != nil {
+		t.Fatalf("Failed to build container: %v", err)
+	}
+
+	config := &domain.ServerConfig{AppName: "shop", ModulePath: "github.com/acme/shop", Port: 8080, OutputDir: t.TempDir(), IncludeLogger: true, IncludeCI: true}
+	if err := container.ServerGeneratorUsecase.Generate(config); err != nil {
+		t.Fatalf("Failed to generate server: %v", err)
+	}
+	project := config.GetProjectPath()
+
+	// One resource before the database, so `add db` must convert it
+	product := &domain.ResourceConfig{ProjectDir: project, Name: "product", Fields: []domain.Field{
+		{Name: "name", Type: domain.FieldString},
+		{Name: "notes", Type: domain.FieldString, Optional: true},
+		{Name: "stock", Type: domain.FieldInt},
+		{Name: "price", Type: domain.FieldFloat},
+		{Name: "in_stock", Type: domain.FieldBool},
+		{Name: "released_at", Type: domain.FieldTime},
+	}}
+	if _, err := container.ResourceGeneratorUsecase.Add(product); err != nil {
+		t.Fatalf("Failed to add resource: %v", err)
+	}
+	if _, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: project, Engine: engine}); err != nil {
+		t.Fatalf("Failed to add database: %v", err)
+	}
+
+	// And one after, which must use the database from the start
+	category := &domain.ResourceConfig{ProjectDir: project, Name: "category", Fields: []domain.Field{{Name: "title", Type: domain.FieldString}}}
+	if _, err := container.ResourceGeneratorUsecase.Add(category); err != nil {
+		t.Fatalf("Failed to add resource after the database: %v", err)
+	}
+	routes, _ := os.ReadFile(filepath.Join(project, "server", "routes.go"))
+	if strings.Contains(string(routes), "NewMemoryRepository") {
+		t.Errorf("a resource is still stored in memory:\n%s", routes)
+	}
+
+	assertGofmtClean(t, project)
+	runGo(t, project, "vet", "./...")
+	runGoEnv(t, project, []string{"TEST_DATABASE_URL=" + databaseURL}, "test", "-count=1", "./...")
+
+	binary := filepath.Join(t.TempDir(), "shop")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	runGo(t, project, "build", "-o", binary, ".")
+
+	baseURL, stop := startServer(t, binary, "DATABASE_URL="+databaseURL)
+	body := `{"name":"Gopher plush","notes":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
+	if status, _, resp := request(t, http.MethodPost, baseURL+"/products", body); status != http.StatusCreated {
+		t.Fatalf("POST /products = %d %s", status, resp)
+	}
+	if status, _, resp := request(t, http.MethodPost, baseURL+"/categories", `{"title":"Toys"}`); status != http.StatusCreated {
+		t.Fatalf("POST /categories = %d %s", status, resp)
+	}
+	if status, _, _ := request(t, http.MethodGet, baseURL+"/readyz", ""); status != http.StatusOK {
+		t.Errorf("GET /readyz = %d, want 200 with the database up", status)
+	}
+	stop()
+
+	// Data is in the database, so it survives a restart
+	baseURL, _ = startServer(t, binary, "DATABASE_URL="+databaseURL)
+	var page struct {
+		Total int `json:"total"`
+	}
+	for _, path := range []string{"/products", "/categories"} {
+		if status, _, resp := request(t, http.MethodGet, baseURL+path, ""); status != http.StatusOK || json.Unmarshal(resp, &page) != nil || page.Total < 1 {
+			t.Errorf("GET %s after restart = %d %s, want the stored item", path, status, resp)
+		}
+	}
+}
+
+// startPostgres starts a throwaway PostgreSQL container and returns its URL.
+func startPostgres(t *testing.T) string {
+	hostPort := startContainer(t, "postgres:18-alpine", "5432/tcp",
+		[]string{"POSTGRES_USER=app", "POSTGRES_PASSWORD=app", "POSTGRES_DB=shop"},
+		[]string{"pg_isready", "-U", "app", "-d", "shop", "-h", "127.0.0.1"})
+	return fmt.Sprintf("postgres://app:app@%s/shop?sslmode=disable", hostPort)
+}
+
+// startMySQL starts a throwaway MySQL container and returns its URL.
+func startMySQL(t *testing.T) string {
+	// Ping over TCP: during initialization MySQL runs a temporary server that only
+	// accepts socket connections, so this succeeds only once it is really ready
+	hostPort := startContainer(t, "mysql:8.4", "3306/tcp",
+		[]string{"MYSQL_ROOT_PASSWORD=root", "MYSQL_DATABASE=shop", "MYSQL_USER=app", "MYSQL_PASSWORD=app"},
+		[]string{"mysqladmin", "ping", "-h", "127.0.0.1", "-uapp", "-papp", "--silent"})
+	return fmt.Sprintf("app:app@tcp(%s)/shop", hostPort)
+}
+
+// startMongo starts a throwaway MongoDB container and returns its URL.
+func startMongo(t *testing.T) string {
+	// Let glibc own rseq so MongoDB starts on Linux 6.19 through 7.0.13, as the
+	// generated docker-compose.yml does (SERVER-121912)
+	hostPort := startContainer(t, "mongo:8.0", "27017/tcp", []string{"GLIBC_TUNABLES=glibc.pthread.rseq=1"},
+		[]string{"mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"})
+	return fmt.Sprintf("mongodb://%s/shop", hostPort)
+}
+
+// startContainer runs image with env, publishing port on a random local port,
+// waits until readyCmd succeeds inside the container, and returns the host:port.
+// It skips the test unless Docker is available on Linux.
+func startContainer(t *testing.T, image, port string, env, readyCmd []string) string {
+	t.Helper()
+
+	if runtime.GOOS != "linux" {
+		t.Skip("database end-to-end tests run on Linux only")
+	}
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		t.Skip("Docker is not available")
+	}
+
+	// No --rm: a container that exits early must keep its logs for the failure
+	// message. Cleanup removes it either way.
+	args := []string{"run", "-d", "-p", "127.0.0.1::" + strings.TrimSuffix(port, "/tcp")}
+	for _, e := range env {
+		args = append(args, "-e", e)
+	}
+	out, err := exec.Command("docker", append(args, image)...).Output()
+	if err != nil {
+		t.Fatalf("starting %s: %v", image, err)
+	}
+	id := strings.TrimSpace(string(out))
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
+
+	out, err = exec.Command("docker", "port", id, port).Output()
+	if err != nil {
+		t.Fatalf("finding the %s port: %v", image, err)
+	}
+	hostPort := strings.TrimSpace(strings.Split(string(out), "\n")[0])
+
+	deadline := time.Now().Add(120 * time.Second)
+	for {
+		// Bound each probe, so one that hangs can't use up the whole deadline
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		probe, err := exec.CommandContext(ctx, "docker", append([]string{"exec", id}, readyCmd...)...).CombinedOutput()
+		cancel()
+		if err == nil {
+			return hostPort
+		}
+
+		state, _ := exec.Command("docker", "inspect", "-f", "{{.State.Status}} (exit code {{.State.ExitCode}})", id).Output()
+		running := strings.HasPrefix(string(state), "running")
+		if !running || time.Now().After(deadline) {
+			logs, _ := exec.Command("docker", "logs", "--tail", "40", id).CombinedOutput()
+			t.Fatalf("%s did not become ready\ncontainer: %s\nlast probe: %v\n%s\ncontainer logs:\n%s",
+				image, strings.TrimSpace(string(state)), err, probe, logs)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// runGoEnv is runGo with extra environment variables.
+func runGoEnv(t *testing.T, dir string, env []string, args ...string) {
+	t.Helper()
+
+	cmd := exec.Command("go", args...)
+	cmd.Dir = dir
+	cmd.Env = append(append(os.Environ(), "GOWORK=off"), env...)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go %s failed: %v\nOutput:\n%s", strings.Join(args, " "), err, output)
+	}
 }

@@ -19,7 +19,9 @@ type Service struct {
 func NewService(repo Repository) *Service {
 	return &Service{
 		repo: repo,
-		now:  func() time.Time { return time.Now().UTC() },
+		// Millisecond precision is what every supported database stores (MongoDB
+		// keeps milliseconds), so values read back match the ones returned
+		now: func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) },
 	}
 }
 

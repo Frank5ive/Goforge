@@ -1,0 +1,35 @@
+# Local development services. `make db-up` starts MySQL;
+{{- if .Docker}} `docker compose up --build` also builds and runs the app.{{else}} the app runs with `go run .`.{{end}}
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: {{.DBName}}
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
+    ports:
+      - "3306:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uapp", "-papp"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+{{- if .Docker}}
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: app:app@tcp(db:3306)/{{.DBName}}
+      PORT: "{{.Port}}"
+    ports:
+      - "{{.Port}}:{{.Port}}"
+    depends_on:
+      db:
+        condition: service_healthy
+{{- end}}
+
+volumes:
+  db-data:

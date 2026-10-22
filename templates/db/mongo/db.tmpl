@@ -1,0 +1,68 @@
+// Package db connects to MongoDB.
+package db
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/url"
+	"strings"
+	"time"
+
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+)
+
+// timeout bounds how long Connect and Close wait for MongoDB.
+const timeout = 10 * time.Second
+
+// Connect connects to the MongoDB deployment at uri, such as
+// "mongodb://localhost:27017/shop", checks that it is reachable, and returns the
+// database named in the URI. MongoDB creates collections on first write, and each
+// resource's repository creates the indexes it needs, so there are no migrations.
+func Connect(ctx context.Context, uri string, log *slog.Logger) (*mongo.Database, error) {
+	name, where, err := databaseName(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := mongo.Connect(options.Client().ApplyURI(uri))
+	if err != nil {
+		return nil, fmt.Errorf("invalid DATABASE_URL: %w", err)
+	}
+
+	pingCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := client.Ping(pingCtx, nil); err != nil {
+		_ = client.Disconnect(context.WithoutCancel(ctx))
+		return nil, fmt.Errorf("cannot reach MongoDB at %s (is it running? `make db-up` starts one in Docker): %w", where, err)
+	}
+
+	log.Info("connected to database", "database", where)
+	return client.Database(name), nil
+}
+
+// Close disconnects from MongoDB, logging any error. main defers it.
+func Close(database *mongo.Database, log *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := database.Client().Disconnect(ctx); err != nil {
+		log.Error("closing the database", "error", err)
+	}
+}
+
+// databaseName returns the database named in uri, and a description of the
+// deployment without credentials for logs and errors.
+func databaseName(uri string) (name, where string, err error) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		// url.Parse's error repeats the URI, password included, so leave it out
+		return "", "", errors.New("invalid DATABASE_URL: it must be a URL such as mongodb://localhost:27017/shop, with special characters in the username and password percent-encoded")
+	}
+	name = strings.TrimPrefix(u.Path, "/")
+	if name == "" {
+		return "", "", errors.New("DATABASE_URL must name a database, e.g. mongodb://localhost:27017/shop")
+	}
+	return name, u.Host + "/" + name, nil
+}

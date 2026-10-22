@@ -18,11 +18,11 @@ type Server struct {
 }
 
 // New creates a Server for cfg, with all routes and middleware registered.
-func New(cfg config.Config, log *slog.Logger) *Server {
+func New(cfg config.Config, deps Deps, log *slog.Logger) *Server {
 	return &Server{
 		httpServer: &http.Server{
 			Addr:              fmt.Sprintf(":%d", cfg.Port),
-			Handler:           newHandler(cfg, log),
+			Handler:           newHandler(cfg, deps, log),
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       15 * time.Second,
 			WriteTimeout:      15 * time.Second,
@@ -34,9 +34,9 @@ func New(cfg config.Config, log *slog.Logger) *Server {
 // newHandler builds the router and wraps it in middleware.
 // Middleware applied last runs first, so requests flow:
 // requestID → cors (if configured) → recovery → limitBody{{if .IncludeLogger}} → logging{{end}} → router.
-func newHandler(cfg config.Config, log *slog.Logger) http.Handler {
+func newHandler(cfg config.Config, deps Deps, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
-	registerRoutes(mux)
+	registerRoutes(mux, deps)
 
 	var handler http.Handler = mux
 {{- if .IncludeLogger}}

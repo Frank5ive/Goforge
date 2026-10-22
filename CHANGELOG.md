@@ -50,6 +50,27 @@ The first public release will be tagged `v0.1.0`.
   - `PATCH /{resource}/{id}` for partial updates, validated like full updates
   - A `requests.http` file of example requests, pointed at the project's port
 - `goforge completion bash|zsh|fish|powershell` for shell tab completion
+- Generated projects have a `GET /readyz` readiness endpoint backed by `server.Deps`,
+  which holds shared services such as a database pool
+- Generated projects record their options and resources in `.goforge.json`, so
+  `goforge add` commands can extend them safely
+- `goforge add db <engine>` (or `goforge generate --db <engine>`) stores data in a
+  database: PostgreSQL (`postgres`), MySQL/MariaDB (`mysql`), SQLite (`sqlite`), or
+  MongoDB (`mongo`):
+  - a `db` package that connects at startup and, for SQL databases, applies embedded
+    migrations once each behind a lock (advisory lock, `GET_LOCK`, or SQLite's
+    `BEGIN IMMEDIATE`)
+  - `DATABASE_URL` in `config`, and `/readyz` checking the database
+  - every existing resource converted to a database repository (with a migration for
+    SQL databases); resources added later use the database automatically
+  - shared repository tests that run against the in-memory and database
+    repositories (SQLite always; others when `TEST_DATABASE_URL` is set)
+  - `docker-compose.yml`, `make db-up`/`db-down`/`db-reset`/`test-db`, and a
+    database service in the generated CI workflow (none needed for SQLite)
+  - MongoDB containers set `GLIBC_TUNABLES=glibc.pthread.rseq=1`, so they start on
+    Linux 6.19 through 7.0.13, which MongoDB otherwise refuses (SERVER-121912)
+  - planned in full before writing, and rolled back completely (including `go.mod`)
+    if any step fails
 - Generated Go code is always gofmt-formatted
 - Templates embedded in the binary (single-file distribution)
 - Terminal banner with a pixel-art Go gopher and wordmark; adapts to terminal width,

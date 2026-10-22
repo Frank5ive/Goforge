@@ -37,11 +37,15 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	srv := server.New(cfg, log)
-
 	// Stop on Ctrl+C or SIGTERM (sent by Docker and Kubernetes)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Shared services for the routes, such as a database pool
+	var deps server.Deps
+	// goforge:deps-connect (`goforge add` connects dependencies above this line)
+
+	srv := server.New(cfg, deps, log)
 
 	// Run the server in the background so run can wait for a shutdown signal
 	serverErr := make(chan error, 1)

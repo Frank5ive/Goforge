@@ -1,0 +1,102 @@
+package {{.Package}}
+
+import (
+	"context"
+	"errors"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// PostgresRepository is a Repository that stores {{.HumanPlural}} in the {{.TableName}}
+// table of a PostgreSQL database. The table is created by a migration in
+// db/migrations.
+type PostgresRepository struct {
+	db *pgxpool.Pool
+}
+
+// NewPostgresRepository returns a PostgresRepository that uses db.
+func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
+	return &PostgresRepository{db: db}
+}
+
+// List returns up to limit {{.HumanPlural}} starting at offset, oldest first, and
+// the total number stored.
+func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]{{.Type}}, int, error) {
+	var total int
+	if err := r.db.QueryRow(ctx, `SELECT count(*) FROM {{.Table}}`).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.db.Query(ctx, `SELECT {{.Columns}} FROM {{.Table}} ORDER BY "created_at", "id" LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) ({{.Type}}, error) {
+		return scan(row)
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if items == nil {
+		items = []{{.Type}}{}
+	}
+	return items, total, nil
+}
+
+// Get returns the {{.Human}} with the given ID, or ErrNotFound.
+func (r *PostgresRepository) Get(ctx context.Context, id string) ({{.Type}}, error) {
+	item, err := scan(r.db.QueryRow(ctx, `SELECT {{.Columns}} FROM {{.Table}} WHERE "id" = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return {{.Type}}{}, ErrNotFound
+	}
+	return item, err
+}
+
+// Create stores a new {{.Human}}.
+func (r *PostgresRepository) Create(ctx context.Context, item {{.Type}}) error {
+	_, err := r.db.Exec(ctx, `{{.InsertQuery}}`,
+		item.ID,{{range .Fields}} item.{{.GoName}},{{end}} item.CreatedAt, item.UpdatedAt)
+	return err
+}
+
+// Update replaces an existing {{.Human}}, or returns ErrNotFound.
+func (r *PostgresRepository) Update(ctx context.Context, item {{.Type}}) error {
+	tag, err := r.db.Exec(ctx, `{{.UpdateQuery}}`,
+		{{range .Fields}}item.{{.GoName}}, {{end}}item.UpdatedAt, item.ID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Delete removes the {{.Human}} with the given ID, or returns ErrNotFound.
+func (r *PostgresRepository) Delete(ctx context.Context, id string) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM {{.Table}} WHERE "id" = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// scan reads one row, selected with the columns used above, into a {{.Type}}.
+// Timestamps are converted to UTC to match the values the service creates.
+func scan(row pgx.Row) ({{.Type}}, error) {
+	var item {{.Type}}
+	err := row.Scan(&item.ID,{{range .Fields}} &item.{{.GoName}},{{end}} &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		return {{.Type}}{}, err
+	}
+{{- range .Fields}}{{if .IsTime}}
+	item.{{.GoName}} = item.{{.GoName}}.UTC()
+{{- end}}{{end}}
+	item.CreatedAt = item.CreatedAt.UTC()
+	item.UpdatedAt = item.UpdatedAt.UTC()
+	return item, nil
+}

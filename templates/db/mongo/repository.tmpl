@@ -1,0 +1,151 @@
+package {{.Package}}
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+)
+
+// MongoRepository is a Repository that stores {{.HumanPlural}} in the {{.TableName}}
+// collection of a MongoDB database.
+type MongoRepository struct {
+	db *mongo.Database
+
+	mu      sync.Mutex // guards indexed
+	indexed bool       // the index List sorts by exists
+}
+
+// NewMongoRepository returns a MongoRepository that uses db. It does not
+// contact the database until the first request.
+func NewMongoRepository(db *mongo.Database) *MongoRepository {
+	return &MongoRepository{db: db}
+}
+
+// collection returns the {{.TableName}} collection.
+func (r *MongoRepository) collection() *mongo.Collection {
+	return r.db.Collection("{{.TableName}}")
+}
+
+// document is how a {{.Human}} is stored, keeping BSON tags out of the model.
+type document struct {
+	ID string `bson:"_id"`
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} `bson:"{{.JSON}}"`
+{{- end}}
+	CreatedAt time.Time `bson:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at"`
+}
+
+// toDocument converts a {{.Type}} for storage. document has the same fields as
+// {{.Type}}, only with BSON tags, so the conversion fails to compile if they drift
+// apart.
+func toDocument(item {{.Type}}) document {
+	return document(item)
+}
+
+// item converts a stored document back into a {{.Type}}, with times in UTC.
+func (d document) item() {{.Type}} {
+	item := {{.Type}}(d)
+{{- range .Fields}}{{if .IsTime}}
+	item.{{.GoName}} = item.{{.GoName}}.UTC()
+{{- end}}{{end}}
+	item.CreatedAt = item.CreatedAt.UTC()
+	item.UpdatedAt = item.UpdatedAt.UTC()
+	return item
+}
+
+// listOrder sorts oldest first, with the ID breaking ties.
+var listOrder = bson.D{ {Key: "created_at", Value: 1}, {Key: "_id", Value: 1} }
+
+// ensureIndex creates the index List sorts by, the first time it is needed.
+func (r *MongoRepository) ensureIndex(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.indexed {
+		return nil
+	}
+	if _, err := r.collection().Indexes().CreateOne(ctx, mongo.IndexModel{Keys: listOrder}); err != nil {
+		return fmt.Errorf("creating the {{.TableName}} index: %w", err)
+	}
+	r.indexed = true
+	return nil
+}
+
+// List returns up to limit {{.HumanPlural}} starting at offset, oldest first, and
+// the total number stored.
+func (r *MongoRepository) List(ctx context.Context, limit, offset int) ([]{{.Type}}, int, error) {
+	if err := r.ensureIndex(ctx); err != nil {
+		return nil, 0, err
+	}
+
+	total, err := r.collection().CountDocuments(ctx, bson.D{})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	cursor, err := r.collection().Find(ctx, bson.D{},
+		options.Find().SetSort(listOrder).SetSkip(int64(offset)).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, 0, err
+	}
+	var docs []document
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]{{.Type}}, 0, len(docs))
+	for _, d := range docs {
+		items = append(items, d.item())
+	}
+	return items, int(total), nil
+}
+
+// Get returns the {{.Human}} with the given ID, or ErrNotFound.
+func (r *MongoRepository) Get(ctx context.Context, id string) ({{.Type}}, error) {
+	var d document
+	err := r.collection().FindOne(ctx, bson.D{ {Key: "_id", Value: id} }).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return {{.Type}}{}, ErrNotFound
+	}
+	if err != nil {
+		return {{.Type}}{}, err
+	}
+	return d.item(), nil
+}
+
+// Create stores a new {{.Human}}.
+func (r *MongoRepository) Create(ctx context.Context, item {{.Type}}) error {
+	_, err := r.collection().InsertOne(ctx, toDocument(item))
+	return err
+}
+
+// Update replaces an existing {{.Human}}, or returns ErrNotFound.
+func (r *MongoRepository) Update(ctx context.Context, item {{.Type}}) error {
+	result, err := r.collection().ReplaceOne(ctx, bson.D{ {Key: "_id", Value: item.ID} }, toDocument(item))
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Delete removes the {{.Human}} with the given ID, or returns ErrNotFound.
+func (r *MongoRepository) Delete(ctx context.Context, id string) error {
+	result, err := r.collection().DeleteOne(ctx, bson.D{ {Key: "_id", Value: id} })
+	if err != nil {
+		return err
+	}
+	if result.DeletedCount == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

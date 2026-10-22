@@ -26,6 +26,8 @@ type Config struct {
 	// ShutdownTimeout is how long in-flight requests get to finish on shutdown
 	// (SHUTDOWN_TIMEOUT, e.g. "30s").
 	ShutdownTimeout time.Duration
+
+	// goforge:config-fields (`goforge add` adds settings above this line)
 }
 
 const (
@@ -82,6 +84,8 @@ func load(getenv func(string) string) (Config, error) {
 			cfg.ShutdownTimeout = d
 		}
 	}
+
+	// goforge:config-load (`goforge add` loads settings above this line)
 
 	return cfg, errors.Join(errs...)
 }

@@ -1,0 +1,22 @@
+package {{.Package}}
+
+import (
+	"testing"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"{{.Module}}/db/dbtest"
+)
+
+// TestMongoRepository runs the shared repository tests against MongoDB.
+// It is skipped unless TEST_DATABASE_URL is set; `make test-db` sets it.
+func TestMongoRepository(t *testing.T) {
+	database := dbtest.Database(t)
+
+	testRepository(t, func(t *testing.T) Repository {
+		if _, err := database.Collection("{{.TableName}}").DeleteMany(t.Context(), bson.D{}); err != nil {
+			t.Fatalf("clearing the {{.TableName}} collection: %v", err)
+		}
+		return NewMongoRepository(database)
+	})
+}

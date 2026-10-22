@@ -1,0 +1,105 @@
+package db
+
+import (
+	"context"
+	"embed"
+	"fmt"
+	"io/fs"
+	"log/slog"
+	"path"
+	"sort"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// migrations holds the SQL files in db/migrations.
+//
+//go:embed migrations
+var migrations embed.FS
+
+// migrationLock is the PostgreSQL advisory lock key that stops two instances of
+// the server from migrating at the same time.
+const migrationLock = 7_418_210_445
+
+// Migrate applies every db/migrations/*.sql file that has not been applied yet,
+// in file name order, each in its own transaction, and records it in the
+// schema_migrations table. Applied migrations never run again, so change the
+// schema by adding a new file rather than editing an applied one.
+func Migrate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquiring a connection for migrations: %w", err)
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationLock); err != nil {
+		return fmt.Errorf("locking migrations: %w", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock($1)", migrationLock)
+	}()
+
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+		version    text PRIMARY KEY,
+		applied_at timestamptz NOT NULL DEFAULT now()
+	)`); err != nil {
+		return fmt.Errorf("creating schema_migrations: %w", err)
+	}
+
+	rows, err := conn.Query(ctx, "SELECT version FROM schema_migrations")
+	if err != nil {
+		return fmt.Errorf("reading applied migrations: %w", err)
+	}
+	versions, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return fmt.Errorf("reading applied migrations: %w", err)
+	}
+	applied := make(map[string]bool, len(versions))
+	for _, v := range versions {
+		applied[v] = true
+	}
+
+	files, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil {
+		return err
+	}
+	sort.Strings(files)
+
+	for _, file := range files {
+		version := strings.TrimSuffix(path.Base(file), ".sql")
+		if applied[version] {
+			continue
+		}
+
+		sql, err := migrations.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		if err := applyMigration(ctx, conn, version, string(sql)); err != nil {
+			return fmt.Errorf("applying migration %s: %w", version, err)
+		}
+		log.Info("applied migration", "version", version)
+	}
+
+	return nil
+}
+
+// applyMigration runs one migration and records it, in a single transaction.
+func applyMigration(ctx context.Context, conn *pgxpool.Conn, version, sql string) error {
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	// Rollback is a no-op once the transaction has committed
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	if _, err := tx.Exec(ctx, sql); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, "INSERT INTO schema_migrations (version) VALUES ($1)", version); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

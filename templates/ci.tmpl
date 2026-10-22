@@ -11,6 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # goforge:ci-test-services (`goforge add db` adds a test database above this line)
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

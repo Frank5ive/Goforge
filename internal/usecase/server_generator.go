@@ -32,6 +32,7 @@ var projectFiles = []projectFile{
 	{template: "config.tmpl", path: "config/config.go", include: always},
 	{template: "config_test.tmpl", path: "config/config_test.go", include: always},
 	{template: "server.tmpl", path: "server/server.go", include: always},
+	{template: "deps.tmpl", path: "server/deps.go", include: always},
 	{template: "routes.tmpl", path: "server/routes.go", include: always},
 	{template: "middleware.tmpl", path: "server/middleware.go", include: always},
 	{template: "server_test.tmpl", path: "server/server_test.go", include: always},
@@ -96,15 +97,24 @@ func (u *ServerGeneratorUsecase) Generate(config *domain.ServerConfig) error {
 		}
 
 		if err := u.generateFile(config, file); err != nil {
-			genErr := domain.NewGenerationError("generate_files", fmt.Sprintf("failed to generate %s", file.path), err)
-			if cleanupErr := u.fileWriter.RemoveAll(projectPath); cleanupErr != nil {
-				genErr.Message += fmt.Sprintf(" (cleanup of %s also failed: %v)", projectPath, cleanupErr)
-			}
-			return genErr
+			return u.cleanup(projectPath, domain.NewGenerationError("generate_files", fmt.Sprintf("failed to generate %s", file.path), err))
 		}
 	}
 
+	if err := writeManifest(u.fileWriter, projectPath, domain.NewManifest(config)); err != nil {
+		return u.cleanup(projectPath, domain.NewGenerationError("generate_files", "failed to write "+domain.ManifestFile, err))
+	}
+
 	return nil
+}
+
+// cleanup removes the partially generated project and returns genErr, noting a
+// cleanup failure if there was one.
+func (u *ServerGeneratorUsecase) cleanup(projectPath string, genErr *domain.GenerationError) error {
+	if err := u.fileWriter.RemoveAll(projectPath); err != nil {
+		genErr.Message += fmt.Sprintf(" (cleanup of %s also failed: %v)", projectPath, err)
+	}
+	return genErr
 }
 
 // generateFile renders a single project file and writes it under the project root.

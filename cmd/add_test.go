@@ -134,3 +134,67 @@ func TestAddResource_RequestsFileUsesProjectPort(t *testing.T) {
 		}
 	}
 }
+
+// runAddDBCmd runs `add db` with args against the real templates.
+func runAddDBCmd(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+
+	SetTemplatesFS(os.DirFS(filepath.Join("..", "templates")))
+
+	cmd := newAddCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(append([]string{"db"}, args...))
+
+	err := cmd.Execute()
+	return out.String(), err
+}
+
+func TestAddDB_DryRunWritesNothing(t *testing.T) {
+	project := generatedProject(t)
+	if output, err := runAddResourceCmd(t, "product", "--dir", project); err != nil {
+		t.Fatalf("add resource failed: %v\n%s", err, output)
+	}
+	goModBefore, _ := os.ReadFile(filepath.Join(project, "go.mod"))
+
+	output, err := runAddDBCmd(t, "postgres", "--dir", project, "--dry-run")
+	if err != nil {
+		t.Fatalf("add db --dry-run failed: %v\n%s", err, output)
+	}
+
+	for _, want := range []string{"Dry run", "db/db.go", "products/postgres.go", "docker-compose.yml", "server/routes.go"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("dry run output does not mention %q:\n%s", want, output)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(project, "db")); !os.IsNotExist(err) {
+		t.Error("dry run must not create the db package")
+	}
+	if goModAfter, _ := os.ReadFile(filepath.Join(project, "go.mod")); !bytes.Equal(goModBefore, goModAfter) {
+		t.Error("dry run must not change go.mod")
+	}
+}
+
+func TestAddDB_Errors(t *testing.T) {
+	project := generatedProject(t)
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"unsupported engine", []string{"oracle", "--dir", project}, "unsupported database"},
+		{"outside a project", []string{"postgres", "--dir", t.TempDir()}, "not a Go module"},
+		{"missing engine", []string{"--dir", project}, "accepts 1 arg"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := runAddDBCmd(t, tt.args...)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error = %v, want it to contain %q", err, tt.want)
+			}
+		})
+	}
+}

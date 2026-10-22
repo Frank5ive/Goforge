@@ -1,13 +1,12 @@
 package usecase
 
 import (
-	"errors"
 	"fmt"
-	"go/format"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Frank5ive/goforge/internal/domain"
 )
@@ -28,6 +27,7 @@ var resourceFiles = []struct {
 	{"resource/handler.tmpl", func(*domain.ResourceConfig) string { return "handler.go" }},
 	{"resource/service_test.tmpl", func(*domain.ResourceConfig) string { return "service_test.go" }},
 	{"resource/handler_test.tmpl", func(*domain.ResourceConfig) string { return "handler_test.go" }},
+	{"resource/repository_test.tmpl", func(*domain.ResourceConfig) string { return "repository_test.go" }},
 	{"resource/requests.tmpl", func(*domain.ResourceConfig) string { return "requests.http" }},
 }
 
@@ -42,6 +42,7 @@ const fallbackPort = 8080
 type ResourceGeneratorUsecase struct {
 	templateRenderer domain.TemplateRenderer
 	fileWriter       domain.FileWriter
+	now              func() time.Time // dates migrations
 }
 
 // NewResourceGeneratorUsecase creates a new instance of ResourceGeneratorUsecase.
@@ -52,86 +53,88 @@ func NewResourceGeneratorUsecase(
 	return &ResourceGeneratorUsecase{
 		templateRenderer: renderer,
 		fileWriter:       writer,
+		now:              time.Now,
 	}
 }
 
-// Add implements domain.ResourceGenerator. Everything that can be checked is
-// checked before any file is written, and if a later step fails the new
-// resource package is removed, so a failed run leaves the project unchanged.
-func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) error {
+// Add implements domain.ResourceGenerator. Everything is rendered and checked
+// before any file is written, then applied as one changeset, so a failed run
+// leaves the project unchanged. In a project with a database, the resource is
+// stored in it and, for SQL databases, gets a migration for its table.
+func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Changes, error) {
 	if err := config.Validate(); err != nil {
-		return domain.NewGenerationError("validation", "resource validation failed", err)
+		return domain.Changes{}, domain.NewGenerationError("validation", "resource validation failed", err)
 	}
+	dir := config.ProjectDir
 
-	modulePath, err := u.readModulePath(config.ProjectDir)
+	modulePath, err := readModulePath(u.fileWriter, dir)
 	if err != nil {
-		return domain.NewGenerationError("project_check",
-			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", config.ProjectDir), err)
+		return domain.Changes{}, domain.NewGenerationError("project_check",
+			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", dir), err)
 	}
 
-	routesPath := filepath.Join(config.ProjectDir, "server", "routes.go")
+	manifest, hasManifest, err := readManifest(u.fileWriter, dir)
+	if err != nil {
+		return domain.Changes{}, domain.NewGenerationError("project_check", "cannot read "+domain.ManifestFile, err)
+	}
+	if !hasManifest {
+		// Projects from older GoForge versions have no manifest; start one
+		manifest = domain.Manifest{Module: modulePath}
+	}
+	var eng *engine
+	if manifest.Database != "" {
+		if eng, err = engineFor(manifest.Database); err != nil {
+			return domain.Changes{}, domain.NewGenerationError("project_check", "cannot read "+domain.ManifestFile, err)
+		}
+	}
+
+	routesPath := filepath.Join(dir, "server", "routes.go")
 	routes, err := u.fileWriter.ReadFile(routesPath)
 	if err != nil {
-		return domain.NewGenerationError("project_check",
+		return domain.Changes{}, domain.NewGenerationError("project_check",
 			"server/routes.go not found; run this inside a project created by goforge generate", err)
 	}
 
-	updatedRoutes, err := registerResource(routes, modulePath, config.PackageName())
+	pkg := config.PackageName()
+	repo := pkg + ".NewMemoryRepository()"
+	if eng != nil {
+		repo = fmt.Sprintf("%s.New%s(deps.DB)", pkg, eng.repoType)
+	}
+	updatedRoutes, err := registerResource(routes, modulePath, pkg, repo)
 	if err != nil {
-		return domain.NewGenerationError("register_routes", "cannot register the resource in server/routes.go", err)
+		return domain.Changes{}, domain.NewGenerationError("register_routes", "cannot register the resource in server/routes.go", err)
 	}
 
-	pkgDir := filepath.Join(config.ProjectDir, config.PackageName())
+	pkgDir := filepath.Join(dir, pkg)
 	if u.fileWriter.FileExists(pkgDir) {
-		return domain.NewGenerationError("directory_check", fmt.Sprintf("%s already exists", pkgDir), nil)
-	}
-
-	if err := u.fileWriter.CreateDirectory(pkgDir); err != nil {
-		return domain.NewGenerationError("create_structure", "failed to create the resource package directory", err)
+		return domain.Changes{}, domain.NewGenerationError("directory_check", fmt.Sprintf("%s already exists", pkgDir), nil)
 	}
 
 	data := newResourceData(config, modulePath)
-	data.Port = u.readDefaultPort(config.ProjectDir)
+	data.Port = u.readDefaultPort(dir)
+
+	cs := newChangeset(u.fileWriter)
 	for _, f := range resourceFiles {
-		content, err := u.templateRenderer.Render(f.template, data)
-		if err == nil {
-			err = writeFormatted(u.fileWriter, filepath.Join(pkgDir, f.file(config)), content)
-		}
-		if err != nil {
-			return u.cleanup(pkgDir, domain.NewGenerationError("generate_files", fmt.Sprintf("failed to generate %s", f.file(config)), err))
+		if err := planTemplate(u.templateRenderer, cs, filepath.Join(pkgDir, f.file(config)), f.template, data); err != nil {
+			return domain.Changes{}, domain.NewGenerationError("generate_files", fmt.Sprintf("failed to generate %s", f.file(config)), err)
 		}
 	}
-
-	if err := u.fileWriter.WriteFile(routesPath, updatedRoutes); err != nil {
-		return u.cleanup(pkgDir, domain.NewGenerationError("register_routes", "failed to update server/routes.go", err))
-	}
-
-	return nil
-}
-
-// cleanup removes the partially generated resource package and returns genErr,
-// noting a cleanup failure if there was one.
-func (u *ResourceGeneratorUsecase) cleanup(pkgDir string, genErr *domain.GenerationError) error {
-	if err := u.fileWriter.RemoveAll(pkgDir); err != nil {
-		genErr.Message += fmt.Sprintf(" (cleanup of %s also failed: %v)", pkgDir, err)
-	}
-	return genErr
-}
-
-// readModulePath returns the module path declared in the project's go.mod.
-func (u *ResourceGeneratorUsecase) readModulePath(projectDir string) (string, error) {
-	goMod, err := u.fileWriter.ReadFile(filepath.Join(projectDir, "go.mod"))
-	if err != nil {
-		return "", err
-	}
-
-	for _, line := range strings.Split(goMod, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == "module" {
-			return strings.Trim(fields[1], `"`), nil
+	if eng != nil {
+		if err := planDatabaseResource(u.templateRenderer, cs, dir, eng, config, data, u.now().UTC()); err != nil {
+			return domain.Changes{}, domain.NewGenerationError("generate_files", "failed to generate the "+eng.label+" repository", err)
 		}
 	}
-	return "", errors.New("go.mod has no module directive")
+	cs.edit(routesPath, updatedRoutes)
+
+	manifest.AddResource(config)
+	if err := planManifest(cs, dir, manifest); err != nil {
+		return domain.Changes{}, domain.NewGenerationError("manifest", "cannot update "+domain.ManifestFile, err)
+	}
+
+	if err := cs.apply(nil, nil); err != nil {
+		return domain.Changes{}, domain.NewGenerationError("apply", "the project was left unchanged", err)
+	}
+	return domain.Changes{Created: cs.createdIn(dir), Updated: cs.editedIn(dir), Storage: storage(eng)}, nil
 }
 
 // readDefaultPort returns the default port from the project's config/config.go, or
@@ -154,39 +157,24 @@ func (u *ResourceGeneratorUsecase) readDefaultPort(projectDir string) int {
 }
 
 // registerResource returns routes.go source with the resource package imported
-// and its routes registered just above the goforge:routes marker.
-func registerResource(src, modulePath, pkg string) (string, error) {
-	importPath := strconv.Quote(modulePath + "/" + pkg)
-	registration := fmt.Sprintf("%s.RegisterRoutes(mux, %s.NewService(%s.NewMemoryRepository()))", pkg, pkg, pkg)
+// and its routes registered just above the goforge:routes marker. repo is the Go
+// expression that creates its Repository, e.g. "products.NewMemoryRepository()".
+func registerResource(src, modulePath, pkg, repo string) (string, error) {
+	importPath := modulePath + "/" + pkg
+	registration := fmt.Sprintf("%s.RegisterRoutes(mux, %s.NewService(%s))", pkg, pkg, repo)
 
-	if strings.Contains(src, importPath) {
-		return "", fmt.Errorf("%s is already imported", importPath)
+	if strings.Contains(src, strconv.Quote(importPath)) {
+		return "", fmt.Errorf("%q is already imported", importPath)
 	}
 
-	markerAt := strings.Index(src, routesMarker)
-	if markerAt < 0 {
-		return "", fmt.Errorf("the %q marker is missing; add it inside registerRoutes, or register the resource yourself with:\n\t%s", routesMarker, registration)
-	}
-	lineStart := strings.LastIndex(src[:markerAt], "\n") + 1
-	indent := src[lineStart:markerAt]
-	src = src[:lineStart] + indent + registration + "\n" + src[lineStart:]
-
-	importStart := strings.Index(src, "import (")
-	if importStart < 0 {
-		return "", errors.New("no import block found")
-	}
-	importEnd := strings.Index(src[importStart:], "\n)")
-	if importEnd < 0 {
-		return "", errors.New("unterminated import block")
-	}
-	importEnd += importStart
-	src = src[:importEnd] + "\n\t" + importPath + src[importEnd:]
-
-	formatted, err := format.Source([]byte(src))
+	src, err := insertAboveMarker(src, routesMarker, registration)
 	if err != nil {
-		return "", fmt.Errorf("updated routes.go is not valid Go: %w", err)
+		return "", fmt.Errorf("%w; add it inside registerRoutes, or register the resource yourself with:\n\t%s", err, registration)
 	}
-	return string(formatted), nil
+	if src, err = addImport(src, importPath); err != nil {
+		return "", err
+	}
+	return formatGo("routes.go", src)
 }
 
 // resourceData is the template data for resource templates.
@@ -205,6 +193,31 @@ type resourceData struct {
 	Port          int    // the project's default port, for requests.http
 	SampleBody    string // pretty-printed JSON create request, for requests.http
 	UpdatedBody   string // pretty-printed JSON replace request, for requests.http
+
+	// Database-specific names, set by addEngineData for projects with a database
+	Engine      string // e.g. "postgres"
+	RepoType    string // e.g. "PostgresRepository"
+	EngineLabel string // e.g. "PostgreSQL"
+	TableName   string // unquoted table or collection name, e.g. blog_posts
+
+	// SQL names and statements; identifiers are quoted so names like "order"
+	// or "user" work
+	Table         string // quoted table name
+	IndexName     string
+	IDColumn      string
+	CreatedColumn string
+	UpdatedColumn string
+	IDType        string
+	TimeType      string
+	Columns       string // the select list, in scan order
+	InsertQuery   string
+	UpdateQuery   string
+	TextTimes     bool // times are stored as text (SQLite)
+
+	// The statements as Go string literals, for templates that can't use raw
+	// strings (MySQL quotes identifiers with backticks)
+	CountGo, ListGo, GetGo, InsertGo, UpdateGo, DeleteGo, ClearGo string
+	CreatedArg, UpdatedArg                                        string // Go expressions for the timestamp arguments
 }
 
 // resourceField describes one field for the templates, including sample values
@@ -213,6 +226,12 @@ type resourceField struct {
 	GoName      string
 	JSON        string
 	GoType      string
+	Type        domain.FieldType
+	Column      string // quoted SQL column name, set by addEngineData
+	SQLType     string // set by addEngineData
+	ArgExpr     string // Go expression passing the field to SQL, set by addEngineData
+	TextVar     string // name of the variable a text-stored time is scanned into
+	IsTime      bool
 	Required    bool   // a required string field
 	Sample      string // Go literal
 	Updated     string // a different Go literal
@@ -234,6 +253,8 @@ func newResourceData(config *domain.ResourceConfig, modulePath string) resourceD
 		field := resourceField{
 			GoName:   domain.CamelCase(f.Name),
 			JSON:     f.Name,
+			Type:     f.Type,
+			IsTime:   f.Type == domain.FieldTime,
 			Required: f.Type == domain.FieldString && !f.Optional,
 		}
 
@@ -278,4 +299,17 @@ func prettyBody(fields []resourceField, value func(resourceField) string) string
 		lines[i] = fmt.Sprintf("  %q: %s", f.JSON, value(f))
 	}
 	return "{\n" + strings.Join(lines, ",\n") + "\n}"
+}
+
+// storage describes where a resource generated for eng keeps its data, with nil
+// meaning the in-memory repository.
+func storage(eng *engine) string {
+	switch {
+	case eng == nil:
+		return "Data is stored in memory. Run `goforge add db <postgres|mysql|sqlite|mongo>` to store it in a database."
+	case eng.dialect != nil:
+		return "Data is stored in " + eng.label + "; its table is created by the new migration when the server starts."
+	default:
+		return "Data is stored in " + eng.label + "; its collection is created on the first write."
+	}
 }

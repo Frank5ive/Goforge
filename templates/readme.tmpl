@@ -69,6 +69,12 @@ curl http://localhost:{{.Port}}/health
 }
 ```
 
+### `GET /readyz`
+
+Reports whether the service can handle traffic: `200 {"status":"ready"}`, or `503` when a
+dependency such as the database is unavailable. Point load balancer and Kubernetes
+readiness probes here, and liveness probes at `/health`.
+
 Every response includes an `X-Request-ID` header. Send your own `X-Request-ID` to
 trace a request across services; otherwise one is generated.
 
@@ -82,6 +88,7 @@ trace a request across services; otherwise one is generated.
 │   └── config_test.go
 ├── server/
 │   ├── server.go           # HTTP server and middleware chain
+│   ├── deps.go             # Shared services (e.g. database) and readiness checks
 │   ├── routes.go           # Route registration (add endpoints here)
 │   ├── middleware.go       # Request ID, CORS, body limit, panic recovery{{if .IncludeLogger}}, request logging{{end}}
 │   └── server_test.go
@@ -92,6 +99,7 @@ trace a request across services; otherwise one is generated.
 │   └── respond_test.go{{if .IncludeLogger}}
 ├── logger/
 │   └── logger.go           # slog setup from LOG_LEVEL and LOG_FORMAT{{end}}
+├── .goforge.json           # Records options and resources for `goforge add`
 ├── Makefile
 ├── .golangci.yml{{if .IncludeDocker}}
 ├── Dockerfile{{end}}{{if .IncludeCI}}
@@ -111,8 +119,8 @@ goforge add resource product --fields "name:string,price:float,in_stock:bool"
 This creates a `products/` package with a paginated `GET /products`, `POST /products`, and
 `GET/PUT/PATCH/DELETE /products/{id}`, plus a `products/requests.http` file of example
 requests. The routes are registered in `server/routes.go` for you, so they work as soon as
-you restart the server. Data is stored in memory until you implement `products.Repository`
-for a database.
+you restart the server. Data is stored in memory until you run `goforge add db <engine>`
+(`postgres`, `mysql`, `sqlite`, or `mongo`), which moves every resource to that database.
 
 ## Adding an endpoint
 

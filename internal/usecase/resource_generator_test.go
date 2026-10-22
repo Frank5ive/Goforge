@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Frank5ive/goforge/internal/domain"
 )
@@ -46,12 +47,17 @@ func TestResourceGenerator_Add(t *testing.T) {
 	writer := newProjectWriter()
 	usecase := NewResourceGeneratorUsecase(renderer, writer)
 
-	if err := usecase.Add(testResource()); err != nil {
+	changes, err := usecase.Add(testResource())
+	if err != nil {
 		t.Fatalf("Add() error = %v", err)
+	}
+	// The resource files, plus a new .goforge.json since the mock project has none
+	if len(changes.Created) != len(resourceFiles)+1 || len(changes.Updated) != 1 {
+		t.Errorf("changes = %+v, want %d created files and routes.go updated", changes, len(resourceFiles)+1)
 	}
 
 	pkgDir := filepath.Join("/proj", "blogposts")
-	for _, name := range []string{"blog_post.go", "memory.go", "service.go", "handler.go", "service_test.go", "handler_test.go", "requests.http"} {
+	for _, name := range []string{"blog_post.go", "memory.go", "service.go", "handler.go", "service_test.go", "handler_test.go", "repository_test.go", "requests.http"} {
 		if _, ok := writer.FilesWritten[filepath.Join(pkgDir, name)]; !ok {
 			t.Errorf("Expected %s to be written", name)
 		}
@@ -68,12 +74,11 @@ func TestResourceGenerator_Add(t *testing.T) {
 	}
 }
 
-func TestResourceGenerator_Add_Failures(t *testing.T) {
+func TestResourceGenerator_Add_FailuresLeaveProjectUnchanged(t *testing.T) {
 	tests := []struct {
-		name     string
-		setup    func(w *MockFileWriter, r *MockTemplateRenderer)
-		step     string
-		cleansUp bool
+		name  string
+		setup func(w *MockFileWriter, r *MockTemplateRenderer)
+		step  string
 	}{
 		{
 			name: "not a go module",
@@ -90,9 +95,11 @@ func TestResourceGenerator_Add_Failures(t *testing.T) {
 			step: "register_routes",
 		},
 		{
-			name:  "package already exists",
-			setup: func(w *MockFileWriter, _ *MockTemplateRenderer) { w.FileExistsFunc = func(string) bool { return true } },
-			step:  "directory_check",
+			name: "package already exists",
+			setup: func(w *MockFileWriter, _ *MockTemplateRenderer) {
+				w.FilesWritten[filepath.Join("/proj", "blogposts", "existing.go")] = "package blogposts\n"
+			},
+			step: "directory_check",
 		},
 		{
 			name: "template fails",
@@ -104,8 +111,7 @@ func TestResourceGenerator_Add_Failures(t *testing.T) {
 					return "package x\n", nil
 				}
 			},
-			step:     "generate_files",
-			cleansUp: true,
+			step: "generate_files",
 		},
 		{
 			name: "routes write fails",
@@ -118,8 +124,7 @@ func TestResourceGenerator_Add_Failures(t *testing.T) {
 					return nil
 				}
 			},
-			step:     "register_routes",
-			cleansUp: true,
+			step: "apply",
 		},
 	}
 
@@ -127,19 +132,55 @@ func TestResourceGenerator_Add_Failures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			renderer := NewMockTemplateRenderer()
 			writer := newProjectWriter()
+			writer.RemoveAllFunc = func(path string) error {
+				for file := range writer.FilesWritten {
+					if file == path || strings.HasPrefix(file, path+string(filepath.Separator)) {
+						delete(writer.FilesWritten, file)
+					}
+				}
+				return nil
+			}
 			tt.setup(writer, renderer)
+			before := map[string]string{}
+			for path, content := range writer.FilesWritten {
+				before[path] = content
+			}
 
-			err := NewResourceGeneratorUsecase(renderer, writer).Add(testResource())
+			_, err := NewResourceGeneratorUsecase(renderer, writer).Add(testResource())
 			if err == nil {
 				t.Fatal("Add() error = nil, want an error")
 			}
 			assertGenerationStep(t, err, tt.step)
 
-			removed := len(writer.PathsRemoved) == 1 && writer.PathsRemoved[0] == filepath.Join("/proj", "blogposts")
-			if removed != tt.cleansUp {
-				t.Errorf("package removed = %t, want %t (removed: %v)", removed, tt.cleansUp, writer.PathsRemoved)
+			if len(writer.FilesWritten) != len(before) {
+				t.Errorf("project has %d files after the failure, want the original %d", len(writer.FilesWritten), len(before))
+			}
+			for path, content := range before {
+				if writer.FilesWritten[path] != content {
+					t.Errorf("%s changed despite the failure", path)
+				}
 			}
 		})
+	}
+}
+
+func TestResourceGenerator_Add_UsesPostgresWhenTheProjectHasADatabase(t *testing.T) {
+	writer := newProjectWriter()
+	writer.FilesWritten[filepath.Join("/proj", ".goforge.json")] = `{"module": "example.com/app", "database": "postgres"}`
+	usecase := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer)
+	usecase.now = func() time.Time { return time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC) }
+
+	if _, err := usecase.Add(testResource()); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	for _, rel := range []string{"blogposts/postgres.go", "blogposts/postgres_test.go", "db/migrations/20260301120000_create_blog_posts.sql"} {
+		if _, ok := writer.FilesWritten[filepath.Join("/proj", filepath.FromSlash(rel))]; !ok {
+			t.Errorf("expected %s to be created", rel)
+		}
+	}
+	if routes := file(writer, "server/routes.go"); !strings.Contains(routes, "blogposts.NewPostgresRepository(deps.DB)") {
+		t.Errorf("routes.go should register the PostgreSQL repository:\n%s", routes)
 	}
 }
 
@@ -148,7 +189,7 @@ func TestResourceGenerator_Add_WritesNothingWhenInvalid(t *testing.T) {
 	config := testResource()
 	config.Name = "Bad-Name"
 
-	err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(config)
+	_, err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(config)
 	assertGenerationStep(t, err, "validation")
 
 	if len(writer.DirsCreated) != 0 {
@@ -157,7 +198,7 @@ func TestResourceGenerator_Add_WritesNothingWhenInvalid(t *testing.T) {
 }
 
 func TestRegisterResource(t *testing.T) {
-	routes, err := registerResource(testRoutes, "example.com/app", "products")
+	routes, err := registerResource(testRoutes, "example.com/app", "products", "products.NewMemoryRepository()")
 	if err != nil {
 		t.Fatalf("registerResource() error = %v", err)
 	}
@@ -175,15 +216,15 @@ func TestRegisterResource(t *testing.T) {
 		t.Errorf("expected registration above the marker:\n%s", routes)
 	}
 
-	if _, err := registerResource(routes, "example.com/app", "products"); err == nil {
+	if _, err := registerResource(routes, "example.com/app", "products", "products.NewMemoryRepository()"); err == nil {
 		t.Error("registering the same resource twice should fail")
 	}
 
-	again, err := registerResource(routes, "example.com/app", "categories")
+	again, err := registerResource(routes, "example.com/app", "categories", "categories.NewPostgresRepository(deps.DB)")
 	if err != nil {
 		t.Fatalf("registering a second resource: %v", err)
 	}
-	if !strings.Contains(again, "products.RegisterRoutes") || !strings.Contains(again, "categories.RegisterRoutes") {
+	if !strings.Contains(again, "products.RegisterRoutes") || !strings.Contains(again, "categories.NewService(categories.NewPostgresRepository(deps.DB))") {
 		t.Errorf("expected both resources to be registered:\n%s", again)
 	}
 }
@@ -232,5 +273,81 @@ func TestResourceGenerator_ReadDefaultPort(t *testing.T) {
 	writer.FilesWritten[filepath.Join("/proj", "config", "config.go")] = "const (\n\tdefaultPort            = 3000\n)\n"
 	if got := usecase.readDefaultPort("/proj"); got != 3000 {
 		t.Errorf("with config.go: port = %d, want 3000", got)
+	}
+}
+
+func TestResourceGenerator_Add_RecordsResourceInManifest(t *testing.T) {
+	writer := newProjectWriter()
+	manifestPath := filepath.Join("/proj", ".goforge.json")
+	writer.FilesWritten[manifestPath] = `{"app_name": "app", "module": "example.com/app", "port": 3000, "features": {"logger": true}}`
+	if _, err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(testResource()); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	manifest := writer.FilesWritten[manifestPath]
+	for _, want := range []string{`"port": 3000`, `"logger": true`, `"name": "blog_post"`, `"plural": "blog_posts"`, `"name": "title"`} {
+		if !strings.Contains(manifest, want) {
+			t.Errorf("manifest does not contain %s:\n%s", want, manifest)
+		}
+	}
+}
+
+func TestResourceGenerator_Add_StartsManifestForOlderProjects(t *testing.T) {
+	writer := newProjectWriter()
+
+	if _, err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(testResource()); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	manifest := writer.FilesWritten[filepath.Join("/proj", ".goforge.json")]
+	if !strings.Contains(manifest, `"module": "example.com/app"`) || !strings.Contains(manifest, `"name": "blog_post"`) {
+		t.Errorf("expected a new manifest with the module and resource, got:\n%s", manifest)
+	}
+}
+
+func TestAddSQL(t *testing.T) {
+	data := newResourceData(&domain.ResourceConfig{
+		Name: "order",
+		Fields: []domain.Field{
+			{Name: "user", Type: domain.FieldString},
+			{Name: "total", Type: domain.FieldFloat},
+		},
+	}, "example.com/app")
+	addEngineData(&data, postgresEngine, "orders")
+
+	want := map[string]string{
+		"Table":       `"orders"`,
+		"Columns":     `"id", "user", "total", "created_at", "updated_at"`,
+		"InsertQuery": `INSERT INTO "orders" ("id", "user", "total", "created_at", "updated_at") VALUES ($1, $2, $3, $4, $5)`,
+		"UpdateQuery": `UPDATE "orders" SET "user" = $1, "total" = $2, "updated_at" = $3 WHERE "id" = $4`,
+	}
+	got := map[string]string{
+		"Table": data.Table, "Columns": data.Columns, "InsertQuery": data.InsertQuery, "UpdateQuery": data.UpdateQuery,
+	}
+	for key := range want {
+		if got[key] != want[key] {
+			t.Errorf("%s = %s\nwant %s", key, got[key], want[key])
+		}
+	}
+	if data.Fields[1].SQLType != "double precision" {
+		t.Errorf("float SQL type = %q, want double precision", data.Fields[1].SQLType)
+	}
+}
+
+func TestStorage(t *testing.T) {
+	tests := []struct {
+		engine *engine
+		want   string
+	}{
+		{nil, "Data is stored in memory."},
+		{postgresEngine, "Data is stored in PostgreSQL; its table is created by the new migration"},
+		{mysqlEngine, "Data is stored in MySQL"},
+		{sqliteEngine, "Data is stored in SQLite; its table"},
+		{mongoEngine, "Data is stored in MongoDB; its collection is created on the first write."},
+	}
+	for _, tt := range tests {
+		if got := storage(tt.engine); !strings.HasPrefix(got, tt.want) {
+			t.Errorf("storage(%v) = %q, want it to start with %q", tt.engine, got, tt.want)
+		}
 	}
 }
