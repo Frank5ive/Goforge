@@ -2,13 +2,20 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 )
 
-// writeJSON writes v as a JSON response with the given status code.
+// ErrorResponse is the JSON body for error responses.
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// WriteJSON writes v as a JSON response with the given status code.
 // The body is encoded before any headers are sent, so an encoding failure
 // can still be reported as a 500.
-func writeJSON(w http.ResponseWriter, status int, v any) {
+func WriteJSON(w http.ResponseWriter, status int, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
@@ -18,4 +25,34 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(append(body, '\n'))
+}
+
+// WriteError writes {"error": message} with the given status code.
+func WriteError(w http.ResponseWriter, status int, message string) {
+	WriteJSON(w, status, ErrorResponse{Error: message})
+}
+
+// DecodeJSON decodes a single JSON object from the request body into dst,
+// rejecting unknown fields. On failure it writes an error response (400, or 413
+// when the body exceeds the server's size limit) and returns false.
+func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	if err := dec.Decode(dst); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			WriteError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
+		WriteError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return false
+	}
+
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		WriteError(w, http.StatusBadRequest, "request body must contain a single JSON object")
+		return false
+	}
+
+	return true
 }

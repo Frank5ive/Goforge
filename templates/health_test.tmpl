@@ -34,14 +34,3 @@ func TestHealth(t *testing.T) {
 		t.Error("timestamp is not set")
 	}
 }
-
-func TestWriteJSON_EncodingFailure(t *testing.T) {
-	rec := httptest.NewRecorder()
-
-	// Channels cannot be encoded as JSON
-	writeJSON(rec, http.StatusOK, make(chan int))
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
-}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"slices"
 {{- if .IncludeLogger}}
 	"time"
 {{- end}}
@@ -72,6 +73,52 @@ func recovery(next http.Handler, log *slog.Logger) http.Handler {
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
 		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// cors allows cross-origin requests from allowedOrigins ("*" allows any origin)
+// and answers preflight requests directly, since the router would reject OPTIONS.
+func cors(next http.Handler, allowedOrigins []string) http.Handler {
+	allowAll := slices.Contains(allowedOrigins, "*")
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		if !allowAll {
+			// Responses differ by origin, so caches must not share them across origins
+			h.Add("Vary", "Origin")
+		}
+
+		origin := r.Header.Get("Origin")
+		if origin == "" || (!allowAll && !slices.Contains(allowedOrigins, origin)) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if allowAll {
+			h.Set("Access-Control-Allow-Origin", "*")
+		} else {
+			h.Set("Access-Control-Allow-Origin", origin)
+		}
+
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, "+RequestIDHeader)
+			h.Set("Access-Control-Max-Age", "600")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		h.Set("Access-Control-Expose-Headers", RequestIDHeader)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// limitBody caps request bodies at maxBytes. Reading past the limit fails, and
+// handlers.DecodeJSON turns that failure into 413 Request Entity Too Large.
+func limitBody(next http.Handler, maxBytes int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 		next.ServeHTTP(w, r)
 	})
 }
