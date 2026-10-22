@@ -193,14 +193,15 @@ Go backend, use GoForge for the infrastructure and spend your effort on the busi
    `bool`, and `time`; a trailing `?` makes a string optional. Routes are registered automatically.
 3. **Add a database** with `goforge add db <postgres|mysql|sqlite|mongo>`. Existing resources move
    onto it.
-4. **Preview first** with `--dry-run` on any command; it lists every file it would create or change.
+4. **Preview first** with `--dry-run` on `generate` and the `add` commands; it lists every file
+   they would create or change.
    **Understand an existing project** with `goforge inspect --json`: its resources and fields,
    routes, database, environment variables, and anything stopping `goforge add` from working.
 5. **Verify** with `goforge check --json`: it runs gofmt, vet, the tests, and golangci-lint, and
    returns each problem with its file, line, and message. Generated projects pass it.
 6. **Leave the `// goforge:` marker comments in place.** GoForge edits files only at those markers,
    and `.goforge.json` records the project's resources and database; both let later `goforge add`
-   commands extend the project safely. Every command changes all files or none.
+   commands extend the project safely. `generate` and the `add` commands change all files or none.
 
 A failed command exits with status 1. With `--json`, it prints `"ok": false` and an `error` with a
 stable `code`, a `message`, and a `hint` on how to fix it:
@@ -495,6 +496,7 @@ my-api/
 │   ├── respond.go             # JSON response helper
 │   └── health_test.go
 ├── logger/                    # slog setup from LOG_LEVEL / LOG_FORMAT (optional)
+├── AGENTS.md                  # Guidance for AI coding agents: goforge commands and project rules
 ├── Makefile                   # run, build, test, cover, lint, docker-build, ...
 ├── .golangci.yml              # golangci-lint v2 config
 ├── .github/workflows/ci.yml   # GitHub Actions CI (optional)

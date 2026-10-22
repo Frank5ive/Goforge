@@ -48,6 +48,7 @@ var projectFiles = []projectFile{
 	{template: "dockerfile.tmpl", path: "Dockerfile", include: withDocker},
 	{template: "dockerignore.tmpl", path: ".dockerignore", include: withDocker},
 	{template: "readme.tmpl", path: "README.md", include: withReadme},
+	{template: "agents.tmpl", path: "AGENTS.md", include: always},
 	{template: "gitignore.tmpl", path: ".gitignore", include: always},
 }
 

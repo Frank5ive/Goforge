@@ -108,12 +108,13 @@ trace a request across services; otherwise one is generated.
 │   └── server_test.go
 ├── handlers/
 │   ├── health.go           # GET /health
-│   ├── respond.go          # WriteJSON, WriteError, DecodeJSON helpers
+│   ├── respond.go          # WriteJSON, WriteError, DecodeJSON, InternalError, Logger
 │   ├── health_test.go
 │   └── respond_test.go{{if .IncludeLogger}}
 ├── logger/
 │   └── logger.go           # slog setup from LOG_LEVEL and LOG_FORMAT{{end}}
 ├── .goforge.json           # Records options and resources for `goforge add`
+├── AGENTS.md               # Guidance for AI coding agents working on the project
 ├── Makefile
 ├── .golangci.yml{{if .IncludeDocker}}
 ├── Dockerfile{{end}}{{if .IncludeCI}}

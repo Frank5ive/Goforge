@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `goforge check` runs gofmt, `go vet`, the tests, and golangci-lint (when installed) and reports
   each problem with its file, line, and message (a failing test at the line that failed, a panic
   at the line that panicked), as text or JSON; tests and lint wait until the code compiles
+- Generated projects include an `AGENTS.md` telling AI coding agents to use `goforge add`,
+  `goforge inspect`, and `goforge check`, and the project's rules (where business logic goes,
+  how errors and logging work, and which marker comments to keep)
 - Failed commands report a stable error code (such as `not_a_goforge_project` or
   `marker_missing`) and a hint on how to fix the problem, in text and in JSON
 
