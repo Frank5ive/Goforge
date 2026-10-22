@@ -90,9 +90,11 @@ func TestResourceGenerator_Add_Failures(t *testing.T) {
 			step: "register_routes",
 		},
 		{
-			name:  "package already exists",
-			setup: func(w *MockFileWriter, _ *MockTemplateRenderer) { w.FileExistsFunc = func(string) bool { return true } },
-			step:  "directory_check",
+			name: "package already exists",
+			setup: func(w *MockFileWriter, _ *MockTemplateRenderer) {
+				w.FileExistsFunc = func(path string) bool { return path == filepath.Join("/proj", "blogposts") }
+			},
+			step: "directory_check",
 		},
 		{
 			name: "template fails",
@@ -232,5 +234,39 @@ func TestResourceGenerator_ReadDefaultPort(t *testing.T) {
 	writer.FilesWritten[filepath.Join("/proj", "config", "config.go")] = "const (\n\tdefaultPort            = 3000\n)\n"
 	if got := usecase.readDefaultPort("/proj"); got != 3000 {
 		t.Errorf("with config.go: port = %d, want 3000", got)
+	}
+}
+
+func TestResourceGenerator_Add_RecordsResourceInManifest(t *testing.T) {
+	writer := newProjectWriter()
+	manifestPath := filepath.Join("/proj", ".goforge.json")
+	writer.FilesWritten[manifestPath] = `{"app_name": "app", "module": "example.com/app", "port": 3000, "features": {"logger": true}}`
+	writer.FileExistsFunc = func(path string) bool {
+		_, ok := writer.FilesWritten[path]
+		return ok
+	}
+
+	if err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(testResource()); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	manifest := writer.FilesWritten[manifestPath]
+	for _, want := range []string{`"port": 3000`, `"logger": true`, `"name": "blog_post"`, `"plural": "blog_posts"`, `"name": "title"`} {
+		if !strings.Contains(manifest, want) {
+			t.Errorf("manifest does not contain %s:\n%s", want, manifest)
+		}
+	}
+}
+
+func TestResourceGenerator_Add_StartsManifestForOlderProjects(t *testing.T) {
+	writer := newProjectWriter()
+
+	if err := NewResourceGeneratorUsecase(NewMockTemplateRenderer(), writer).Add(testResource()); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	manifest := writer.FilesWritten[filepath.Join("/proj", ".goforge.json")]
+	if !strings.Contains(manifest, `"module": "example.com/app"`) || !strings.Contains(manifest, `"name": "blog_post"`) {
+		t.Errorf("expected a new manifest with the module and resource, got:\n%s", manifest)
 	}
 }

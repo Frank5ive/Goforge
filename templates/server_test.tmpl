@@ -16,7 +16,7 @@ var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // testHandler returns the full handler (router and middleware) with logs discarded.
 func testHandler() http.Handler {
-	return newHandler(config.Config{MaxBodyBytes: 1 << 20}, discardLogger)
+	return newHandler(config.Config{MaxBodyBytes: 1 << 20}, Deps{}, discardLogger)
 }
 
 func TestRoutes(t *testing.T) {
@@ -27,6 +27,7 @@ func TestRoutes(t *testing.T) {
 		want   int
 	}{
 		{"health", http.MethodGet, "/health", http.StatusOK},
+		{"readiness", http.MethodGet, "/readyz", http.StatusOK},
 		{"health HEAD", http.MethodHead, "/health", http.StatusOK},
 		{"health wrong method", http.MethodPost, "/health", http.StatusMethodNotAllowed},
 		{"unknown path", http.MethodGet, "/does-not-exist", http.StatusNotFound},
@@ -98,7 +99,7 @@ func TestCORS(t *testing.T) {
 	handler := newHandler(config.Config{
 		MaxBodyBytes:       1 << 20,
 		CORSAllowedOrigins: []string{"https://app.example"},
-	}, discardLogger)
+	}, Deps{}, discardLogger)
 
 	t.Run("allowed origin", func(t *testing.T) {
 		rec := httptest.NewRecorder()

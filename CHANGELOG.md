@@ -50,6 +50,10 @@ The first public release will be tagged `v0.1.0`.
   - `PATCH /{resource}/{id}` for partial updates, validated like full updates
   - A `requests.http` file of example requests, pointed at the project's port
 - `goforge completion bash|zsh|fish|powershell` for shell tab completion
+- Generated projects have a `GET /readyz` readiness endpoint backed by `server.Deps`,
+  which holds shared services such as a database pool
+- Generated projects record their options and resources in `.goforge.json`, so
+  `goforge add` commands can extend them safely
 - Generated Go code is always gofmt-formatted
 - Templates embedded in the binary (single-file distribution)
 - Terminal banner with a pixel-art Go gopher and wordmark; adapts to terminal width,

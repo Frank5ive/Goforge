@@ -39,7 +39,7 @@ GoForge is a CLI tool that generates production-ready Go HTTP servers using only
 ## 🚀 Features
 
 ### Core Features
-- 🔌 **Health Endpoint** - `GET /health` with a JSON response
+- 🔌 **Health and Readiness** - `GET /health` for liveness and `GET /readyz` for readiness (checks dependencies such as the database)
 - 🛑 **Graceful Shutdown** - Handles SIGINT/SIGTERM and drains in-flight requests
 - 🧭 **Modern Routing** - Go 1.22+ `http.ServeMux` patterns like `GET /users/{id}`, with automatic 405s
 - 🪪 **Request IDs** - Every response carries an `X-Request-ID`; incoming IDs are reused for tracing

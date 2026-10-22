@@ -69,6 +69,15 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) error {
 			fmt.Sprintf("%s is not a Go module; run this inside a project created by goforge generate", config.ProjectDir), err)
 	}
 
+	manifest, hasManifest, err := readManifest(u.fileWriter, config.ProjectDir)
+	if err != nil {
+		return domain.NewGenerationError("project_check", "cannot read "+domain.ManifestFile, err)
+	}
+	if !hasManifest {
+		// Projects from older GoForge versions have no manifest; start one
+		manifest = domain.Manifest{Module: modulePath}
+	}
+
 	routesPath := filepath.Join(config.ProjectDir, "server", "routes.go")
 	routes, err := u.fileWriter.ReadFile(routesPath)
 	if err != nil {
@@ -104,6 +113,13 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) error {
 
 	if err := u.fileWriter.WriteFile(routesPath, updatedRoutes); err != nil {
 		return u.cleanup(pkgDir, domain.NewGenerationError("register_routes", "failed to update server/routes.go", err))
+	}
+
+	manifest.AddResource(config)
+	if err := writeManifest(u.fileWriter, config.ProjectDir, manifest); err != nil {
+		// The resource itself is complete and wired in, so keep it
+		return domain.NewGenerationError("manifest",
+			fmt.Sprintf("the resource was added, but %s could not be updated", domain.ManifestFile), err)
 	}
 
 	return nil

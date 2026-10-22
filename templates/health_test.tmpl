@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -32,5 +35,30 @@ func TestHealth(t *testing.T) {
 	}
 	if body.Timestamp.IsZero() {
 		t.Error("timestamp is not set")
+	}
+}
+
+func TestReady(t *testing.T) {
+	tests := []struct {
+		name  string
+		check func(context.Context) error
+		want  int
+	}{
+		{"dependencies ready", func(context.Context) error { return nil }, http.StatusOK},
+		{"dependency down", func(context.Context) error { return errors.New("db unreachable") }, http.StatusServiceUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			Ready(tt.check).ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil))
+
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			}
+			if strings.Contains(rec.Body.String(), "unreachable") {
+				t.Error("readiness response must not expose the dependency error")
+			}
+		})
 	}
 }

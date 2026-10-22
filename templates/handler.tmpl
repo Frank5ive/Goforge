@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"time"
 )
@@ -21,5 +22,29 @@ func Health(service string) http.HandlerFunc {
 			Timestamp: time.Now().UTC(),
 			Service:   service,
 		})
+	}
+}
+
+// ReadyResponse is the body returned by the readiness endpoint.
+type ReadyResponse struct {
+	Status string `json:"status"`
+}
+
+// readyTimeout bounds how long a readiness check may take.
+const readyTimeout = 2 * time.Second
+
+// Ready returns a handler that reports whether the service can serve traffic,
+// using check to test its dependencies (such as the database). It responds 503
+// when check fails, without exposing the error to clients.
+func Ready(check func(context.Context) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), readyTimeout)
+		defer cancel()
+
+		if err := check(ctx); err != nil {
+			WriteJSON(w, http.StatusServiceUnavailable, ReadyResponse{Status: "unavailable"})
+			return
+		}
+		WriteJSON(w, http.StatusOK, ReadyResponse{Status: "ready"})
 	}
 }

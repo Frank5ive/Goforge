@@ -47,6 +47,22 @@ derives the package, type, and route names (`blog_post` → package `blogposts`,
 generated project and checks that it vets, passes its tests, builds, and serves CRUD
 requests.
 
+## Extension points in generated projects
+
+`goforge add` commands edit generated code only at marker comments, and record what
+they did in the project's `.goforge.json` manifest:
+
+| Marker | File | Used for |
+|--------|------|----------|
+| `// goforge:routes` | `server/routes.go` | Registering resource routes |
+| `// goforge:deps-fields`, `// goforge:deps-ready` | `server/deps.go` | Shared services and their readiness checks |
+| `// goforge:deps-connect` | `main.go` | Connecting shared services at startup |
+| `// goforge:config-fields`, `// goforge:config-load` | `config/config.go` | New settings from the environment |
+
+New code is inserted just above a marker, so repeated additions stack in order. If a
+marker is missing (for example, the user deleted it), the command fails before writing
+anything and explains what to add.
+
 ## Adding a file to generated projects
 
 1. Add `templates/<name>.tmpl`. Template data is `*domain.ServerConfig`, so you can

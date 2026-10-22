@@ -1,0 +1,16 @@
+package server
+
+import "context"
+
+// Deps holds the shared services that routes need, such as a database pool.
+// main creates it and passes it to New.
+type Deps struct {
+	// goforge:deps-fields (`goforge add` adds dependencies above this line)
+}
+
+// Ready reports whether the server's dependencies can serve traffic. It backs
+// the /readyz endpoint, which load balancers use to decide when to send requests.
+func (d Deps) Ready(ctx context.Context) error {
+	// goforge:deps-ready (`goforge add` adds readiness checks above this line)
+	return ctx.Err()
+}

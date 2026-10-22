@@ -76,9 +76,9 @@ func TestGeneratedProjects(t *testing.T) {
 
 			projectPath := config.GetProjectPath()
 			for _, file := range []string{
-				"main.go", "go.mod", ".gitignore", "Makefile", ".golangci.yml",
+				"main.go", "go.mod", ".gitignore", "Makefile", ".golangci.yml", ".goforge.json",
 				"config/config.go", "config/config_test.go",
-				"server/server.go", "server/routes.go", "server/middleware.go", "server/server_test.go",
+				"server/server.go", "server/deps.go", "server/routes.go", "server/middleware.go", "server/server_test.go",
 				"handlers/health.go", "handlers/respond.go", "handlers/health_test.go", "handlers/respond_test.go",
 			} {
 				assertFileExists(t, filepath.Join(projectPath, file), true)

@@ -6,13 +6,15 @@ import (
 	"{{.GetModuleName}}/handlers"
 )
 
-// registerRoutes maps request patterns to handlers. Add new endpoints here.
+// registerRoutes maps request patterns to handlers. Add new endpoints here; deps
+// holds shared services such as the database.
 //
 // Patterns use Go 1.22+ routing: "GET /users/{id}" matches only GET (and HEAD),
 // and handlers read path values with r.PathValue("id"). Requests with the wrong
 // method get 405 Method Not Allowed automatically.
-func registerRoutes(mux *http.ServeMux) {
+func registerRoutes(mux *http.ServeMux, deps Deps) {
 	mux.HandleFunc("GET /health", handlers.Health("{{.AppName}}"))
+	mux.HandleFunc("GET /readyz", handlers.Ready(deps.Ready))
 
 	// goforge:routes (`goforge add resource` registers new resources above this line)
 }
