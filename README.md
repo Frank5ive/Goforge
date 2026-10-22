@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Frank5ive/goforge/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Frank5ive/goforge)](https://github.com/Frank5ive/goforge/releases)
+[![Coverage](https://coveralls.io/repos/github/Frank5ive/goforge/badge.svg?branch=master)](https://coveralls.io/github/Frank5ive/goforge?branch=master)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Frank5ive/goforge.svg)](https://pkg.go.dev/github.com/Frank5ive/goforge)
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
