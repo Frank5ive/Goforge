@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -203,12 +204,15 @@ if err := %s; err != nil {
 	err = u.editGo(cs, dir, "server/routes.go", func(src string) (string, error) {
 		for _, r := range manifest.Resources {
 			pkg := r.ResourceConfig(dir).PackageName()
-			memory := pkg + ".NewMemoryRepository()"
 			repo := fmt.Sprintf("%s.New%s(deps.DB)", pkg, eng.repoType)
-			if !strings.Contains(src, memory) {
-				return "", fmt.Errorf("server/routes.go no longer creates %s; register the resource with %s yourself", memory, repo)
+			// Match the whole service expression, starting at a word boundary, so
+			// "posts" never matches inside "blogposts"
+			service := regexp.MustCompile(`\b` + regexp.QuoteMeta(pkg+".NewService("+pkg+".NewMemoryRepository())"))
+			loc := service.FindStringIndex(src)
+			if loc == nil {
+				return "", fmt.Errorf("server/routes.go no longer creates %s.NewMemoryRepository(); register the resource with %s yourself", pkg, repo)
 			}
-			src = strings.Replace(src, memory, repo, 1)
+			src = src[:loc[0]] + pkg + ".NewService(" + repo + ")" + src[loc[1]:]
 		}
 		return src, nil
 	})

@@ -242,3 +242,33 @@ func TestDatabaseName(t *testing.T) {
 		}
 	}
 }
+
+func TestDatabaseGenerator_Add_ConvertsTheRightResourceWhenNamesOverlap(t *testing.T) {
+	w := newDBProject()
+	// "posts" is a suffix of "blogposts", and the blogposts registration comes first
+	// (e.g. the user reordered routes.go)
+	w.FilesWritten[filepath.Join("/proj", ".goforge.json")] = `{"module": "example.com/app", "resources": [
+		{"name": "post", "plural": "posts", "fields": [{"name": "title", "type": "string"}]},
+		{"name": "blog_post", "plural": "blog_posts", "fields": [{"name": "title", "type": "string"}]}]}`
+	routes, _ := registerResource(testRoutes, "example.com/app", "posts", "posts.NewMemoryRepository()")
+	routes, _ = registerResource(routes, "example.com/app", "blogposts", "blogposts.NewMemoryRepository()")
+	// Move the blogposts registration above posts
+	routes = strings.Replace(routes,
+		"\tposts.RegisterRoutes(mux, posts.NewService(posts.NewMemoryRepository()))\n\tblogposts.RegisterRoutes(mux, blogposts.NewService(blogposts.NewMemoryRepository()))\n",
+		"\tblogposts.RegisterRoutes(mux, blogposts.NewService(blogposts.NewMemoryRepository()))\n\tposts.RegisterRoutes(mux, posts.NewService(posts.NewMemoryRepository()))\n", 1)
+	w.FilesWritten[filepath.Join("/proj", "server", "routes.go")] = routes
+
+	if _, err := newTestDatabaseGenerator(w, &mockModules{}).Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: "postgres"}); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	got := file(w, "server/routes.go")
+	for _, want := range []string{
+		"posts.RegisterRoutes(mux, posts.NewService(posts.NewPostgresRepository(deps.DB)))",
+		"blogposts.RegisterRoutes(mux, blogposts.NewService(blogposts.NewPostgresRepository(deps.DB)))",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("routes.go does not contain %q:\n%s", want, got)
+		}
+	}
+}

@@ -83,3 +83,28 @@ func assertContent(t *testing.T, path, want string) {
 		t.Errorf("%s = %q, want %q", path, got, want)
 	}
 }
+
+func TestChangeset_RollbackRemovesRestorePathsCreatedDuringApply(t *testing.T) {
+	dir := t.TempDir()
+	goMod := filepath.Join(dir, "go.mod")
+	goSum := filepath.Join(dir, "go.sum") // a stdlib-only project has none yet
+	if err := os.WriteFile(goMod, []byte("module old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cs := newChangeset(filesystem.NewFileSystemWriter())
+	err := cs.apply([]string{goMod, goSum}, func() error {
+		// Simulate `go get` succeeding (creating go.sum) and `go mod tidy` failing
+		_ = os.WriteFile(goMod, []byte("module changed"), 0o644)
+		_ = os.WriteFile(goSum, []byte("example.com/x v1.0.0 h1:abc"), 0o644)
+		return errors.New("go mod tidy failed")
+	})
+	if err == nil {
+		t.Fatal("apply() error = nil, want the after() error")
+	}
+
+	assertContent(t, goMod, "module old")
+	if _, err := os.Stat(goSum); !os.IsNotExist(err) {
+		t.Error("rollback must remove go.sum, which did not exist before apply")
+	}
+}

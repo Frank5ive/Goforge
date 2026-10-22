@@ -50,11 +50,14 @@ func (c *changeset) edit(path, content string) {
 // apply writes every queued file, then runs after (if not nil) for steps that
 // must see the new files, such as updating dependencies. If anything fails,
 // created files are removed and edited files, plus any paths in alsoRestore,
-// get their original content back.
+// get their original content back. Paths in alsoRestore that did not exist
+// before (such as a go.sum that `go get` creates) are removed.
 func (c *changeset) apply(alsoRestore []string, after func() error) error {
 	originals := map[string]string{}
+	var missing []string
 	for _, path := range append(c.editPaths(), alsoRestore...) {
 		if !c.writer.FileExists(path) {
+			missing = append(missing, path)
 			continue
 		}
 		content, err := c.writer.ReadFile(path)
@@ -77,6 +80,9 @@ func (c *changeset) apply(alsoRestore []string, after func() error) error {
 		}
 		for _, dir := range newDirs {
 			_ = c.writer.RemoveAll(dir)
+		}
+		for _, path := range missing {
+			_ = c.writer.RemoveAll(path)
 		}
 		for path, content := range originals {
 			_ = c.writer.WriteFile(path, content)
