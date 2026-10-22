@@ -39,7 +39,9 @@ const migrationLock = "goforge_migrations"
 {{- if eq .Engine "mysql"}}
 //
 // MySQL commits schema changes (CREATE, ALTER, DROP) immediately, so a migration
-// that fails partway is not fully rolled back; keep each migration small.
+// that stops partway is not rolled back and runs again on the next start. Write
+// migrations that can run twice, as the generated ones do with CREATE TABLE IF
+// NOT EXISTS, and keep each one small.
 {{- end}}
 func Migrate(ctx context.Context, database *sql.DB, log *slog.Logger) error {
 	conn, err := database.Conn(ctx)
