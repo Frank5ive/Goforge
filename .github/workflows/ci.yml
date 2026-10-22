@@ -26,11 +26,24 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        if: runner.os != 'Windows'
+        if: runner.os == 'macOS'
         run: go test -race ./...
       - name: Test (Windows)
         if: runner.os == 'Windows'
         run: go test ./...
+      # Linux also measures coverage across every package, including code the
+      # end-to-end tests in main_test.go exercise
+      - name: Test (with coverage)
+        if: runner.os == 'Linux'
+        run: go test -race -coverpkg=./... -coverprofile=coverage.out ./...
+      - name: Upload coverage to Coveralls
+        if: runner.os == 'Linux'
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.out
+          format: golang
+          # A Coveralls outage shouldn't fail CI
+          fail-on-error: false
 
   min-go:
     name: Test (minimum Go version)
