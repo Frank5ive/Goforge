@@ -201,10 +201,25 @@ func TestCheck_NotAModule(t *testing.T) {
 }
 
 func TestStackLocation(t *testing.T) {
+	// t.TempDir is itself behind a symlink on macOS, and may use short names on
+	// Windows; stack traces may spell the project directory either way
 	real := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(real, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
+	}
+	for _, file := range []string{"main.go", filepath.Join("products", "zz_test.go")} {
+		path := filepath.Join(real, file)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("package x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolved, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	tests := []struct {
@@ -212,8 +227,10 @@ func TestStackLocation(t *testing.T) {
 		line                int
 	}{
 		{filepath.Join(real, "products", "zz_test.go") + ":11 +0x28", real, "products/zz_test.go", 11},
-		// macOS: the project is reached through a symlink, the stack shows the real path
+		// The project is reached through a symlink; the stack shows another spelling
 		{filepath.Join(real, "main.go") + ":7 +0x1f", link, "main.go", 7},
+		{filepath.Join(resolved, "main.go") + ":7 +0x1f", link, "main.go", 7},
+		{filepath.Join(resolved, "main.go") + ":7 +0x1f", real, "main.go", 7},
 		{"/usr/lib/go/src/testing/testing.go:1734 +0x21c", real, "", 0},
 		{"created by testing.(*T).Run in goroutine 1", real, "", 0},
 	}

@@ -305,8 +305,10 @@ func testProblem(f failure, absDir, module string) domain.CheckProblem {
 
 // stackLocation returns the project-relative file and line of a stack trace
 // line such as "/abs/dir/pkg/file.go:12 +0x28", or "" if it is outside the
-// project. The path may contain spaces, and on macOS the project directory may
-// be reached through a symlink, which stack traces resolve.
+// project. The path may contain spaces, and the project directory and the
+// frame's file may be spelled differently: through a symlink (as macOS's
+// temporary directories are) or, on Windows, with short 8.3 names. Both are
+// resolved before comparing.
 func stackLocation(frame, absDir string) (string, int) {
 	if i := strings.LastIndex(frame, " +0x"); i >= 0 {
 		frame = frame[:i]
@@ -318,16 +320,21 @@ func stackLocation(frame, absDir string) (string, int) {
 	file += ".go"
 	line, _ := strconv.Atoi(lineStr)
 
-	dirs := []string{absDir}
-	if real, err := filepath.EvalSymlinks(absDir); err == nil && real != absDir {
-		dirs = append(dirs, real)
-	}
-	for _, dir := range dirs {
-		if rel, err := filepath.Rel(dir, file); err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+	for _, pair := range [][2]string{{absDir, file}, {resolve(absDir), resolve(file)}} {
+		if rel, err := filepath.Rel(pair[0], pair[1]); err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
 			return filepath.ToSlash(rel), line
 		}
 	}
 	return "", 0
+}
+
+// resolve returns path with symlinks (and on Windows, short names) resolved, or
+// path itself if that fails.
+func resolve(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
 }
 
 // lintOutput is the part of golangci-lint's JSON output GoForge reads.
