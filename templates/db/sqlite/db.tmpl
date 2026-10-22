@@ -1,0 +1,57 @@
+// Package db opens the SQLite database and applies the schema migrations in
+// db/migrations.
+package db
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	// Registers the "sqlite" driver; it is written in pure Go, so builds need no
+	// C compiler
+	_ "modernc.org/sqlite"
+)
+
+// defaultPragmas apply to every connection unless DATABASE_URL sets its own:
+// wait up to 5s for locks, use write-ahead logging so reads don't block writes,
+// and enforce foreign keys.
+const defaultPragmas = "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
+
+// Connect opens the SQLite database file at url (e.g. "app.db"), creating it if
+// needed, checks that it is usable, and applies any pending migrations.
+func Connect(ctx context.Context, url string, log *slog.Logger) (*sql.DB, error) {
+	file, _, _ := strings.Cut(url, "?")
+	if !strings.Contains(url, "_pragma=") {
+		separator := "?"
+		if strings.Contains(url, "?") {
+			separator = "&"
+		}
+		url += separator + defaultPragmas
+	}
+
+	database, err := sql.Open("sqlite", url)
+	if err != nil {
+		return nil, fmt.Errorf("invalid DATABASE_URL: %w", err)
+	}
+	if err := database.PingContext(ctx); err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("cannot open the SQLite database %s: %w", file, err)
+	}
+
+	if err := Migrate(ctx, database, log); err != nil {
+		_ = database.Close()
+		return nil, err
+	}
+
+	log.Info("connected to database", "database", file)
+	return database, nil
+}
+
+// Close closes the database, logging any error. main defers it.
+func Close(database *sql.DB, log *slog.Logger) {
+	if err := database.Close(); err != nil {
+		log.Error("closing the database", "error", err)
+	}
+}

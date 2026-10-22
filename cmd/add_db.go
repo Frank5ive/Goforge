@@ -20,22 +20,27 @@ func newAddDBCmd() *cobra.Command {
 	opts := &addDBOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "db postgres",
-		Short: "Store data in PostgreSQL instead of memory",
-		Long: `Add PostgreSQL to a project created by goforge generate.
+		Use:   "db <postgres|mysql|sqlite|mongo>",
+		Short: "Store data in a database instead of memory",
+		Long: `Add a database to a project created by goforge generate.
 
-This adds a db package (connection pool and embedded SQL migrations), connects it
-at startup, makes /readyz check the database, and moves every existing resource
-onto PostgreSQL: each gets a PostgreSQL repository, tests, and a migration that
-creates its table. Resources added afterwards use PostgreSQL automatically.
+Supported: postgres (PostgreSQL), mysql (MySQL or MariaDB), sqlite (SQLite, no
+server needed), and mongo (MongoDB).
 
-It also adds docker-compose.yml with a local PostgreSQL, Makefile targets
-(db-up, db-down, db-reset, test-db), a database for tests in CI, and the pgx
-driver to go.mod. If any step fails, the project is left unchanged.`,
+This adds a db package (connection and, for SQL databases, embedded migrations),
+connects it at startup, makes /readyz check the database, and moves every
+existing resource onto it: each gets a repository for the database and tests,
+plus a migration that creates its table for SQL databases. Resources added
+afterwards use the database automatically.
+
+It also adds local tooling (docker-compose.yml and Makefile targets, except for
+SQLite, which is just a file), a database for tests in CI, and the driver to
+go.mod. If any step fails, the project is left unchanged.`,
 		Example: `  goforge add db postgres
-  goforge add db postgres --dry-run`,
+  goforge add db sqlite
+  goforge add db mysql --dry-run`,
 		Args:      cobra.ExactArgs(1),
-		ValidArgs: []string{domain.DatabasePostgres},
+		ValidArgs: domain.DatabaseEngines,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 			return runAddDB(cmd.OutOrStdout(), args[0], opts)
@@ -55,6 +60,9 @@ func runAddDB(out io.Writer, engine string, opts *addDBOptions) error {
 		return err
 	}
 
+	engine = domain.NormalizeDatabase(engine)
+	label := domain.DatabaseLabel(engine)
+
 	changes, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: opts.dir, Engine: engine})
 	if err != nil {
 		return err
@@ -63,7 +71,7 @@ func runAddDB(out io.Writer, engine string, opts *addDBOptions) error {
 	if opts.dryRun {
 		fmt.Fprintf(out, "🔍 Dry run: no files were written. GoForge would create %d files:\n", len(changes.Created))
 	} else {
-		fmt.Fprintf(out, "✅ Added PostgreSQL. Created %d files:\n", len(changes.Created))
+		fmt.Fprintf(out, "✅ Added %s. Created %d files:\n", label, len(changes.Created))
 	}
 	printRelative(out, changes.Created)
 
@@ -82,10 +90,16 @@ func runAddDB(out io.Writer, engine string, opts *addDBOptions) error {
 		return nil
 	}
 
-	fmt.Fprintln(out, "\n🐘 Next steps:")
-	fmt.Fprintln(out, "   make db-up     # start PostgreSQL in Docker")
-	fmt.Fprintln(out, "   go run .       # connects, applies migrations, and serves your resources from PostgreSQL")
-	fmt.Fprintln(out, "   make test-db   # run every test, including the PostgreSQL ones")
+	fmt.Fprintln(out, "\n🗄️  Next steps:")
+	if engine == domain.DatabaseSQLite {
+		fmt.Fprintln(out, "   go run .       # creates the database file, applies migrations, and serves your resources")
+		fmt.Fprintln(out, "   go test ./...  # the SQLite tests run against a temporary database file")
+		fmt.Fprintln(out, "\n🔐 DATABASE_URL defaults to a file in the project directory; set it for production.")
+		return nil
+	}
+	fmt.Fprintf(out, "   make db-up     # start %s in Docker\n", label)
+	fmt.Fprintf(out, "   go run .       # connects and serves your resources from %s\n", label)
+	fmt.Fprintf(out, "   make test-db   # run every test, including the %s ones\n", label)
 	fmt.Fprintln(out, "\n🔐 DATABASE_URL defaults to the local Docker database; set it for production.")
 	return nil
 }

@@ -184,7 +184,7 @@ func TestAddDB_Errors(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"unsupported engine", []string{"mysql", "--dir", project}, "unsupported database"},
+		{"unsupported engine", []string{"oracle", "--dir", project}, "unsupported database"},
 		{"outside a project", []string{"postgres", "--dir", t.TempDir()}, "not a Go module"},
 		{"missing engine", []string{"--dir", project}, "accepts 1 arg"},
 	}

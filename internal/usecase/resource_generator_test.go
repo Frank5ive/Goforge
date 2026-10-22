@@ -319,7 +319,7 @@ func TestAddSQL(t *testing.T) {
 		"Table":       `"orders"`,
 		"Columns":     `"id", "user", "total", "created_at", "updated_at"`,
 		"InsertQuery": `INSERT INTO "orders" ("id", "user", "total", "created_at", "updated_at") VALUES ($1, $2, $3, $4, $5)`,
-		"UpdateQuery": `UPDATE "orders" SET "user" = $2, "total" = $3, "updated_at" = $4 WHERE "id" = $1`,
+		"UpdateQuery": `UPDATE "orders" SET "user" = $1, "total" = $2, "updated_at" = $3 WHERE "id" = $4`,
 	}
 	got := map[string]string{
 		"Table": data.Table, "Columns": data.Columns, "InsertQuery": data.InsertQuery, "UpdateQuery": data.UpdateQuery,

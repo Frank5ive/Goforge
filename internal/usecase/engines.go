@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Frank5ive/goforge/internal/domain"
@@ -19,8 +20,10 @@ type sqlDialect struct {
 	quote       func(name string) string
 	placeholder func(n int) string // n is 1-based
 	types       map[domain.FieldType]string
-	idType      string // type of the "id" column
-	timeType    string // type of "created_at" and "updated_at"
+	idType      string                    // type of the "id" column
+	timeType    string                    // type of "created_at" and "updated_at"
+	clear       func(table string) string // empties a table between tests
+	textTimes   bool                      // times are stored as fixed-width UTC text
 }
 
 // engine describes everything that differs between the databases GoForge
@@ -47,6 +50,7 @@ type engine struct {
 	ciService       func(testDB, testURL string) string // services/env for the CI test job; nil for none
 	makeTargets     func(dbName string, testURL string) []string
 	gitignore       []string // lines to add to .gitignore
+	dockerNote      string   // shown when the project has a Dockerfile
 }
 
 // connectCode is inserted into main.go for every engine.
@@ -60,7 +64,7 @@ deps.DB = database
 
 var postgresEngine = &engine{
 	name:    domain.DatabasePostgres,
-	label:   "PostgreSQL",
+	label:   domain.DatabaseLabel(domain.DatabasePostgres),
 	module:  "github.com/jackc/pgx/v5",
 	version: "v5.11.0",
 	dbFiles: []fileTemplate{
@@ -86,6 +90,7 @@ var postgresEngine = &engine{
 		},
 		idType:   "text",
 		timeType: "timestamptz",
+		clear:    func(table string) string { return "TRUNCATE " + table },
 	},
 	repoType:   "PostgresRepository",
 	depsImport: "github.com/jackc/pgx/v5/pgxpool",
@@ -123,9 +128,120 @@ env:
 	},
 }
 
+// sqlFiles are the db package files shared by the database/sql engines.
+func sqlFiles(engine string) []fileTemplate {
+	return []fileTemplate{
+		{"db/" + engine + "/db.tmpl", "db/db.go"},
+		{"db/sql/migrate.tmpl", "db/migrate.go"},
+		{"db/sql/migrate_test.tmpl", "db/migrate_test.go"},
+		{"db/migrations_readme.tmpl", "db/migrations/README.md"},
+		{"db/sql/dbtest.tmpl", "db/dbtest/dbtest.go"},
+	}
+}
+
+var mysqlEngine = &engine{
+	name:    domain.DatabaseMySQL,
+	label:   domain.DatabaseLabel(domain.DatabaseMySQL),
+	module:  "github.com/go-sql-driver/mysql",
+	version: "v1.10.1",
+	dbFiles: sqlFiles("mysql"),
+	repositoryFiles: []fileTemplate{
+		{"db/sql/repository.tmpl", "mysql.go"},
+		{"db/sql/repository_test.tmpl", "mysql_test.go"},
+	},
+	dialect: &sqlDialect{
+		quote:       func(name string) string { return "`" + name + "`" },
+		placeholder: func(int) string { return "?" },
+		types: map[domain.FieldType]string{
+			domain.FieldString: "TEXT",
+			domain.FieldInt:    "BIGINT",
+			domain.FieldFloat:  "DOUBLE",
+			domain.FieldBool:   "BOOLEAN",
+			domain.FieldTime:   "DATETIME(6)",
+		},
+		idType:   "VARCHAR(64)",
+		timeType: "DATETIME(6)",
+		clear:    func(table string) string { return "TRUNCATE TABLE " + table },
+	},
+	repoType:        "MySQLRepository",
+	depsImport:      "database/sql",
+	depsType:        "*sql.DB",
+	readyCheck:      "d.DB.PingContext(ctx)",
+	defaultURL:      func(db string) string { return fmt.Sprintf("app:app@tcp(localhost:3306)/%s", db) },
+	testURL:         func(db string) string { return fmt.Sprintf("app:app@tcp(localhost:3306)/%s_test", db) },
+	composeTemplate: "db/mysql/compose.tmpl",
+	ciService: func(testDB, testURL string) string {
+		return fmt.Sprintf(`services:
+  mysql:
+    image: mysql:8.4
+    env:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: %s
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
+    ports:
+      - 3306:3306
+    options: >-
+      --health-cmd "mysqladmin ping -h 127.0.0.1 -uapp -papp"
+      --health-interval 2s
+      --health-timeout 3s
+      --health-retries 30
+env:
+  TEST_DATABASE_URL: %s
+`, testDB, testURL)
+	},
+	makeTargets: func(db, testURL string) []string {
+		return dockerMakeTargets("MySQL",
+			fmt.Sprintf(`-docker compose exec -T db mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS %[1]s_test; GRANT ALL ON %[1]s_test.* TO 'app'@'%%'"`, db),
+			testURL)
+	},
+}
+
+var sqliteEngine = &engine{
+	name:    domain.DatabaseSQLite,
+	label:   domain.DatabaseLabel(domain.DatabaseSQLite),
+	module:  "modernc.org/sqlite",
+	version: "v1.61.0",
+	dbFiles: sqlFiles("sqlite"),
+	repositoryFiles: []fileTemplate{
+		{"db/sql/repository.tmpl", "sqlite.go"},
+		{"db/sql/repository_test.tmpl", "sqlite_test.go"},
+	},
+	dialect: &sqlDialect{
+		quote:       func(name string) string { return `"` + name + `"` },
+		placeholder: func(int) string { return "?" },
+		types: map[domain.FieldType]string{
+			domain.FieldString: "TEXT",
+			domain.FieldInt:    "INTEGER",
+			domain.FieldFloat:  "REAL",
+			domain.FieldBool:   "INTEGER",
+			domain.FieldTime:   "TEXT",
+		},
+		idType:    "TEXT",
+		timeType:  "TEXT",
+		clear:     func(table string) string { return "DELETE FROM " + table },
+		textTimes: true,
+	},
+	repoType:   "SQLiteRepository",
+	depsImport: "database/sql",
+	depsType:   "*sql.DB",
+	readyCheck: "d.DB.PingContext(ctx)",
+	defaultURL: func(db string) string { return db + ".db" },
+	makeTargets: func(db, _ string) []string {
+		return []string{
+			"db-reset: ## Delete the SQLite database (it is recreated on the next start)",
+			fmt.Sprintf("\trm -f %[1]s.db %[1]s.db-wal %[1]s.db-shm", db),
+		}
+	},
+	gitignore:  []string{"*.db", "*.db-shm", "*.db-wal"},
+	dockerNote: "SQLite stores data in a file inside the container, which is lost when the container is replaced. Mount a volume and point DATABASE_URL at it, e.g. `docker run -v ./data:/data -e DATABASE_URL=/data/app.db ...`.",
+}
+
 // engines lists the supported databases by name.
 var engines = map[string]*engine{
 	postgresEngine.name: postgresEngine,
+	mysqlEngine.name:    mysqlEngine,
+	sqliteEngine.name:   sqliteEngine,
 }
 
 // engineFor returns the engine for a database name from .goforge.json or the
@@ -172,9 +288,12 @@ func phonyTargets(lines []string) []string {
 }
 
 // addEngineData fills in the database-specific names and statements for a
-// resource stored in table. SQL parameters are the ID first, then the fields in
-// order, then the timestamps.
+// resource stored in table. Parameters are numbered in the order they appear in
+// each statement, because "?" placeholders (MySQL, SQLite) bind by position:
+// inserts take the ID, the fields, then the timestamps; updates take the fields,
+// updated_at, then the ID.
 func addEngineData(data *resourceData, eng *engine, table string) {
+	data.Engine = eng.name
 	data.RepoType = eng.repoType
 	data.EngineLabel = eng.label
 	data.TableName = table
@@ -188,6 +307,15 @@ func addEngineData(data *resourceData, eng *engine, table string) {
 	data.IndexName = d.quote(table + "_created_at_id_idx")
 	data.IDColumn, data.CreatedColumn, data.UpdatedColumn = d.quote("id"), d.quote("created_at"), d.quote("updated_at")
 	data.IDType, data.TimeType = d.idType, d.timeType
+	data.TextTimes = d.textTimes
+
+	arg := func(goExpr string, isTime bool) string {
+		if isTime && d.textTimes {
+			return goExpr + ".UTC().Format(timeLayout)"
+		}
+		return goExpr
+	}
+	data.CreatedArg, data.UpdatedArg = arg("item.CreatedAt", true), arg("item.UpdatedAt", true)
 
 	columns := []string{data.IDColumn}
 	var sets []string
@@ -195,8 +323,10 @@ func addEngineData(data *resourceData, eng *engine, table string) {
 		f := &data.Fields[i]
 		f.Column = d.quote(f.JSON)
 		f.SQLType = d.types[f.Type]
+		f.ArgExpr = arg("item."+f.GoName, f.IsTime)
+		f.TextVar = strings.ToLower(f.GoName[:1]) + f.GoName[1:] + "Text"
 		columns = append(columns, f.Column)
-		sets = append(sets, fmt.Sprintf("%s = %s", f.Column, d.placeholder(i+2)))
+		sets = append(sets, fmt.Sprintf("%s = %s", f.Column, d.placeholder(i+1)))
 	}
 	columns = append(columns, data.CreatedColumn, data.UpdatedColumn)
 	data.First = data.Fields[0]
@@ -209,7 +339,17 @@ func addEngineData(data *resourceData, eng *engine, table string) {
 	data.Columns = strings.Join(columns, ", ")
 	data.InsertQuery = fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
 		data.Table, data.Columns, strings.Join(placeholders, ", "))
+	n := len(data.Fields)
 	data.UpdateQuery = fmt.Sprintf("UPDATE %s SET %s, %s = %s WHERE %s = %s",
-		data.Table, strings.Join(sets, ", "), data.UpdatedColumn, d.placeholder(len(data.Fields)+2),
-		data.IDColumn, d.placeholder(1))
+		data.Table, strings.Join(sets, ", "), data.UpdatedColumn, d.placeholder(n+1),
+		data.IDColumn, d.placeholder(n+2))
+
+	data.CountGo = strconv.Quote("SELECT count(*) FROM " + data.Table)
+	data.ListGo = strconv.Quote(fmt.Sprintf("SELECT %s FROM %s ORDER BY %s, %s LIMIT %s OFFSET %s",
+		data.Columns, data.Table, data.CreatedColumn, data.IDColumn, d.placeholder(1), d.placeholder(2)))
+	data.GetGo = strconv.Quote(fmt.Sprintf("SELECT %s FROM %s WHERE %s = %s", data.Columns, data.Table, data.IDColumn, d.placeholder(1)))
+	data.InsertGo = strconv.Quote(data.InsertQuery)
+	data.UpdateGo = strconv.Quote(data.UpdateQuery)
+	data.DeleteGo = strconv.Quote(fmt.Sprintf("DELETE FROM %s WHERE %s = %s", data.Table, data.IDColumn, d.placeholder(1)))
+	data.ClearGo = strconv.Quote(d.clear(data.Table))
 }

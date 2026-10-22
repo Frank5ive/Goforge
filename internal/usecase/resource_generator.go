@@ -195,6 +195,7 @@ type resourceData struct {
 	UpdatedBody   string // pretty-printed JSON replace request, for requests.http
 
 	// Database-specific names, set by addEngineData for projects with a database
+	Engine      string // e.g. "postgres"
 	RepoType    string // e.g. "PostgresRepository"
 	EngineLabel string // e.g. "PostgreSQL"
 	TableName   string // unquoted table or collection name, e.g. blog_posts
@@ -211,6 +212,12 @@ type resourceData struct {
 	Columns       string // the select list, in scan order
 	InsertQuery   string
 	UpdateQuery   string
+	TextTimes     bool // times are stored as text (SQLite)
+
+	// The statements as Go string literals, for templates that can't use raw
+	// strings (MySQL quotes identifiers with backticks)
+	CountGo, ListGo, GetGo, InsertGo, UpdateGo, DeleteGo, ClearGo string
+	CreatedArg, UpdatedArg                                        string // Go expressions for the timestamp arguments
 }
 
 // resourceField describes one field for the templates, including sample values
@@ -222,6 +229,8 @@ type resourceField struct {
 	Type        domain.FieldType
 	Column      string // quoted SQL column name, set by addEngineData
 	SQLType     string // set by addEngineData
+	ArgExpr     string // Go expression passing the field to SQL, set by addEngineData
+	TextVar     string // name of the variable a text-stored time is scanned into
 	IsTime      bool
 	Required    bool   // a required string field
 	Sample      string // Go literal

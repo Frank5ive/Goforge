@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -39,9 +40,8 @@ type generateOptions struct {
 	docker bool
 	readme bool
 	ci     bool
-	// db is the --db flag value; postgres is its prompt equivalent
-	db       string
-	postgres bool
+	// db is the database engine from --db or the prompt; "" means none
+	db string
 
 	yes     bool
 	dryRun  bool
@@ -60,7 +60,6 @@ var features = []feature{
 	{flag: "docker", label: "Dockerfile", value: func(o *generateOptions) *bool { return &o.docker }},
 	{flag: "readme", label: "README.md", value: func(o *generateOptions) *bool { return &o.readme }},
 	{flag: "ci", label: "GitHub Actions CI", value: func(o *generateOptions) *bool { return &o.ci }},
-	{flag: "db", label: "PostgreSQL database", value: func(o *generateOptions) *bool { return &o.postgres }},
 }
 
 func newGenerateCmd() *cobra.Command {
@@ -102,7 +101,7 @@ Features not set by flag are asked for interactively, unless --yes is given.`,
 	flags.BoolVar(&opts.docker, "docker", true, "Include a Dockerfile")
 	flags.BoolVar(&opts.readme, "readme", true, "Include a README.md")
 	flags.BoolVar(&opts.ci, "ci", true, "Include a GitHub Actions CI workflow")
-	flags.StringVar(&opts.db, "db", "", `Store data in a database: "postgres" (same as running `+"`goforge add db postgres`"+` afterwards)`)
+	flags.StringVar(&opts.db, "db", "", "Store data in a database: postgres, mysql, sqlite, or mongo (same as running `goforge add db <engine>` afterwards)")
 	flags.BoolVarP(&opts.yes, "yes", "y", false, "Skip prompts and use flag values and defaults")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show the files that would be created without writing anything")
 	flags.BoolVar(&opts.initGit, "git", false, "Initialize a git repository in the new project")
@@ -115,10 +114,10 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 
 	printBanner(out)
 
-	if opts.db != "" && opts.db != domain.DatabasePostgres {
-		return fmt.Errorf("unsupported --db %q (supported: %s)", opts.db, domain.DatabasePostgres)
+	opts.db = domain.NormalizeDatabase(opts.db)
+	if opts.db != "" && !slices.Contains(domain.DatabaseEngines, opts.db) {
+		return fmt.Errorf("unsupported --db %q (supported: %s)", opts.db, strings.Join(domain.DatabaseEngines, ", "))
 	}
-	opts.postgres = opts.db == domain.DatabasePostgres
 
 	if !opts.yes {
 		if err := promptForOptions(cmd, opts); err != nil {
@@ -154,8 +153,8 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	if opts.dryRun {
 		fmt.Fprintf(out, "🔍 Dry run: no files were written. GoForge would create %d files in %s:\n", len(files), projectPath)
 		printFiles(out, projectPath, files)
-		if opts.postgres {
-			fmt.Fprintln(out, "\n🐘 PostgreSQL would then be added, as with `goforge add db postgres`.")
+		if opts.db != "" {
+			fmt.Fprintf(out, "\n🗄️  %s would then be added, as with `goforge add db %s`.\n", domain.DatabaseLabel(opts.db), opts.db)
 		}
 		return nil
 	}
@@ -163,12 +162,17 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	fmt.Fprintf(out, "✅ Created %d files in %s:\n", len(files), projectPath)
 	printFiles(out, projectPath, files)
 
-	if opts.postgres {
-		fmt.Fprintln(out, "\n🐘 Adding PostgreSQL…")
-		if _, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: projectPath, Engine: domain.DatabasePostgres}); err != nil {
-			return fmt.Errorf("the project was created in %s, but adding PostgreSQL failed: %w\nRun `goforge add db postgres` inside it to try again", projectPath, err)
+	if opts.db != "" {
+		label := domain.DatabaseLabel(opts.db)
+		fmt.Fprintf(out, "\n🗄️  Adding %s…\n", label)
+		changes, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: projectPath, Engine: opts.db})
+		if err != nil {
+			return fmt.Errorf("the project was created in %s, but adding %s failed: %w\nRun `goforge add db %s` inside it to try again", projectPath, label, err, opts.db)
 		}
-		fmt.Fprintln(out, "✅ Added PostgreSQL (db package, docker-compose.yml, and Makefile targets)")
+		fmt.Fprintf(out, "✅ Added %s (%d files created, %d updated)\n", label, len(changes.Created), len(changes.Updated))
+		for _, note := range changes.Notes {
+			fmt.Fprintf(out, "⚠️  %s\n", note)
+		}
 	}
 
 	if opts.initGit {
@@ -177,8 +181,8 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 
 	fmt.Fprintf(out, "\n📝 Next steps:\n")
 	fmt.Fprintf(out, "   cd %s\n", projectPath)
-	if opts.postgres {
-		fmt.Fprintf(out, "   make db-up        # start PostgreSQL in Docker\n")
+	if opts.db != "" && opts.db != domain.DatabaseSQLite {
+		fmt.Fprintf(out, "   make db-up        # start %s in Docker\n", domain.DatabaseLabel(opts.db))
 	}
 	fmt.Fprintf(out, "   go run .\n")
 	fmt.Fprintf(out, "\n🌐 Your server will be available at: http://localhost:%d\n", config.Port)
@@ -231,6 +235,22 @@ func promptForOptions(cmd *cobra.Command, opts *generateOptions) error {
 			Value(&selected))
 	}
 
+	if !cmd.Flags().Changed("db") {
+		options := []huh.Option[string]{huh.NewOption("None (keep data in memory)", "")}
+		for _, engine := range domain.DatabaseEngines {
+			label := domain.DatabaseLabel(engine)
+			if engine == domain.DatabaseMySQL {
+				label += " / MariaDB"
+			}
+			options = append(options, huh.NewOption(label, engine))
+		}
+		fields = append(fields, huh.NewSelect[string]().
+			Title("Database").
+			Description("you can also add one later with `goforge add db`").
+			Options(options...).
+			Value(&opts.db))
+	}
+
 	if len(fields) == 0 {
 		return nil
 	}
@@ -265,7 +285,11 @@ func displayConfig(out io.Writer, config *domain.ServerConfig, opts *generateOpt
 	fmt.Fprintf(out, "   • Dockerfile: %s\n", getBoolIcon(config.IncludeDocker))
 	fmt.Fprintf(out, "   • README: %s\n", getBoolIcon(config.IncludeReadme))
 	fmt.Fprintf(out, "   • GitHub Actions CI: %s\n", getBoolIcon(config.IncludeCI))
-	fmt.Fprintf(out, "   • PostgreSQL: %s\n", getBoolIcon(opts.postgres))
+	database := "none (in memory)"
+	if opts.db != "" {
+		database = domain.DatabaseLabel(opts.db)
+	}
+	fmt.Fprintf(out, "   • Database: %s\n", database)
 	fmt.Fprintln(out)
 }
 

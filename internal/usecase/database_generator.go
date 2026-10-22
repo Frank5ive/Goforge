@@ -50,6 +50,7 @@ type databaseData struct {
 	DBName  string // database name, e.g. "my_api"
 	Port    int
 	Docker  bool // the project has a Dockerfile, so docker-compose also runs the app
+	Engine  string
 	Label   string
 }
 
@@ -87,6 +88,7 @@ func (u *DatabaseGeneratorUsecase) Add(config *domain.DatabaseConfig) (domain.Ch
 		DBName:  databaseName(manifest.AppName, modulePath),
 		Port:    manifest.Port,
 		Docker:  manifest.Features.Docker || u.fileWriter.FileExists(filepath.Join(dir, "Dockerfile")),
+		Engine:  eng.name,
 		Label:   eng.label,
 	}
 	if data.Port == 0 {
@@ -315,6 +317,10 @@ func (u *DatabaseGeneratorUsecase) planFiles(cs *changeset, dir string, eng *eng
 		if err := planTemplate(u.templateRenderer, cs, filepath.Join(dir, filepath.FromSlash(f.path)), f.template, data); err != nil {
 			return err
 		}
+	}
+
+	if eng.dockerNote != "" && data.Docker {
+		cs.note("%s", eng.dockerNote)
 	}
 
 	if eng.composeTemplate != "" {

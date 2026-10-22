@@ -1,0 +1,64 @@
+// Package db connects to MySQL (or MariaDB) and applies the schema migrations in
+// db/migrations.
+package db
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/go-sql-driver/mysql"
+)
+
+// connectTimeout bounds how long Connect waits for the database to answer.
+const connectTimeout = 10 * time.Second
+
+// Connect opens a connection pool to the MySQL database at url, a DSN such as
+// "app:app@tcp(localhost:3306)/shop", checks that it is reachable, and applies
+// any pending migrations.
+//
+// Settings the generated code relies on are always applied: times are read as
+// UTC time.Time values, updates report matched rows (not only changed ones), and
+// migrations may contain several statements.
+func Connect(ctx context.Context, url string, log *slog.Logger) (*sql.DB, error) {
+	cfg, err := mysql.ParseDSN(url)
+	if err != nil {
+		return nil, fmt.Errorf("invalid DATABASE_URL: %w", err)
+	}
+	cfg.ParseTime = true
+	cfg.Loc = time.UTC
+	cfg.ClientFoundRows = true
+	cfg.MultiStatements = true
+	// Describe the database without the password, for logs and errors
+	where := cfg.Addr + "/" + cfg.DBName
+
+	connector, err := mysql.NewConnector(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("invalid DATABASE_URL: %w", err)
+	}
+	database := sql.OpenDB(connector)
+
+	pingCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+	if err := database.PingContext(pingCtx); err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("cannot reach MySQL at %s (is it running? `make db-up` starts one in Docker): %w", where, err)
+	}
+
+	if err := Migrate(ctx, database, log); err != nil {
+		_ = database.Close()
+		return nil, err
+	}
+
+	log.Info("connected to database", "database", where)
+	return database, nil
+}
+
+// Close closes the connection pool, logging any error. main defers it.
+func Close(database *sql.DB, log *slog.Logger) {
+	if err := database.Close(); err != nil {
+		log.Error("closing the database", "error", err)
+	}
+}

@@ -447,16 +447,35 @@ func startServer(t *testing.T, binary string, env ...string) (string, func()) {
 	return baseURL, stop
 }
 
-// TestAddDatabase adds PostgreSQL to a generated project with resources and
-// checks that it passes its tests against a real database, that data survives a
-// server restart, and that /readyz reports the database. It needs Docker on
-// Linux and network access for `go get`; elsewhere it is skipped.
+// databaseEngines are the engines TestAddDatabase covers, with a function that
+// starts a throwaway database and returns its URL (skipping when unavailable).
+var databaseEngines = []struct {
+	name  string
+	start func(t *testing.T) string
+}{
+	{domain.DatabasePostgres, startPostgres},
+	{domain.DatabaseMySQL, startMySQL},
+	{domain.DatabaseSQLite, func(t *testing.T) string { return filepath.Join(t.TempDir(), "shop.db") }},
+}
+
+// TestAddDatabase adds each database engine to a generated project with
+// resources and checks that the project passes its tests against a real
+// database, that data survives a server restart, and that /readyz reports the
+// database. Server databases need Docker on Linux (skipped elsewhere); every
+// engine needs network access for `go get`.
 func TestAddDatabase(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping end-to-end database test in short mode")
 	}
-	databaseURL := startPostgres(t)
 
+	for _, engine := range databaseEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			testAddDatabase(t, engine.name, engine.start(t))
+		})
+	}
+}
+
+func testAddDatabase(t *testing.T, engine, databaseURL string) {
 	templates, err := fs.Sub(TemplatesFS, "templates")
 	if err != nil {
 		t.Fatalf("Failed to open embedded templates: %v", err)
@@ -484,22 +503,28 @@ func TestAddDatabase(t *testing.T) {
 	if _, err := container.ResourceGeneratorUsecase.Add(product); err != nil {
 		t.Fatalf("Failed to add resource: %v", err)
 	}
-	if _, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: project, Engine: domain.DatabasePostgres}); err != nil {
+	if _, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: project, Engine: engine}); err != nil {
 		t.Fatalf("Failed to add database: %v", err)
 	}
 
-	// And one after, which must use PostgreSQL from the start
+	// And one after, which must use the database from the start
 	category := &domain.ResourceConfig{ProjectDir: project, Name: "category", Fields: []domain.Field{{Name: "title", Type: domain.FieldString}}}
 	if _, err := container.ResourceGeneratorUsecase.Add(category); err != nil {
 		t.Fatalf("Failed to add resource after the database: %v", err)
 	}
-	assertFileExists(t, filepath.Join(project, "categories", "postgres.go"), true)
+	routes, _ := os.ReadFile(filepath.Join(project, "server", "routes.go"))
+	if strings.Contains(string(routes), "NewMemoryRepository") {
+		t.Errorf("a resource is still stored in memory:\n%s", routes)
+	}
 
 	assertGofmtClean(t, project)
 	runGo(t, project, "vet", "./...")
 	runGoEnv(t, project, []string{"TEST_DATABASE_URL=" + databaseURL}, "test", "-count=1", "./...")
 
 	binary := filepath.Join(t.TempDir(), "shop")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
 	runGo(t, project, "build", "-o", binary, ".")
 
 	baseURL, stop := startServer(t, binary, "DATABASE_URL="+databaseURL)
@@ -515,7 +540,7 @@ func TestAddDatabase(t *testing.T) {
 	}
 	stop()
 
-	// Data is in PostgreSQL, so it survives a restart
+	// Data is in the database, so it survives a restart
 	baseURL, _ = startServer(t, binary, "DATABASE_URL="+databaseURL)
 	var page struct {
 		Total int `json:"total"`
@@ -527,42 +552,62 @@ func TestAddDatabase(t *testing.T) {
 	}
 }
 
-// startPostgres starts a throwaway PostgreSQL container and returns its URL. It
-// skips the test unless Docker is available on Linux.
+// startPostgres starts a throwaway PostgreSQL container and returns its URL.
 func startPostgres(t *testing.T) string {
+	hostPort := startContainer(t, "postgres:18-alpine", "5432/tcp",
+		[]string{"POSTGRES_USER=app", "POSTGRES_PASSWORD=app", "POSTGRES_DB=shop"},
+		[]string{"pg_isready", "-U", "app", "-d", "shop", "-h", "127.0.0.1"})
+	return fmt.Sprintf("postgres://app:app@%s/shop?sslmode=disable", hostPort)
+}
+
+// startMySQL starts a throwaway MySQL container and returns its URL.
+func startMySQL(t *testing.T) string {
+	// Ping over TCP: during initialization MySQL runs a temporary server that only
+	// accepts socket connections, so this succeeds only once it is really ready
+	hostPort := startContainer(t, "mysql:8.4", "3306/tcp",
+		[]string{"MYSQL_ROOT_PASSWORD=root", "MYSQL_DATABASE=shop", "MYSQL_USER=app", "MYSQL_PASSWORD=app"},
+		[]string{"mysqladmin", "ping", "-h", "127.0.0.1", "-uapp", "-papp", "--silent"})
+	return fmt.Sprintf("app:app@tcp(%s)/shop", hostPort)
+}
+
+// startContainer runs image with env, publishing port on a random local port,
+// waits until readyCmd succeeds inside the container, and returns the host:port.
+// It skips the test unless Docker is available on Linux.
+func startContainer(t *testing.T, image, port string, env, readyCmd []string) string {
 	t.Helper()
 
 	if runtime.GOOS != "linux" {
-		t.Skip("PostgreSQL end-to-end tests run on Linux only")
+		t.Skip("database end-to-end tests run on Linux only")
 	}
 	if err := exec.Command("docker", "info").Run(); err != nil {
 		t.Skip("Docker is not available")
 	}
 
-	out, err := exec.Command("docker", "run", "-d", "--rm",
-		"-e", "POSTGRES_USER=app", "-e", "POSTGRES_PASSWORD=app", "-e", "POSTGRES_DB=shop",
-		"-p", "127.0.0.1::5432", "postgres:18-alpine").Output()
+	args := []string{"run", "-d", "--rm", "-p", "127.0.0.1::" + strings.TrimSuffix(port, "/tcp")}
+	for _, e := range env {
+		args = append(args, "-e", e)
+	}
+	out, err := exec.Command("docker", append(args, image)...).Output()
 	if err != nil {
-		t.Fatalf("starting PostgreSQL: %v", err)
+		t.Fatalf("starting %s: %v", image, err)
 	}
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
 
-	out, err = exec.Command("docker", "port", id, "5432/tcp").Output()
+	out, err = exec.Command("docker", "port", id, port).Output()
 	if err != nil {
-		t.Fatalf("finding the PostgreSQL port: %v", err)
+		t.Fatalf("finding the %s port: %v", image, err)
 	}
 	hostPort := strings.TrimSpace(strings.Split(string(out), "\n")[0])
 
-	deadline := time.Now().Add(60 * time.Second)
-	for exec.Command("docker", "exec", id, "pg_isready", "-U", "app", "-d", "shop", "-h", "127.0.0.1").Run() != nil {
+	deadline := time.Now().Add(120 * time.Second)
+	for exec.Command("docker", append([]string{"exec", id}, readyCmd...)...).Run() != nil {
 		if time.Now().After(deadline) {
-			t.Fatal("PostgreSQL did not become ready within 60s")
+			t.Fatalf("%s did not become ready within 120s", image)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-
-	return fmt.Sprintf("postgres://app:app@%s/shop?sslmode=disable", hostPort)
+	return hostPort
 }
 
 // runGoEnv is runGo with extra environment variables.

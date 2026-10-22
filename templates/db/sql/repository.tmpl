@@ -1,0 +1,150 @@
+package {{.Package}}
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+{{- if .TextTimes}}
+	"time"
+{{- end}}
+)
+{{- if .TextTimes}}
+
+// timeLayout stores times as fixed-width UTC text, so they sort correctly.
+const timeLayout = "2006-01-02T15:04:05.000000Z07:00"
+{{- end}}
+
+// {{.RepoType}} is a Repository that stores {{.HumanPlural}} in the {{.TableName}}
+// table of a {{.EngineLabel}} database. The table is created by a migration in
+// db/migrations.
+type {{.RepoType}} struct {
+	db *sql.DB
+}
+
+// New{{.RepoType}} returns a {{.RepoType}} that uses db.
+func New{{.RepoType}}(db *sql.DB) *{{.RepoType}} {
+	return &{{.RepoType}}{db: db}
+}
+
+// List returns up to limit {{.HumanPlural}} starting at offset, oldest first, and
+// the total number stored.
+func (r *{{.RepoType}}) List(ctx context.Context, limit, offset int) ([]{{.Type}}, int, error) {
+	var total int
+	if err := r.db.QueryRowContext(ctx, {{.CountGo}}).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.db.QueryContext(ctx, {{.ListGo}}, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := []{{.Type}}{}
+	for rows.Next() {
+		item, err := scan(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// Get returns the {{.Human}} with the given ID, or ErrNotFound.
+func (r *{{.RepoType}}) Get(ctx context.Context, id string) ({{.Type}}, error) {
+	item, err := scan(r.db.QueryRowContext(ctx, {{.GetGo}}, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return {{.Type}}{}, ErrNotFound
+	}
+	return item, err
+}
+
+// Create stores a new {{.Human}}.
+func (r *{{.RepoType}}) Create(ctx context.Context, item {{.Type}}) error {
+	_, err := r.db.ExecContext(ctx, {{.InsertGo}},
+		item.ID,{{range .Fields}} {{.ArgExpr}},{{end}} {{.CreatedArg}}, {{.UpdatedArg}})
+	return err
+}
+
+// Update replaces an existing {{.Human}}, or returns ErrNotFound.
+func (r *{{.RepoType}}) Update(ctx context.Context, item {{.Type}}) error {
+	result, err := r.db.ExecContext(ctx, {{.UpdateGo}},
+		{{range .Fields}}{{.ArgExpr}}, {{end}}{{.UpdatedArg}}, item.ID)
+	if err != nil {
+		return err
+	}
+	return requireOneRow(result)
+}
+
+// Delete removes the {{.Human}} with the given ID, or returns ErrNotFound.
+func (r *{{.RepoType}}) Delete(ctx context.Context, id string) error {
+	result, err := r.db.ExecContext(ctx, {{.DeleteGo}}, id)
+	if err != nil {
+		return err
+	}
+	return requireOneRow(result)
+}
+
+// requireOneRow returns ErrNotFound when a statement matched no row.
+func requireOneRow(result sql.Result) error {
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// scanner is implemented by *sql.Row and *sql.Rows.
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+// scan reads one row, selected with the columns used above, into a {{.Type}}.
+func scan(row scanner) ({{.Type}}, error) {
+	var item {{.Type}}
+{{- if .TextTimes}}
+	var createdAt, updatedAt string
+{{- range .Fields}}{{if .IsTime}}
+	var {{.TextVar}} string
+{{- end}}{{end}}
+	err := row.Scan(&item.ID,{{range .Fields}} {{if .IsTime}}&{{.TextVar}}{{else}}&item.{{.GoName}}{{end}},{{end}} &createdAt, &updatedAt)
+	if err != nil {
+		return {{.Type}}{}, err
+	}
+
+	// Times are stored as text; parse them back
+	for _, t := range []struct {
+		text string
+		dest *time.Time
+	}{
+		{createdAt, &item.CreatedAt},
+		{updatedAt, &item.UpdatedAt},
+{{- range .Fields}}{{if .IsTime}}
+		{ {{- .TextVar}}, &item.{{.GoName}}},
+{{- end}}{{end}}
+	} {
+		if *t.dest, err = time.Parse(timeLayout, t.text); err != nil {
+			return {{.Type}}{}, err
+		}
+	}
+	return item, nil
+{{- else}}
+	err := row.Scan(&item.ID,{{range .Fields}} &item.{{.GoName}},{{end}} &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		return {{.Type}}{}, err
+	}
+{{- range .Fields}}{{if .IsTime}}
+	item.{{.GoName}} = item.{{.GoName}}.UTC()
+{{- end}}{{end}}
+	item.CreatedAt = item.CreatedAt.UTC()
+	item.UpdatedAt = item.UpdatedAt.UTC()
+	return item, nil
+{{- end}}
+}

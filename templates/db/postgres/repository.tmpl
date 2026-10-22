@@ -63,7 +63,7 @@ func (r *PostgresRepository) Create(ctx context.Context, item {{.Type}}) error {
 // Update replaces an existing {{.Human}}, or returns ErrNotFound.
 func (r *PostgresRepository) Update(ctx context.Context, item {{.Type}}) error {
 	tag, err := r.db.Exec(ctx, `{{.UpdateQuery}}`,
-		item.ID,{{range .Fields}} item.{{.GoName}},{{end}} item.UpdatedAt)
+		{{range .Fields}}item.{{.GoName}}, {{end}}item.UpdatedAt, item.ID)
 	if err != nil {
 		return err
 	}

@@ -225,7 +225,7 @@ func TestDatabaseGenerator_Add_RollsBackWhenDependencyFails(t *testing.T) {
 
 func TestDatabaseGenerator_Add_UnsupportedEngine(t *testing.T) {
 	_, err := newTestDatabaseGenerator(newDBProject(), &mockModules{}).
-		Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: "mysql"})
+		Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: "oracle"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported database") {
 		t.Errorf("Add() error = %v, want unsupported database", err)
 	}

@@ -154,7 +154,7 @@ func TestGenerate_WithPostgres(t *testing.T) {
 }
 
 func TestGenerate_RejectsUnknownDatabase(t *testing.T) {
-	_, err := runGenerateCmd(t, "--name", "x", "--output", t.TempDir(), "--db", "mongo", "--yes")
+	_, err := runGenerateCmd(t, "--name", "x", "--output", t.TempDir(), "--db", "oracle", "--yes")
 	if err == nil || !strings.Contains(err.Error(), "unsupported --db") {
 		t.Errorf("error = %v, want unsupported --db", err)
 	}

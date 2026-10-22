@@ -2,11 +2,55 @@ package domain
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
-// DatabasePostgres is the only supported database engine.
-const DatabasePostgres = "postgres"
+// Supported database engines.
+const (
+	DatabasePostgres = "postgres"
+	DatabaseMySQL    = "mysql"
+	DatabaseSQLite   = "sqlite"
+	DatabaseMongo    = "mongo"
+)
+
+// DatabaseEngines lists the supported engines, for help text and errors.
+var DatabaseEngines = []string{DatabasePostgres, DatabaseMySQL, DatabaseSQLite, DatabaseMongo}
+
+// databaseAliases maps other common names to engine names.
+var databaseAliases = map[string]string{
+	"postgresql": DatabasePostgres,
+	"pg":         DatabasePostgres,
+	"mariadb":    DatabaseMySQL,
+	"sqlite3":    DatabaseSQLite,
+	"mongodb":    DatabaseMongo,
+}
+
+// databaseLabels names the engines for people.
+var databaseLabels = map[string]string{
+	DatabasePostgres: "PostgreSQL",
+	DatabaseMySQL:    "MySQL",
+	DatabaseSQLite:   "SQLite",
+	DatabaseMongo:    "MongoDB",
+}
+
+// DatabaseLabel returns the display name of an engine, e.g. "PostgreSQL".
+func DatabaseLabel(engine string) string {
+	if label, ok := databaseLabels[engine]; ok {
+		return label
+	}
+	return engine
+}
+
+// NormalizeDatabase returns the engine name for name, accepting aliases such as
+// "postgresql" or "mariadb" in any case.
+func NormalizeDatabase(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if engine, ok := databaseAliases[name]; ok {
+		return engine
+	}
+	return name
+}
 
 // DatabaseConfig describes a database to add to an existing GoForge project.
 type DatabaseConfig struct {
@@ -21,8 +65,8 @@ func (c *DatabaseConfig) Validate() error {
 	if strings.TrimSpace(c.ProjectDir) == "" {
 		return NewValidationErrorWithField("dir", "project directory cannot be empty")
 	}
-	if c.Engine != DatabasePostgres {
-		return NewValidationErrorWithField("engine", fmt.Sprintf("unsupported database %q (supported: %s)", c.Engine, DatabasePostgres))
+	if !slices.Contains(DatabaseEngines, c.Engine) {
+		return NewValidationErrorWithField("engine", fmt.Sprintf("unsupported database %q (supported: %s)", c.Engine, strings.Join(DatabaseEngines, ", ")))
 	}
 	return nil
 }
