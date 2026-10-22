@@ -266,10 +266,11 @@ any step fails, including downloading the driver, the project is left exactly as
 > (5432, 3306, 27017). If one is taken, stop the local server or change the port in
 > `docker-compose.yml` and `DATABASE_URL`.
 
-> **MongoDB and Linux 6.19 to 7.0.13.** MongoDB refuses to start on these kernels
-> ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)); upgrade to kernel
-> 7.0.14 or later. The generated CI test job runs on `ubuntu-24.04` for this reason, since
-> newer `ubuntu-latest` images use an affected kernel.
+> **MongoDB on Linux 6.19 to 7.0.13.** MongoDB refuses to start on these kernels while
+> its allocator uses `rseq` ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)).
+> The generated `docker-compose.yml` and CI service set `GLIBC_TUNABLES=glibc.pthread.rseq=1`,
+> which hands `rseq` to glibc so MongoDB starts at a small cost in allocator speed. Set the
+> same variable for a MongoDB you run some other way, or use kernel 7.0.14 or later.
 
 ---
 

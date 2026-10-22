@@ -48,7 +48,6 @@ type engine struct {
 
 	composeTemplate string                              // docker-compose.yml template; "" for none
 	ciService       func(testDB, testURL string) string // services/env for the CI test job; nil for none
-	ciRunner        string                              // runner for the CI test job when ubuntu-latest won't do; "" keeps it
 	makeTargets     func(dbName string, testURL string) []string
 	gitignore       []string // lines to add to .gitignore
 	dockerNote      string   // shown when the project has a Dockerfile
@@ -115,7 +114,7 @@ var postgresEngine = &engine{
     ports:
       - 5432:5432
     options: >-
-      --health-cmd "pg_isready -U app -d %[1]s"
+      --health-cmd "pg_isready -U app -d %[1]s -h 127.0.0.1"
       --health-interval 2s
       --health-timeout 3s
       --health-retries 15
@@ -263,6 +262,10 @@ var mongoEngine = &engine{
 		return fmt.Sprintf(`services:
   mongo:
     image: mongo:8.0
+    env:
+      # Lets MongoDB start on the Linux 6.19 to 7.0.13 kernels some runners use
+      # (SERVER-121912)
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
     ports:
       - 27017:27017
     options: >-
@@ -274,9 +277,6 @@ env:
   TEST_DATABASE_URL: %s
 `, testURL)
 	},
-	// MongoDB refuses to start on Linux 6.19 through 7.0.13, which the newer
-	// ubuntu-latest images run (SERVER-121912)
-	ciRunner: "ubuntu-24.04",
 	makeTargets: func(_, testURL string) []string {
 		return dockerMakeTargets("MongoDB", "", testURL)
 	},

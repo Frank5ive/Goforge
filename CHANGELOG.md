@@ -67,8 +67,8 @@ The first public release will be tagged `v0.1.0`.
     repositories (SQLite always; others when `TEST_DATABASE_URL` is set)
   - `docker-compose.yml`, `make db-up`/`db-down`/`db-reset`/`test-db`, and a
     database service in the generated CI workflow (none needed for SQLite)
-  - for MongoDB, the generated CI test job runs on `ubuntu-24.04`: MongoDB refuses
-    to start on Linux 6.19 through 7.0.13, which newer `ubuntu-latest` images run
+  - MongoDB containers set `GLIBC_TUNABLES=glibc.pthread.rseq=1`, so they start on
+    Linux 6.19 through 7.0.13, which MongoDB otherwise refuses (SERVER-121912)
   - planned in full before writing, and rolled back completely (including `go.mod`)
     if any step fails
 - Generated Go code is always gofmt-formatted

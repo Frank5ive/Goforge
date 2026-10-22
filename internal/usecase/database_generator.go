@@ -294,16 +294,6 @@ func (u *DatabaseGeneratorUsecase) editCI(cs *changeset, dir string, eng *engine
 	if err != nil {
 		return err
 	}
-	if eng.ciRunner != "" {
-		// The generated test job's runs-on sits right above the marker
-		latest := "runs-on: ubuntu-latest\n"
-		at := strings.LastIndex(updated[:strings.Index(updated, ciServicesMarker)], latest)
-		if at < 0 {
-			cs.note("Run the CI test job on %s: %s can't start on the kernel that newer ubuntu-latest runners use.", eng.ciRunner, eng.label)
-		} else {
-			updated = updated[:at] + "runs-on: " + eng.ciRunner + " # " + eng.label + " can't start on the kernel newer ubuntu-latest runners use\n" + updated[at+len(latest):]
-		}
-	}
 	cs.edit(path, updated)
 	return nil
 }

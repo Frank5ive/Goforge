@@ -574,7 +574,9 @@ func startMySQL(t *testing.T) string {
 
 // startMongo starts a throwaway MongoDB container and returns its URL.
 func startMongo(t *testing.T) string {
-	hostPort := startContainer(t, "mongo:8.0", "27017/tcp", nil,
+	// Let glibc own rseq so MongoDB starts on Linux 6.19 through 7.0.13, as the
+	// generated docker-compose.yml does (SERVER-121912)
+	hostPort := startContainer(t, "mongo:8.0", "27017/tcp", []string{"GLIBC_TUNABLES=glibc.pthread.rseq=1"},
 		[]string{"mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"})
 	return fmt.Sprintf("mongodb://%s/shop", hostPort)
 }

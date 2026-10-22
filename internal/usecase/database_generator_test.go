@@ -273,33 +273,20 @@ func TestDatabaseGenerator_Add_ConvertsTheRightResourceWhenNamesOverlap(t *testi
 	}
 }
 
-func TestDatabaseGenerator_Add_CIRunner(t *testing.T) {
-	const workflow = "jobs:\n  test:\n    runs-on: ubuntu-latest\n    # goforge:ci-test-services\n    steps: []\n\n  lint:\n    runs-on: ubuntu-latest\n"
-
+func TestCIServices(t *testing.T) {
 	tests := []struct {
-		engine string
+		engine *engine
 		want   string
 	}{
-		// MongoDB can't start on the kernel newer ubuntu-latest images run
-		{"mongo", "  test:\n    runs-on: ubuntu-24.04 # MongoDB can't start on the kernel newer ubuntu-latest runners use\n    services:\n"},
-		{"postgres", "  test:\n    runs-on: ubuntu-latest\n    services:\n"},
+		// MongoDB refuses to start on Linux 6.19 through 7.0.13 unless glibc owns rseq
+		{mongoEngine, "GLIBC_TUNABLES: glibc.pthread.rseq=1"},
+		// Postgres runs a socket-only server while initializing, so probe over TCP
+		{postgresEngine, `pg_isready -U app -d shop_test -h 127.0.0.1"`},
+		{mysqlEngine, "mysqladmin ping -h 127.0.0.1"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.engine, func(t *testing.T) {
-			w := newDBProject()
-			w.FilesWritten[filepath.Join("/proj", ".github", "workflows", "ci.yml")] = workflow
-
-			if _, err := newTestDatabaseGenerator(w, &mockModules{}).Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: tt.engine}); err != nil {
-				t.Fatalf("Add() error = %v", err)
-			}
-
-			got := file(w, ".github/workflows/ci.yml")
-			if !strings.Contains(got, tt.want) {
-				t.Errorf("ci.yml does not contain %q:\n%s", tt.want, got)
-			}
-			if !strings.Contains(got, "  lint:\n    runs-on: ubuntu-latest\n") {
-				t.Errorf("the lint job's runner changed:\n%s", got)
-			}
-		})
+		if got := tt.engine.ciService("shop_test", tt.engine.testURL("shop")); !strings.Contains(got, tt.want) {
+			t.Errorf("%s CI service does not contain %q:\n%s", tt.engine.name, tt.want, got)
+		}
 	}
 }
