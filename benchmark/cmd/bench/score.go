@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -32,13 +31,31 @@ type Score struct {
 	Notes []string `json:"notes,omitempty"`
 }
 
+// storage is where a task's service keeps its data.
+type storage struct {
+	url     string // DATABASE_URL for the service; "" for in-memory tasks
+	testURL string // DATABASE_URL and TEST_DATABASE_URL for the service's own tests
+	file    string // the SQLite database file, for SQLite tasks
+}
+
 // score builds the service in dir, runs go vet and its tests, starts it with
-// the task's storage, and runs the task's acceptance checks against it.
-func score(task, dir string) Score {
+// the given storage, and runs the task's acceptance checks against it. It
+// doesn't depend on Docker, so it runs the same inside the benchmark image as
+// on a development machine.
+func score(task, dir string, st storage) Score {
 	var s Score
 	suite := accept.Suites[task]
 	s.Total = accept.Count(task)
 	s.GoLines, s.TestLines = countLines(dir)
+
+	for _, file := range []string{st.file, st.testURL} {
+		if task == "products-sqlite" && file != "" {
+			if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+				s.Notes = append(s.Notes, err.Error())
+				return s
+			}
+		}
+	}
 
 	work, err := os.MkdirTemp("", "bench-score-")
 	if err != nil {
@@ -60,22 +77,10 @@ func score(task, dir string) Score {
 		s.Vetted = true
 	}
 
-	storage, cleanup, err := taskStorage(task, work)
-	if err != nil {
-		s.Notes = append(s.Notes, "preparing storage: "+err.Error())
-		return s
-	}
-	defer cleanup()
-
-	testEnv := []string{}
-	if storage.url != "" {
-		// Give the service's own database tests somewhere to run, as the agent's
-		// environment did
-		testStorage, testCleanup, err := taskStorage(task, filepath.Join(work, "test"))
-		if err == nil {
-			defer testCleanup()
-			testEnv = []string{"DATABASE_URL=" + testStorage.url, "TEST_DATABASE_URL=" + testStorage.url}
-		}
+	// The service's own tests get their own storage, as in development
+	var testEnv []string
+	if st.testURL != "" {
+		testEnv = []string{"DATABASE_URL=" + st.testURL, "TEST_DATABASE_URL=" + st.testURL}
 	}
 	if out, err := goCmd(dir, 10*time.Minute, testEnv, "test", "-count=1", "./..."); err != nil {
 		s.Notes = append(s.Notes, "go test failed: "+truncate(out))
@@ -83,7 +88,11 @@ func score(task, dir string) Score {
 		s.OwnTestsPassed = true
 	}
 
-	svc := &service{binary: binary, dir: dir, log: filepath.Join(work, "service.log"), env: []string{"DATABASE_URL=" + storage.url}}
+	var env []string
+	if st.url != "" {
+		env = append(env, "DATABASE_URL="+st.url)
+	}
+	svc := &service{binary: binary, dir: dir, log: filepath.Join(work, "service.log"), env: env}
 	if err := svc.start(); err != nil {
 		s.Notes = append(s.Notes, "starting the service: "+err.Error())
 		return s
@@ -91,37 +100,13 @@ func score(task, dir string) Score {
 	defer svc.stop()
 	s.Started = true
 
-	s.Checks = suite(accept.Env{BaseURL: svc.url(), Restart: svc.restart, DatabaseFile: storage.file})
+	s.Checks = suite(accept.Env{BaseURL: svc.url(), Restart: svc.restart, DatabaseFile: st.file})
 	for _, c := range s.Checks {
 		if c.Passed {
 			s.Passed++
 		}
 	}
 	return s
-}
-
-// storage is where a task's service keeps its data.
-type storage struct {
-	url  string // DATABASE_URL; "" for in-memory tasks
-	file string // the SQLite file, for SQLite tasks
-}
-
-// taskStorage returns fresh, empty storage for the task.
-func taskStorage(task, work string) (storage, func(), error) {
-	noop := func() {}
-	switch task {
-	case "products-sqlite":
-		dir := filepath.Join(work, "data")
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return storage{}, noop, err
-		}
-		file := filepath.Join(dir, "products.db")
-		return storage{url: file, file: file}, noop, nil
-	case "orders":
-		url, drop, err := freshPostgresDatabase()
-		return storage{url: url}, drop, err
-	}
-	return storage{}, noop, nil
 }
 
 // service is a running build of the service under test.
@@ -252,53 +237,4 @@ func truncate(s string) string {
 		return s[:1500] + "… (truncated)"
 	}
 	return s
-}
-
-// The PostgreSQL server for the orders task: one container, with a fresh
-// database per run.
-const (
-	pgContainer = "goforge-bench-postgres"
-	pgImage     = "postgres:18-alpine"
-)
-
-// freshPostgresDatabase creates an empty database and returns its URL and a
-// function that drops it.
-func freshPostgresDatabase() (string, func(), error) {
-	hostPort, err := postgresServer()
-	if err != nil {
-		return "", func() {}, err
-	}
-	name := fmt.Sprintf("orders_%d", time.Now().UnixNano())
-	if out, err := exec.Command("docker", "exec", pgContainer, "psql", "-U", "bench", "-d", "postgres", "-c", "CREATE DATABASE "+name).CombinedOutput(); err != nil {
-		return "", func() {}, fmt.Errorf("creating the database: %v: %s", err, out)
-	}
-	drop := func() {
-		_ = exec.Command("docker", "exec", pgContainer, "psql", "-U", "bench", "-d", "postgres", "-c", "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)").Run()
-	}
-	return fmt.Sprintf("postgres://bench:bench@%s/%s?sslmode=disable", hostPort, name), drop, nil
-}
-
-// postgresServer starts the PostgreSQL container if it isn't running and
-// returns its host:port.
-func postgresServer() (string, error) {
-	if exec.Command("docker", "inspect", "-f", "{{.State.Running}}", pgContainer).Run() != nil {
-		out, err := exec.Command("docker", "run", "-d", "--name", pgContainer, "-p", "127.0.0.1::5432",
-			"-e", "POSTGRES_USER=bench", "-e", "POSTGRES_PASSWORD=bench", pgImage).CombinedOutput()
-		if err != nil {
-			return "", fmt.Errorf("starting PostgreSQL: %v: %s", err, out)
-		}
-	}
-	// Probe over TCP: during initialization PostgreSQL runs a socket-only server
-	deadline := time.Now().Add(90 * time.Second)
-	for exec.Command("docker", "exec", pgContainer, "pg_isready", "-U", "bench", "-h", "127.0.0.1").Run() != nil {
-		if time.Now().After(deadline) {
-			return "", errors.New("PostgreSQL did not become ready within 90s")
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	out, err := exec.Command("docker", "port", pgContainer, "5432/tcp").Output()
-	if err != nil {
-		return "", fmt.Errorf("finding the PostgreSQL port: %w", err)
-	}
-	return strings.TrimSpace(strings.Split(string(out), "\n")[0]), nil
 }

@@ -1,5 +1,6 @@
 // Command bench runs the GoForge benchmark: AI agents build the same Go
-// services from scratch and with GoForge, and the results are compared.
+// services from scratch and with GoForge, in identical Docker containers, and
+// the results are compared.
 //
 //	bench score  -task products -dir path/to/service
 //	bench run    -task products -condition both -runs 3 -model sonnet
@@ -14,7 +15,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -49,17 +49,39 @@ func usage() {
 	os.Exit(2)
 }
 
-// cmdScore scores an existing service, such as a reference solution.
+// cmdScore scores an existing service, such as a reference solution. Without
+// -database-url, it creates fresh storage itself (PostgreSQL in Docker for the
+// orders task).
 func cmdScore(args []string) error {
 	fs := flag.NewFlagSet("score", flag.ExitOnError)
 	task := fs.String("task", "", "task: "+strings.Join(tasks, ", "))
 	dir := fs.String("dir", "", "directory of the service to score")
+	databaseURL := fs.String("database-url", "", "DATABASE_URL for the service (default: fresh storage)")
+	testDatabaseURL := fs.String("test-database-url", "", "DATABASE_URL for the service's own tests")
+	asJSON := fs.Bool("json", false, "print the score as JSON")
 	_ = fs.Parse(args)
 	if !slices.Contains(tasks, *task) || *dir == "" {
 		return errors.New("-task and -dir are required")
 	}
 
-	s := score(*task, *dir)
+	st := storage{url: *databaseURL, testURL: *testDatabaseURL}
+	if st.url == "" {
+		var cleanup func()
+		var err error
+		st, cleanup, err = freshStorage(*task)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+	}
+	if *task == "products-sqlite" {
+		st.file = st.url
+	}
+
+	s := score(*task, *dir, st)
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(s)
+	}
 	for _, c := range s.Checks {
 		mark := "✓"
 		if !c.Passed {
@@ -82,8 +104,40 @@ func cmdScore(args []string) error {
 	return nil
 }
 
-// cmdRun runs agents on tasks and writes each result to the results directory.
+// freshStorage creates empty storage for scoring on the host.
+func freshStorage(task string) (storage, func(), error) {
+	switch task {
+	case "products-sqlite":
+		dir, err := os.MkdirTemp("", "bench-sqlite-")
+		if err != nil {
+			return storage{}, func() {}, err
+		}
+		return storage{url: filepath.Join(dir, "data", "products.db"), testURL: filepath.Join(dir, "test", "products.db")},
+			func() { os.RemoveAll(dir) }, nil
+	case "orders":
+		hostPort, err := ensurePostgres()
+		if err != nil {
+			return storage{}, func() {}, err
+		}
+		db, drop, err := createDatabase()
+		if err != nil {
+			return storage{}, func() {}, err
+		}
+		testDB, dropTest, err := createDatabase()
+		if err != nil {
+			drop()
+			return storage{}, func() {}, err
+		}
+		return storage{url: hostDatabaseURL(hostPort, db), testURL: hostDatabaseURL(hostPort, testDB)},
+			func() { drop(); dropTest() }, nil
+	}
+	return storage{}, func() {}, nil
+}
+
+// cmdRun runs agents on tasks in Docker and writes each result to the results
+// directory.
 func cmdRun(args []string) error {
+	home, _ := os.UserHomeDir()
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	task := fs.String("task", "all", "task, or all: "+strings.Join(tasks, ", "))
 	condition := fs.String("condition", "both", "scratch, goforge, or both")
@@ -92,7 +146,10 @@ func cmdRun(args []string) error {
 	model := fs.String("model", "sonnet", "model, as passed to claude --model")
 	budget := fs.Float64("budget", 5, "maximum spend per run, in US dollars")
 	timeout := fs.Duration("timeout", 45*time.Minute, "maximum time per run")
-	version := fs.String("goforge-version", "v0.2.0", "GoForge version to install for the goforge condition")
+	claudeVersion := fs.String("claude-version", "2.1.308", "Claude Code version in the image")
+	goforgeVersion := fs.String("goforge-version", "v0.2.0", "GoForge version in the image")
+	envFile := fs.String("env-file", filepath.Join(home, ".config", "goforge-bench", "env"),
+		"Docker env file that sets ANTHROPIC_API_KEY (read only by Docker)")
 	out := fs.String("out", "results", "results directory")
 	work := fs.String("work", filepath.Join(os.TempDir(), "goforge-bench"), "directory for run directories")
 	_ = fs.Parse(args)
@@ -112,7 +169,21 @@ func cmdRun(args []string) error {
 		conditions = []string{*condition}
 	}
 
-	goforgeBin, err := installGoforge(*version, filepath.Join(*work, "bin", *version))
+	// The key stays in the file; Docker reads it into the agent's container
+	if _, err := os.Stat(*envFile); err != nil {
+		return fmt.Errorf("no API key file at %s: create it with one line, ANTHROPIC_API_KEY=<your key>, and chmod 600 it", *envFile)
+	}
+	if _, err := ensurePostgres(); err != nil {
+		return err
+	}
+	image, imageID, err := ensureImage(*claudeVersion, *goforgeVersion)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(*work, 0o755); err != nil {
+		return err
+	}
+	benchLinux, err := buildLinuxBench(*work)
 	if err != nil {
 		return err
 	}
@@ -124,8 +195,8 @@ func cmdRun(args []string) error {
 			for _, c := range conditions {
 				fmt.Printf("▶ %s · %s · run %d\n", t, c, run)
 				r, err := runAgent(runConfig{
-					task: t, condition: c, run: run, model: *model, budgetUSD: *budget,
-					timeout: *timeout, goforgeBin: goforgeBin, workRoot: *work,
+					task: t, condition: c, run: run, model: *model, budgetUSD: *budget, timeout: *timeout,
+					image: image, imageID: imageID, benchLinux: benchLinux, envFile: *envFile, workRoot: *work,
 				})
 				if err != nil {
 					return fmt.Errorf("%s %s run %d: %w", t, c, run, err)
@@ -133,25 +204,13 @@ func cmdRun(args []string) error {
 				if err := writeResult(*out, r); err != nil {
 					return err
 				}
-				fmt.Printf("  %s · $%.2f · %d turns · %.1f min · %d/%d checks\n",
-					r.Agent.Outcome, r.Agent.CostUSD, r.Agent.Turns, float64(r.Agent.DurationMS)/60000, r.Score.Passed, r.Score.Total)
+				fmt.Printf("  %s · $%.2f · %d turns · %.1f min · %d/%d checks · goforge used %t\n",
+					r.Agent.Outcome, r.Agent.CostUSD, r.Agent.Turns, float64(r.Agent.DurationMS)/60000,
+					r.Score.Passed, r.Score.Total, r.Agent.GoforgeCommands > 0)
 			}
 		}
 	}
 	return nil
-}
-
-// installGoforge installs the GoForge version into dir and returns dir.
-func installGoforge(version, dir string) (string, error) {
-	if _, err := os.Stat(filepath.Join(dir, "goforge")); err == nil {
-		return dir, nil
-	}
-	cmd := exec.Command("go", "install", "github.com/Frank5ive/goforge@"+version)
-	cmd.Env = append(os.Environ(), "GOBIN="+dir)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("installing GoForge %s: %v: %s", version, err, out)
-	}
-	return dir, nil
 }
 
 func writeResult(out string, r Result) error {

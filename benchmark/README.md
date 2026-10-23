@@ -31,21 +31,33 @@ budget and time limits, and the machine.
 The specs define every status code and response shape, so the checks can judge any
 implementation. The agent never sees the checks.
 
+### The environment
+
+Every run happens in a Docker container built from one [`Dockerfile`](Dockerfile), so the
+environment never changes between runs or conditions: Go 1.26.0 (`GOTOOLCHAIN=local`, so no other
+toolchain is downloaded), Node.js 22, a pinned Claude Code version (default 2.1.308), GoForge
+(default `v0.2.0`), `psql`, and `sqlite3`. Each result records the image ID.
+
+GoForge is installed in the image in both conditions, but on the agent's `PATH` only in the
+goforge condition. Each run starts with an empty home directory and Go module cache. The `orders`
+task's PostgreSQL runs in its own container on a private Docker network, with a new empty
+database per run.
+
 ### The agent
 
 The agent is [Claude Code](https://docs.claude.com/en/docs/claude-code) in headless mode
 (`claude -p`), with:
 
-- no MCP servers, plugins, hooks, or user settings (`--strict-mcp-config --setting-sources project`);
-- a fixed tool allow-list (`--permission-mode dontAsk`): reading and editing files, plus shell
-  commands for the Go toolchain, `goforge`, `curl`, and common file and process tools. No web
-  access and no subagents. The same list in both conditions; see `allowedTools` in
-  [`cmd/bench/run.go`](cmd/bench/run.go);
+- `--bare`: no CLAUDE.md, hooks, plugins, MCP servers, or settings, only the prompt;
+- an unrestricted shell (`--dangerously-skip-permissions`): the container is the boundary. An
+  early version restricted shell commands to an allow-list; it blocked ordinary commands like
+  `cd`, which changed how the agents worked (one stopped compiling its code), so those runs were
+  discarded;
+- no web access and no subagents (`--disallowedTools WebFetch WebSearch Task Agent`);
 - a spending cap (`--max-budget-usd`) and a time limit per run;
 - for the `orders` task, an empty PostgreSQL database for development, named in the prompt.
 
-`goforge` is on the agent's `PATH` only in the goforge condition. The GoForge version is pinned
-(`-goforge-version`, default `v0.2.0`).
+Scoring runs in a second container from the same image.
 
 ### Measurements
 
@@ -103,13 +115,14 @@ to a new check.
 
 ## Running it
 
-Requirements: Go, Docker (for the PostgreSQL task), and Claude Code, signed in. Run from this
-directory:
+Requirements: Go and Docker. The agents need an Anthropic API key in a Docker env file, by
+default `~/.config/goforge-bench/env` (one line: `ANTHROPIC_API_KEY=...`, with `chmod 600`).
+`bench` passes the file to Docker with `--env-file` and never reads it. Run from this directory:
 
 ```bash
 go build -o bench ./cmd/bench
 
-# Check that the acceptance checks pass against the references
+# Check that the acceptance checks pass against the references (on the host)
 ./bench score -task orders -dir reference/orders
 
 # Run agents: every task, both conditions, 3 runs each
@@ -119,6 +132,8 @@ go build -o bench ./cmd/bench
 ./bench report
 ```
 
-`bench run` writes one JSON file per run to `results/<task>/`, and keeps each run's prompt,
-transcript, and code in a run directory (`-work`, by default in the system temp directory).
-Runs alternate between conditions, so changes over time affect both alike.
+`bench run` builds the image the first time, writes one JSON file per run to `results/<task>/`,
+and keeps each run's prompt, transcript, and code in a run directory (`-work`, by default in the
+system temp directory). Runs alternate between conditions, so changes over time affect both alike.
+Run directories include a read-only Go module cache: delete them with
+`chmod -R u+w <dir> && rm -rf <dir>`.

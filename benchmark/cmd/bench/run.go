@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,7 +16,7 @@ import (
 // Conditions an agent runs a task under.
 const (
 	scratch = "scratch" // the agent writes everything itself
-	goforge = "goforge" // GoForge is installed, and the prompt says so
+	goforge = "goforge" // GoForge is on PATH, and the prompt says so
 )
 
 // runConfig configures one agent run.
@@ -25,7 +26,9 @@ type runConfig struct {
 	model           string
 	budgetUSD       float64
 	timeout         time.Duration
-	goforgeBin      string // directory with the goforge binary, for the goforge condition
+	image, imageID  string // the benchmark image's tag and ID
+	benchLinux      string // bench built for Linux, for scoring in the image
+	envFile         string // Docker env file with ANTHROPIC_API_KEY
 	workRoot        string // where run directories are created
 }
 
@@ -35,6 +38,8 @@ type Result struct {
 	Condition string    `json:"condition"`
 	Run       int       `json:"run"`
 	Model     string    `json:"model"`
+	Image     string    `json:"image"`
+	ImageID   string    `json:"image_id"`
 	Started   time.Time `json:"started"`
 	Agent     Agent     `json:"agent"`
 	Score     Score     `json:"score"`
@@ -57,28 +62,19 @@ type Agent struct {
 	GoCommands       int `json:"go_commands"`
 	FailedGoCommands int `json:"failed_go_commands"`
 	GoforgeCommands  int `json:"goforge_commands"`
-	// PermissionDenials counts tool calls the allow-list refused.
+	// PermissionDenials counts refused tool calls; it should be 0.
 	PermissionDenials int `json:"permission_denials"`
 }
 
-// allowedTools is the agent's tool allow-list, the same in both conditions.
-// Shell commands are limited to the Go toolchain and common file and process
-// tools; nothing outside the run directory needs anything else.
-var allowedTools = []string{
-	"Read", "Edit", "Write", "Glob", "Grep", "TodoWrite",
-	"Bash(go:*)", "Bash(gofmt:*)", "Bash(goforge:*)", "Bash(make:*)",
-	"Bash(curl:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(wc:*)",
-	"Bash(grep:*)", "Bash(find:*)", "Bash(sed:*)", "Bash(echo:*)", "Bash(pwd)", "Bash(which:*)",
-	"Bash(mkdir:*)", "Bash(cp:*)", "Bash(mv:*)", "Bash(touch:*)",
-	"Bash(sleep:*)", "Bash(kill:*)", "Bash(pkill:*)", "Bash(ps:*)", "Bash(timeout:*)",
-	"Bash(sqlite3:*)", "Bash(psql:*)",
-}
-
 // disallowedTools keeps runs comparable: no web lookups and no subagents.
+// Everything else is allowed; the container is the boundary.
 var disallowedTools = []string{"WebFetch", "WebSearch", "Task", "Agent"}
 
-// runAgent runs the agent on the task in a fresh directory, then scores the
-// service it built.
+// runAgent runs the agent on the task in a fresh container, then scores the
+// service it built in another container from the same image.
+//
+// The run directory is mounted at /bench in both: the agent works in
+// /bench/work, with /bench/home as its home.
 func runAgent(cfg runConfig) (Result, error) {
 	spec, err := os.ReadFile(filepath.Join("tasks", cfg.task, "spec.md"))
 	if err != nil {
@@ -86,20 +82,23 @@ func runAgent(cfg runConfig) (Result, error) {
 	}
 
 	started := time.Now()
-	dir := filepath.Join(cfg.workRoot, fmt.Sprintf("%s-%s-%d-%s", cfg.task, cfg.condition, cfg.run, started.Format("20060102-150405")))
-	work := filepath.Join(dir, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
+	name := fmt.Sprintf("%s-%s-%d-%s", cfg.task, cfg.condition, cfg.run, started.Format("20060102-150405"))
+	dir, err := filepath.Abs(filepath.Join(cfg.workRoot, name))
+	if err != nil {
+		return Result{}, err
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "work"), 0o755); err != nil {
 		return Result{}, err
 	}
 
 	var devDatabase string
 	if cfg.task == "orders" {
-		url, drop, err := freshPostgresDatabase()
+		db, drop, err := createDatabase()
 		if err != nil {
 			return Result{}, err
 		}
 		defer drop()
-		devDatabase = url
+		devDatabase = containerDatabaseURL(db)
 	}
 
 	prompt := buildPrompt(cfg.condition, string(spec), devDatabase)
@@ -107,24 +106,6 @@ func runAgent(cfg runConfig) (Result, error) {
 		return Result{}, err
 	}
 
-	env, err := agentEnv(cfg)
-	if err != nil {
-		return Result{}, err
-	}
-
-	args := []string{
-		"-p", prompt,
-		"--output-format", "stream-json", "--verbose",
-		"--model", cfg.model,
-		"--max-budget-usd", fmt.Sprintf("%.2f", cfg.budgetUSD),
-		"--permission-mode", "dontAsk",
-		"--allowedTools", strings.Join(allowedTools, " "),
-		"--disallowedTools", strings.Join(disallowedTools, " "),
-		// No MCP servers, plugins, hooks, or user settings: only what's above
-		"--strict-mcp-config",
-		"--setting-sources", "project",
-		"--no-session-persistence",
-	}
 	transcript, err := os.Create(filepath.Join(dir, "transcript.jsonl"))
 	if err != nil {
 		return Result{}, err
@@ -136,12 +117,29 @@ func runAgent(cfg runConfig) (Result, error) {
 	}
 	defer stderr.Close()
 
+	container := "bench-" + name
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "claude", args...)
-	cmd.Dir = work
-	cmd.Env = env
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--name", container,
+		"--network", benchNetwork, "--user", hostUser(),
+		"-v", dir+":/bench", "-w", "/bench/work",
+		"--env-file", cfg.envFile, "-e", "BENCH_CONDITION="+cfg.condition,
+		cfg.image,
+		"claude", "-p", prompt,
+		// No CLAUDE.md, hooks, plugins, MCP servers, or settings: only the prompt
+		"--bare",
+		"--dangerously-skip-permissions",
+		"--disallowedTools", strings.Join(disallowedTools, " "),
+		"--output-format", "stream-json", "--verbose",
+		"--model", cfg.model,
+		"--max-budget-usd", fmt.Sprintf("%.2f", cfg.budgetUSD),
+		"--no-session-persistence",
+	)
 	cmd.Stdout, cmd.Stderr = transcript, stderr
+	cmd.Cancel = func() error { // a timeout kills the container, not just the docker client
+		_, err := docker("kill", container)
+		return err
+	}
 	runErr := cmd.Run()
 
 	agent, err := parseTranscript(filepath.Join(dir, "transcript.jsonl"))
@@ -151,13 +149,49 @@ func runAgent(cfg runConfig) (Result, error) {
 	if ctx.Err() != nil {
 		agent.Outcome = "timeout"
 	} else if runErr != nil && agent.Outcome == "" {
-		agent.Outcome = "error: " + runErr.Error()
+		agent.Outcome = "error: " + strings.TrimSpace(readFile(filepath.Join(dir, "stderr.txt")))
 	}
 
+	s, err := scoreInContainer(cfg, dir)
+	if err != nil {
+		return Result{}, err
+	}
 	return Result{
-		Task: cfg.task, Condition: cfg.condition, Run: cfg.run, Model: cfg.model, Started: started,
-		Agent: agent, Score: score(cfg.task, filepath.Join(work, "service")), WorkDir: dir,
+		Task: cfg.task, Condition: cfg.condition, Run: cfg.run, Model: cfg.model,
+		Image: cfg.image, ImageID: cfg.imageID, Started: started,
+		Agent: agent, Score: s, WorkDir: dir,
 	}, nil
+}
+
+// scoreInContainer scores the service in dir/work/service inside the
+// benchmark image, with fresh storage.
+func scoreInContainer(cfg runConfig, dir string) (Score, error) {
+	args := []string{"run", "--rm", "--network", benchNetwork, "--user", hostUser(),
+		"-v", dir + ":/bench", "-v", cfg.benchLinux + ":/opt/bench/bench:ro", "-w", "/bench",
+		cfg.image, "/opt/bench/bench", "score", "-json", "-task", cfg.task, "-dir", "/bench/work/service"}
+	switch cfg.task {
+	case "products-sqlite":
+		args = append(args, "-database-url", "/bench/score/data/products.db", "-test-database-url", "/bench/score/test/products.db")
+	case "orders":
+		db, drop, err := createDatabase()
+		if err != nil {
+			return Score{}, err
+		}
+		defer drop()
+		testDB, dropTest, err := createDatabase()
+		if err != nil {
+			return Score{}, err
+		}
+		defer dropTest()
+		args = append(args, "-database-url", containerDatabaseURL(db), "-test-database-url", containerDatabaseURL(testDB))
+	}
+
+	out, err := exec.Command("docker", args...).Output()
+	var s Score
+	if jsonErr := json.Unmarshal(out, &s); jsonErr != nil {
+		return Score{}, fmt.Errorf("scoring: %v: %s", err, bytes.TrimSpace(out))
+	}
+	return s, nil
 }
 
 // buildPrompt returns the task prompt. The conditions differ only in the
@@ -179,37 +213,6 @@ func buildPrompt(condition, spec, devDatabase string) string {
 	b.WriteString("\n---\n\n")
 	b.WriteString(spec)
 	return b.String()
-}
-
-// agentEnv returns the agent's environment: this process's, without Claude
-// Code's own variables (so the agent doesn't think it is nested in a session),
-// and with goforge on PATH only in the goforge condition.
-func agentEnv(cfg runConfig) ([]string, error) {
-	var env []string
-	var path string
-	for _, kv := range os.Environ() {
-		key, value, _ := strings.Cut(kv, "=")
-		switch {
-		case key == "CLAUDECODE" || strings.HasPrefix(key, "CLAUDE_CODE_"):
-			continue
-		case key == "PATH":
-			path = value
-			continue
-		}
-		env = append(env, kv)
-	}
-
-	var dirs []string
-	if cfg.condition == goforge {
-		dirs = append(dirs, cfg.goforgeBin)
-	}
-	for _, dir := range filepath.SplitList(path) {
-		if _, err := os.Stat(filepath.Join(dir, "goforge")); err == nil {
-			continue // keep any other goforge out of both conditions
-		}
-		dirs = append(dirs, dir)
-	}
-	return append(env, "PATH="+strings.Join(dirs, string(os.PathListSeparator))), nil
 }
 
 // event is the part of a stream-json line the harness reads.
