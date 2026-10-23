@@ -254,6 +254,27 @@ func ParseFields(spec string) ([]Field, error) {
 	return fields, nil
 }
 
+// ParseResourceSpec parses a resource given as "name:fields", or
+// "name/plural:fields" for an irregular plural, for example
+// "product:name:string(1..100),price:float(0..)" or "person/people:name:string".
+// The result has no ProjectDir.
+func ParseResourceSpec(spec string) (*ResourceConfig, error) {
+	head, fieldSpec, ok := strings.Cut(strings.TrimSpace(spec), ":")
+	if !ok || strings.TrimSpace(fieldSpec) == "" {
+		return nil, NewValidationErrorWithField("resource", fmt.Sprintf("invalid resource %q: use name:fields, e.g. product:name:string,price:float", spec))
+	}
+	name, plural, _ := strings.Cut(head, "/")
+	fields, err := ParseFields(fieldSpec)
+	if err != nil {
+		return nil, err
+	}
+	return &ResourceConfig{
+		Name:   strings.ReplaceAll(strings.TrimSpace(name), "-", "_"),
+		Plural: strings.ReplaceAll(strings.TrimSpace(plural), "-", "_"),
+		Fields: fields,
+	}, nil
+}
+
 // parseRange parses "(min..max)", where either bound may be empty.
 func parseRange(s string) (*float64, *float64, error) {
 	inner, ok := strings.CutPrefix(s, "(")

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Field rules in `--fields`: an `email` type, and `(min..max)` ranges for numbers and string
+  lengths (`name:string(1..100)`, `price:float(0..)`). Each rule becomes a check in the generated
+  `Validate` and gets its own generated test; sample values in the generated tests satisfy them
+- Each resource has a `rules.go`, the place for its own business rules, which `Validate` runs
+  after the field rules
+- `goforge generate --resource name:fields` (repeatable) creates resources in the same command;
+  if adding the database or a resource fails, nothing is created
+- `goforge --help` describes the whole workflow on one screen: every command, a one-command
+  example, and the field syntax
+
+### Changed
+- When output is piped (scripts and AI agents), `generate` and `add` print a compact summary
+  instead of every file: about 95% shorter. `--json` still has the full details
+- `inspect` shows fields in the `--fields` syntax
+- If adding the database fails during `generate --db`, the new project is removed instead of
+  left half-made
+
 ## [0.2.0] - 2026-10-22
 
 ### Fixed

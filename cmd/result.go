@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -99,7 +100,17 @@ func (r *result) printCompact(out io.Writer) {
 	}
 	fmt.Fprintf(out, "%s%s (%d files created, %d updated; --json lists them)\n",
 		prefix, strings.TrimSuffix(r.Summary, "."), len(r.Created), len(r.Updated))
-	if len(r.Endpoints) > 0 {
+	switch {
+	case len(r.Endpoints) > 6:
+		// Several resources: name their collections, not every route
+		var collections []string
+		for _, e := range r.Endpoints {
+			if !strings.Contains(e.Path, "{") && !slices.Contains(collections, e.Path) {
+				collections = append(collections, e.Path)
+			}
+		}
+		fmt.Fprintf(out, "Routes: GET (paged), POST, and GET, PUT, PATCH, DELETE /{id} at %s\n", strings.Join(collections, ", "))
+	case len(r.Endpoints) > 0:
 		routes := make([]string, 0, len(r.Endpoints))
 		for _, e := range r.Endpoints {
 			routes = append(routes, e.Method+" "+e.Path)

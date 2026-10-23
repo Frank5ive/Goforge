@@ -110,15 +110,7 @@ func runAddResource(out io.Writer, name string, opts *addResourceOptions) error 
 		r.Summary = fmt.Sprintf("Added the %s resource", config.Name)
 	}
 
-	path := config.RoutePath()
-	r.Endpoints = []endpoint{
-		{Method: "GET", Path: path, Query: "limit=20&offset=0"},
-		{Method: "POST", Path: path},
-		{Method: "GET", Path: path + "/{id}"},
-		{Method: "PUT", Path: path + "/{id}"},
-		{Method: "PATCH", Path: path + "/{id}"},
-		{Method: "DELETE", Path: path + "/{id}"},
-	}
+	r.Endpoints = resourceEndpoints(config.RoutePath())
 
 	if !opts.dryRun {
 		pkg := config.PackageName()
@@ -143,4 +135,16 @@ func fieldTypeNames() string {
 		names[i] = string(t)
 	}
 	return strings.Join(names, ", ")
+}
+
+// resourceEndpoints lists the routes a resource at path serves.
+func resourceEndpoints(path string) []endpoint {
+	return []endpoint{
+		{Method: "GET", Path: path, Query: "limit=20&offset=0"},
+		{Method: "POST", Path: path},
+		{Method: "GET", Path: path + "/{id}"},
+		{Method: "PUT", Path: path + "/{id}"},
+		{Method: "PATCH", Path: path + "/{id}"},
+		{Method: "DELETE", Path: path + "/{id}"},
+	}
 }

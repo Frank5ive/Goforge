@@ -205,9 +205,12 @@ Go backend, use GoForge for the infrastructure and spend your effort on the busi
    (or with `--json` or `--yes`), `generate` uses the flag values and defaults instead of prompting.
    Set every option with flags:
    `goforge generate --name <app> --module <module-path> [--db postgres|mysql|sqlite|mongo] --json`
-2. **Add each REST resource with one command** instead of writing handlers, storage, and tests:
-   `goforge add resource <name> --fields "field:type,..."`. Types are `string`, `int`, `float`,
-   `bool`, and `time`; a trailing `?` makes a string optional. Routes are registered automatically.
+2. **Generate the whole API in one command** instead of writing handlers, storage, and tests:
+   `goforge generate ... --resource "product:name:string(1..100),price:float(0..)" --resource ...`,
+   or later `goforge add resource <name> --fields "..."`. Types are `string`, `int`, `float`,
+   `bool`, `time`, and `email`; `?` makes a string optional and `(min..max)` bounds a number or a
+   string's length. Each rule gets a check and a test. Put other business rules in the resource's
+   `rules.go`. Routes are registered automatically.
 3. **Add a database** with `goforge add db <postgres|mysql|sqlite|mongo>`. Existing resources move
    onto it.
 4. **Preview first** with `--dry-run` on `generate` and the `add` commands; it lists every file
@@ -259,12 +262,13 @@ A compact reference for language models is in [`llms.txt`](llms.txt).
 Inside a project created by `goforge generate`, add a complete REST resource with one command:
 
 ```bash
-goforge add resource product --fields "name:string,price:float,in_stock:bool,image_url:string?"
+goforge add resource product --fields "name:string(1..100),price:float(0..),in_stock:bool,image_url:string?"
 ```
 
 ```
-✅ Added the product resource. Created 7 files:
-   products/product.go         # Product model, Input, Patch, validation rules, Repository interface
+✅ Added the product resource. Created 8 files:
+   products/product.go         # Product model, Input, Patch, validation, Repository interface
+   products/rules.go           # The place for the product's own business rules
    products/memory.go          # Thread-safe in-memory Repository
    products/service.go         # Business logic: list, get, create, update, patch, delete
    products/handler.go         # HTTP handlers and route registration
@@ -295,9 +299,33 @@ interface, so resources move to a database (see [Adding a Database](#-adding-a-d
 without touching the service or handlers. Keeping a resource in one package makes it easy to
 find and follow.
 
-**Fields** are `name:type` pairs. Types: `string`, `int`, `float`, `bool`, and `time`
-(RFC 3339 in JSON). String fields are required unless marked optional with `?`. `id`,
-`created_at`, and `updated_at` are added automatically.
+**Fields** are `name:type` pairs, separated by commas. `id`, `created_at`, and `updated_at` are
+added automatically.
+
+| Syntax | Meaning |
+|---|---|
+| `name:string` | Text; required (not blank) |
+| `notes:string?` | Optional text |
+| `contact:email` | Required email address (`contact:email?` for optional) |
+| `stock:int`, `price:float`, `active:bool` | Numbers and booleans |
+| `released_at:time` | RFC 3339 timestamp in JSON |
+| `name:string(1..100)` | Text from 1 to 100 characters, ignoring surrounding spaces |
+| `price:float(0..)`, `quantity:int(1..10)` | Numbers within a range; either end may be left out |
+
+Each rule becomes a check in the generated `Validate`, which reports every problem at once with
+a `422`, and gets its own generated test. For anything the syntax can't express, add a check to
+the resource's `rules.go`: `Validate` runs it for create, replace, and patch.
+
+**Several resources at once:** `goforge generate` takes `--resource name:fields` (repeatable, or
+`name/plural:fields` for an irregular plural), so a whole API is one command:
+
+```bash
+goforge generate --name shop --module github.com/you/shop --db postgres \
+  --resource "category/categories:name:string,description:string?" \
+  --resource "product:name:string(1..100),price:float(0..),contact:email"
+```
+
+If any part fails, nothing is created.
 
 **Listing** is paginated: `GET /products?limit=20&offset=40` returns
 `{"items": [...], "total": 57, "limit": 20, "offset": 40}`, oldest first. `limit` defaults to

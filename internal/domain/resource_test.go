@@ -188,3 +188,29 @@ func TestValidateBounds(t *testing.T) {
 		t.Errorf("float bounds may be fractional: %v", err)
 	}
 }
+
+func TestParseResourceSpec(t *testing.T) {
+	rc, err := ParseResourceSpec("person/people:name:string(1..50), email:email?")
+	if err != nil {
+		t.Fatalf("ParseResourceSpec() error = %v", err)
+	}
+	if rc.Name != "person" || rc.Plural != "people" || len(rc.Fields) != 2 || rc.Fields[1].Type != FieldEmail || !rc.Fields[1].Optional {
+		t.Errorf("ParseResourceSpec() = %+v", rc)
+	}
+
+	rc, err = ParseResourceSpec("blog-post:title:string")
+	if err != nil || rc.Name != "blog_post" || rc.Plural != "" {
+		t.Errorf("ParseResourceSpec(blog-post) = %+v, %v", rc, err)
+	}
+
+	for _, spec := range []string{"product", "product:", " :name:string"} {
+		rc, err := ParseResourceSpec(spec)
+		if err == nil {
+			rc.ProjectDir = "."
+			err = rc.Validate()
+		}
+		if err == nil {
+			t.Errorf("ParseResourceSpec(%q) = valid, want an error", spec)
+		}
+	}
+}
