@@ -69,8 +69,8 @@ func TestServiceCreateValidates(t *testing.T) {
 	}
 }
 {{- end}}
-
 {{- if .InvalidCases}}
+
 func TestInputValidateRules(t *testing.T) {
 	if err := validInput().Validate(); err != nil {
 		t.Fatalf("validInput().Validate() = %v, want nil", err)
@@ -94,8 +94,8 @@ func TestInputValidateRules(t *testing.T) {
 		})
 	}
 }
+{{- end}}
 
-{{end -}}
 func TestServiceUpdate(t *testing.T) {
 	svc := newTestService()
 	created, err := svc.Create(t.Context(), validInput())

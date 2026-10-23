@@ -304,10 +304,12 @@ func TestAddResource(t *testing.T) {
 
 	resources := []*domain.ResourceConfig{
 		{Name: "product", Fields: []domain.Field{
-			{Name: "name", Type: domain.FieldString},
+			{Name: "name", Type: domain.FieldString, Min: bound(1), Max: bound(100)},
 			{Name: "image_url", Type: domain.FieldString, Optional: true},
-			{Name: "stock", Type: domain.FieldInt},
-			{Name: "price", Type: domain.FieldFloat},
+			{Name: "contact", Type: domain.FieldEmail},
+			{Name: "backup_contact", Type: domain.FieldEmail, Optional: true},
+			{Name: "stock", Type: domain.FieldInt, Min: bound(0), Max: bound(1000)},
+			{Name: "price", Type: domain.FieldFloat, Min: bound(0)},
 			{Name: "in_stock", Type: domain.FieldBool},
 			{Name: "released_at", Type: domain.FieldTime},
 		}},
@@ -335,10 +337,22 @@ func TestAddResource(t *testing.T) {
 	baseURL, _ := startServer(t, binary)
 
 	// Every endpoint works straight after `add resource` and a build: no manual wiring
-	product := `{"name":"Gopher plush","image_url":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
+	product := `{"name":"Gopher plush","image_url":"","contact":"shop@example.com","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
 	status, header, _ := request(t, http.MethodPost, baseURL+"/products", product)
 	if status != http.StatusCreated {
 		t.Fatalf("POST /products = %d, want %d", status, http.StatusCreated)
+	}
+
+	// Field rules from --fields are enforced over HTTP
+	for _, rule := range []struct{ valid, broken string }{
+		{`"contact":"shop@example.com"`, `"contact":"not-an-email"`},
+		{`"stock":3`, `"stock":1001`},
+		{`"price":19.5`, `"price":-1`},
+	} {
+		bad := strings.Replace(product, rule.valid, rule.broken, 1)
+		if status, _, body := request(t, http.MethodPost, baseURL+"/products", bad); status != http.StatusUnprocessableEntity {
+			t.Errorf("POST /products with %s = %d %s, want 422", rule.broken, status, body)
+		}
 	}
 	item := baseURL + header.Get("Location")
 
@@ -495,10 +509,11 @@ func testAddDatabase(t *testing.T, engine, databaseURL string) {
 
 	// One resource before the database, so `add db` must convert it
 	product := &domain.ResourceConfig{ProjectDir: project, Name: "product", Fields: []domain.Field{
-		{Name: "name", Type: domain.FieldString},
-		{Name: "notes", Type: domain.FieldString, Optional: true},
-		{Name: "stock", Type: domain.FieldInt},
-		{Name: "price", Type: domain.FieldFloat},
+		{Name: "name", Type: domain.FieldString, Max: bound(100)},
+		{Name: "notes", Type: domain.FieldString, Optional: true, Min: bound(3)},
+		{Name: "contact", Type: domain.FieldEmail},
+		{Name: "stock", Type: domain.FieldInt, Min: bound(0)},
+		{Name: "price", Type: domain.FieldFloat, Min: bound(0), Max: bound(1e6)},
 		{Name: "in_stock", Type: domain.FieldBool},
 		{Name: "released_at", Type: domain.FieldTime},
 	}}
@@ -530,7 +545,7 @@ func testAddDatabase(t *testing.T, engine, databaseURL string) {
 	runGo(t, project, "build", "-o", binary, ".")
 
 	baseURL, stop := startServer(t, binary, "DATABASE_URL="+databaseURL)
-	body := `{"name":"Gopher plush","notes":"","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
+	body := `{"name":"Gopher plush","notes":"","contact":"shop@example.com","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
 	if status, _, resp := request(t, http.MethodPost, baseURL+"/products", body); status != http.StatusCreated {
 		t.Fatalf("POST /products = %d %s", status, resp)
 	}
@@ -645,3 +660,6 @@ func runGoEnv(t *testing.T, dir string, env []string, args ...string) {
 		t.Fatalf("go %s failed: %v\nOutput:\n%s", strings.Join(args, " "), err, output)
 	}
 }
+
+// bound returns a pointer to a field rule's bound.
+func bound(v float64) *float64 { return &v }
