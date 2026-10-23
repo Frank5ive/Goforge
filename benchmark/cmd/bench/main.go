@@ -151,7 +151,12 @@ func cmdRun(args []string) error {
 	envFile := fs.String("env-file", filepath.Join(home, ".config", "goforge-bench", "env"),
 		"Docker env file that sets CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY; only Docker reads it")
 	out := fs.String("out", "results", "results directory")
-	work := fs.String("work", filepath.Join(os.TempDir(), "goforge-bench"), "directory for run directories")
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		cache = os.TempDir()
+	}
+	// Not the temp directory: it is often in memory, and runs add up
+	work := fs.String("work", filepath.Join(cache, "goforge-bench"), "directory for run directories")
 	_ = fs.Parse(args)
 
 	selected := tasks

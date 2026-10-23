@@ -183,6 +183,11 @@ func runAgent(cfg runConfig) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	// The home directory holds the run's Go module and build caches, hundreds of
+	// megabytes; the code, prompt, and transcript stay for inspection
+	if err := removeAll(filepath.Join(dir, "home")); err != nil {
+		return Result{}, err
+	}
 	version := cfg.goforgeVersion
 	if cfg.condition == scratch {
 		version = ""
@@ -355,4 +360,15 @@ func label(condition, version string) string {
 		return condition
 	}
 	return condition + "@" + version
+}
+
+// removeAll removes path, including Go's module cache, which is read-only.
+func removeAll(path string) error {
+	_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			_ = os.Chmod(p, 0o755)
+		}
+		return nil
+	})
+	return os.RemoveAll(path)
 }

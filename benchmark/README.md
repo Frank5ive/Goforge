@@ -149,7 +149,6 @@ go build -o bench ./cmd/bench
 ```
 
 `bench run` builds the image the first time, writes one JSON file per run to `results/<task>/`,
-and keeps each run's prompt, transcript, and code in a run directory (`-work`, by default in the
-system temp directory). Runs alternate between conditions, so changes over time affect every condition alike.
-Run directories include a read-only Go module cache: delete them with
-`chmod -R u+w <dir> && rm -rf <dir>`.
+and keeps each run's prompt, transcript, and code in a run directory (`-work`, by default
+`~/.cache/goforge-bench`); each run's Go caches are deleted after scoring. Runs alternate between conditions, so changes over time affect every condition alike.
+
