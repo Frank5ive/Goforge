@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `goforge --help` describes the whole workflow on one screen: every command, a one-command
   example, and the field syntax
 
+### Fixed
+- Items created within the same millisecond were listed in the wrong order: ties in
+  `created_at` were broken by the random ID. Each service's clock now always moves forward
+  (found by the benchmark)
+
 ### Changed
 - When output is piped (scripts and AI agents), `generate` and `add` print a compact summary
   instead of every file: about 95% shorter. `--json` still has the full details

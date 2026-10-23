@@ -299,3 +299,26 @@ func TestServiceRequire{{.GoName}}(t *testing.T) {
 	}
 }
 {{- end}}
+
+func TestServiceListsItemsCreatedTogetherInOrder(t *testing.T) {
+	// The real clock: several creates usually land in the same millisecond
+	svc := NewService(NewMemoryRepository())
+	var want []string
+	for range 5 {
+		item, err := svc.Create(t.Context(), validInput())
+		if err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		want = append(want, item.ID)
+	}
+
+	page, err := svc.List(t.Context(), 0, 0)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	for i, item := range page.Items {
+		if item.ID != want[i] {
+			t.Fatalf("List() item %d = %s, want the creation order %v", i, item.ID, want)
+		}
+	}
+}

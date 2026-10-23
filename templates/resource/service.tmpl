@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -30,11 +31,26 @@ type deleteCheck struct {
 
 // NewService returns a Service that stores {{.HumanPlural}} in repo.
 func NewService(repo Repository) *Service {
-	return &Service{
-		repo: repo,
-		// Millisecond precision is what every supported database stores (MongoDB
-		// keeps milliseconds), so values read back match the ones returned
-		now: func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) },
+	return &Service{repo: repo, now: increasingClock()}
+}
+
+// increasingClock returns a clock with millisecond precision, which every
+// supported database stores (MongoDB keeps milliseconds), so values read back
+// match the ones returned. Each time it returns is later than the one before,
+// so {{.HumanPlural}} created in the same millisecond still list in the order
+// they were created.
+func increasingClock() func() time.Time {
+	var mu sync.Mutex
+	var last time.Time
+	return func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		if !now.After(last) {
+			now = last.Add(time.Millisecond)
+		}
+		last = now
+		return now
 	}
 }
 
