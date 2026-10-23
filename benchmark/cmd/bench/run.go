@@ -81,6 +81,9 @@ type Agent struct {
 	GoforgeGenerated int `json:"goforge_generated"`
 	// PermissionDenials counts refused tool calls; it should be 0.
 	PermissionDenials int `json:"permission_denials"`
+	// Error is set when Claude Code reported an error instead of doing the
+	// task, such as a usage limit; such a run is not recorded.
+	Error string `json:"error,omitempty"`
 }
 
 // disallowedTools keeps runs comparable: no web lookups and no subagents.
@@ -167,6 +170,11 @@ func runAgent(cfg runConfig) (Result, error) {
 	agent, err := parseTranscript(filepath.Join(dir, "transcript.jsonl"))
 	if err != nil {
 		return Result{}, fmt.Errorf("reading the transcript: %w", err)
+	}
+	// An error from Claude Code itself (a usage limit, an API error) means the
+	// agent didn't do the task: stop instead of recording it as a result
+	if agent.Error != "" {
+		return Result{}, fmt.Errorf("claude: %s", agent.Error)
 	}
 	if ctx.Err() != nil {
 		agent.Outcome = "timeout"
@@ -269,6 +277,8 @@ type event struct {
 		} `json:"content"`
 	} `json:"message"`
 	// The final "result" event
+	IsError      bool    `json:"is_error"`
+	Result       string  `json:"result"`
 	TotalCostUSD float64 `json:"total_cost_usd"`
 	DurationMS   int64   `json:"duration_ms"`
 	NumTurns     int     `json:"num_turns"`
@@ -329,6 +339,12 @@ func parseTranscript(path string) (Agent, error) {
 			}
 		case "result":
 			a.Outcome = e.Subtype
+			// Agent outcomes such as the budget running out have their own
+			// subtypes; a "success" flagged as an error is Claude Code refusing
+			// to run (a usage limit, an API error)
+			if e.IsError && e.Subtype == "success" {
+				a.Error = e.Result
+			}
 			a.CostUSD = e.TotalCostUSD
 			a.DurationMS = e.DurationMS
 			a.Turns = e.NumTurns

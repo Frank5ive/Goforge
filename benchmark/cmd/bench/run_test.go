@@ -29,3 +29,15 @@ func TestRemoveAllReadOnlyModuleCache(t *testing.T) {
 		t.Error("home still exists")
 	}
 }
+
+func TestParseTranscriptError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	limit := `{"type":"result","subtype":"success","is_error":true,"result":"You've hit your session limit","num_turns":1}` + "\n"
+	if err := os.WriteFile(path, []byte(limit), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a, err := parseTranscript(path)
+	if err != nil || a.Error != "You've hit your session limit" {
+		t.Errorf("parseTranscript() = %+v, %v; want the error", a, err)
+	}
+}

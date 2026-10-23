@@ -4,7 +4,52 @@ Does an AI coding agent build a Go backend faster, cheaper, and more correctly w
 from scratch? This directory holds the tasks, the hidden acceptance checks, the harness that runs
 the agents and scores their work, and the results.
 
-Results: [`results/REPORT.md`](results/REPORT.md).
+Full results: [`results/REPORT.md`](results/REPORT.md).
+
+## Results (October 2026)
+
+Claude Sonnet 5.5 in Claude Code 2.1.308, five tasks, 59 valid runs. "v0.3 work" is GoForge at
+commit `b632824`, the changes made after the first smoke tests (one-command generation with
+`--resource`, field rules, `ref` fields, compact output, and a self-sufficient `--help`).
+
+| Condition | Runs | Fully correct | Cost | Tokens | Turns | Minutes | Agent's own tests pass |
+|---|---|---|---|---|---|---|---|
+| scratch | 15 | 15/15 | $0.118 | 90,832 | 4.3 | 1.44 | 15/15 |
+| GoForge offered, v0.2.0 (used in 3 of 14) | 14 | 14/14 | $0.12 | 118,374 | 5 | 1.4 | 14/14 |
+| GoForge offered, v0.3 work (used in 3 of 10) | 10 | 10/10 | $0.11 | 113,274 | 5 | 1.4 | 10/10 |
+| GoForge required, v0.2.0 | 10 | 7/10 | $0.175 | 276,549 | 10.4 | 1.61 | 8/10 |
+| GoForge required, v0.3 work | 10 | 8/10 | $0.122 | 205,665 | 8.7 | 1.29 | 10/10 |
+
+What the results show:
+
+- **A strong agent gets these APIs right without help.** From scratch, every run passed every
+  check, for about $0.12. GoForge doesn't make these tasks more correct.
+- **Offered GoForge, agents mostly don't use it** (6 of 24 runs). Those runs match scratch, as you
+  would expect.
+- **The v0.3 work makes building with GoForge much cheaper.** Required to use GoForge, agents
+  spent 30% less, used 26% fewer tokens and 16% fewer turns, finished 20% faster, and every run's
+  own tests passed (8 of 10 before). On the largest task, `store` (five resources on PostgreSQL),
+  cost fell 55% ($0.239 to $0.107), tokens 59%, and turns from 16.5 to 9.5; that is also 33%
+  cheaper and 30% faster than writing it from scratch ($0.159).
+- **Across all tasks, building with GoForge now costs about the same as writing from scratch**
+  ($0.122 against $0.118) and is 11% faster, but reads more tokens (mostly cached reads of a
+  larger project). What the agent ends up with differs: GoForge projects come with migrations,
+  Docker, CI, health checks, request IDs, and thousands of lines of tests, which the specs didn't
+  ask for and the checks don't measure.
+- **The benchmark found a GoForge bug.** In all four required runs of the `products` task, items
+  created within the same millisecond were listed in the wrong order, because ties in
+  `created_at` were broken by the random ID. It is fixed after `b632824` (timestamps now always
+  increase).
+
+Caveats: two runs per GoForge condition (the third round was stopped by the plan's usage limit,
+and those runs were discarded; see below), one model, and differences of a cent or two are within
+run-to-run variation.
+
+The third round hit a usage limit partway through: Claude Code answered *"You've hit your session
+limit"* without doing the task, which an earlier version of the harness recorded as a run. Those
+16 runs were removed, and `bench` now stops on such errors instead. To add the missing runs:
+`./bench run -first-run 3 -runs 1 -condition goforge -goforge-version <version>` (and
+`goforge-required`).
 
 ## Method
 

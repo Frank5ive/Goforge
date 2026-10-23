@@ -1,0 +1,118 @@
+{
+  "task": "orders",
+  "condition": "scratch",
+  "run": 1,
+  "model": "sonnet",
+  "image": "goforge-bench:claude-2.1.308-goforge-b632824cf8a7-1469c619",
+  "image_id": "sha256:1d7103974045e1ff4ff6b864b16fdf81778fe5213cf18187b1a07459cb1ebcef",
+  "started": "2026-10-23T14:44:46.59482343+02:00",
+  "agent": {
+    "outcome": "success",
+    "cost_usd": 0.13566229999999999,
+    "duration_ms": 103135,
+    "turns": 5,
+    "input_tokens": 10,
+    "output_tokens": 7673,
+    "cache_read_tokens": 89923,
+    "cache_write_tokens": 12480,
+    "tool_calls": 4,
+    "go_commands": 3,
+    "failed_go_commands": 1,
+    "goforge_commands": 1,
+    "goforge_generated": 0,
+    "permission_denials": 0
+  },
+  "score": {
+    "built": true,
+    "vetted": true,
+    "own_tests_passed": true,
+    "started": true,
+    "passed": 20,
+    "total": 20,
+    "checks": [
+      {
+        "name": "health check responds 200",
+        "passed": true
+      },
+      {
+        "name": "create an order with a computed total",
+        "passed": true
+      },
+      {
+        "name": "the total is rounded to 2 decimal places",
+        "passed": true
+      },
+      {
+        "name": "the client can't set the status or total",
+        "passed": true
+      },
+      {
+        "name": "an order without items is a 422",
+        "passed": true
+      },
+      {
+        "name": "a quantity below 1 is a 422",
+        "passed": true
+      },
+      {
+        "name": "a negative unit price is a 422",
+        "passed": true
+      },
+      {
+        "name": "a blank SKU or customer is a 422",
+        "passed": true
+      },
+      {
+        "name": "malformed JSON is a 400",
+        "passed": true
+      },
+      {
+        "name": "get an order by ID",
+        "passed": true
+      },
+      {
+        "name": "an unknown ID is a 404",
+        "passed": true
+      },
+      {
+        "name": "a pending order can't be shipped",
+        "passed": true
+      },
+      {
+        "name": "pay, then ship an order",
+        "passed": true
+      },
+      {
+        "name": "a disallowed change is a 409 and leaves the order as it was",
+        "passed": true
+      },
+      {
+        "name": "cancel a pending order, which then can't be paid",
+        "passed": true
+      },
+      {
+        "name": "filter orders by status",
+        "passed": true
+      },
+      {
+        "name": "an unknown status filter is a 400",
+        "passed": true
+      },
+      {
+        "name": "list orders oldest first, with paging",
+        "passed": true
+      },
+      {
+        "name": "a negative offset is a 400",
+        "passed": true
+      },
+      {
+        "name": "orders survive a restart",
+        "passed": true
+      }
+    ],
+    "go_lines": 307,
+    "test_lines": 105
+  },
+  "work_dir": "/home/frank/.cache/goforge-bench/orders-scratch-1-20261023-144446"
+}

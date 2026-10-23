@@ -1,0 +1,130 @@
+{
+  "task": "blog",
+  "condition": "scratch",
+  "run": 1,
+  "model": "sonnet",
+  "image": "goforge-bench:claude-2.1.308-goforge-b632824cf8a7-1469c619",
+  "image_id": "sha256:1d7103974045e1ff4ff6b864b16fdf81778fe5213cf18187b1a07459cb1ebcef",
+  "started": "2026-10-23T14:43:41.298573582+02:00",
+  "agent": {
+    "outcome": "success",
+    "cost_usd": 0.113992,
+    "duration_ms": 57632,
+    "turns": 3,
+    "input_tokens": 6,
+    "output_tokens": 6639,
+    "cache_read_tokens": 43580,
+    "cache_write_tokens": 10808,
+    "tool_calls": 2,
+    "go_commands": 1,
+    "failed_go_commands": 0,
+    "goforge_commands": 0,
+    "goforge_generated": 0,
+    "permission_denials": 0
+  },
+  "score": {
+    "built": true,
+    "vetted": true,
+    "own_tests_passed": true,
+    "started": true,
+    "passed": 23,
+    "total": 23,
+    "checks": [
+      {
+        "name": "health check responds 200",
+        "passed": true
+      },
+      {
+        "name": "create an author",
+        "passed": true
+      },
+      {
+        "name": "an email without @ is a 422",
+        "passed": true
+      },
+      {
+        "name": "an email with two @ is a 422",
+        "passed": true
+      },
+      {
+        "name": "an email with nothing before @ is a 422",
+        "passed": true
+      },
+      {
+        "name": "a blank author name is a 422",
+        "passed": true
+      },
+      {
+        "name": "create a post, unpublished by default",
+        "passed": true
+      },
+      {
+        "name": "a post by an unknown author is a 422",
+        "passed": true
+      },
+      {
+        "name": "a post without a title is a 422",
+        "passed": true
+      },
+      {
+        "name": "malformed JSON is a 400",
+        "passed": true
+      },
+      {
+        "name": "get an author and a post by ID",
+        "passed": true
+      },
+      {
+        "name": "unknown IDs are a 404",
+        "passed": true
+      },
+      {
+        "name": "list an author's posts",
+        "passed": true
+      },
+      {
+        "name": "an unknown author's posts are a 404",
+        "passed": true
+      },
+      {
+        "name": "list every post oldest first",
+        "passed": true
+      },
+      {
+        "name": "limit and offset page through authors",
+        "passed": true
+      },
+      {
+        "name": "an invalid limit is a 400",
+        "passed": true
+      },
+      {
+        "name": "deleting an author with posts is a 409 and keeps them",
+        "passed": true
+      },
+      {
+        "name": "replace a post with PUT",
+        "passed": true
+      },
+      {
+        "name": "PUT a post to an unknown author is a 422",
+        "passed": true
+      },
+      {
+        "name": "replace an author with PUT, applying the rules",
+        "passed": true
+      },
+      {
+        "name": "an author can be deleted once their posts are gone",
+        "passed": true
+      },
+      {
+        "name": "deleting an unknown post is a 404",
+        "passed": true
+      }
+    ],
+    "go_lines": 359,
+    "test_lines": 75
+  },
+  "work_dir": "/home/frank/.cache/goforge-bench/blog-scratch-1-20261023-144341"
+}
