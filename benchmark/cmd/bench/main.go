@@ -149,7 +149,7 @@ func cmdRun(args []string) error {
 	claudeVersion := fs.String("claude-version", "2.1.308", "Claude Code version in the image")
 	goforgeVersion := fs.String("goforge-version", "v0.2.0", "GoForge version in the image")
 	envFile := fs.String("env-file", filepath.Join(home, ".config", "goforge-bench", "env"),
-		"Docker env file that sets ANTHROPIC_API_KEY (read only by Docker)")
+		"Docker env file that sets CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY; only Docker reads it")
 	out := fs.String("out", "results", "results directory")
 	work := fs.String("work", filepath.Join(os.TempDir(), "goforge-bench"), "directory for run directories")
 	_ = fs.Parse(args)
@@ -171,7 +171,7 @@ func cmdRun(args []string) error {
 
 	// The key stays in the file; Docker reads it into the agent's container
 	if _, err := os.Stat(*envFile); err != nil {
-		return fmt.Errorf("no API key file at %s: create it with one line, ANTHROPIC_API_KEY=<your key>, and chmod 600 it", *envFile)
+		return fmt.Errorf("no credentials file at %s: create it with one line, CLAUDE_CODE_OAUTH_TOKEN=<token from `claude setup-token`> (or ANTHROPIC_API_KEY=<key>), and chmod 600 it", *envFile)
 	}
 	if _, err := ensurePostgres(); err != nil {
 		return err

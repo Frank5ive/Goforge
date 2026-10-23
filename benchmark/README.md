@@ -48,7 +48,8 @@ database per run.
 The agent is [Claude Code](https://docs.claude.com/en/docs/claude-code) in headless mode
 (`claude -p`), with:
 
-- `--bare`: no CLAUDE.md, hooks, plugins, MCP servers, or settings, only the prompt;
+- nothing but the prompt: each container starts with an empty home and work directory, so there
+  is no CLAUDE.md, settings, plugins, or hooks, and `--strict-mcp-config` rules out MCP servers;
 - an unrestricted shell (`--dangerously-skip-permissions`): the container is the boundary. An
   early version restricted shell commands to an allow-list; it blocked ordinary commands like
   `cd`, which changed how the agents worked (one stopped compiling its code), so those runs were
@@ -63,7 +64,8 @@ Scoring runs in a second container from the same image.
 
 From the agent's event stream (`--output-format stream-json`):
 
-- **Cost**: `total_cost_usd` as Claude Code reports it (API prices, even on a subscription).
+- **Cost**: `total_cost_usd` as Claude Code reports it. It is priced at API rates even when the
+  runs use a subscription, so it compares the conditions on equal terms.
 - **Tokens**: input, output, and cache reads and writes.
 - **Turns** and **minutes** of wall-clock time.
 - **Failed go commands**: `go build`, `go vet`, `go test`, `go run`, or `goforge check` commands
@@ -115,9 +117,11 @@ to a new check.
 
 ## Running it
 
-Requirements: Go and Docker. The agents need an Anthropic API key in a Docker env file, by
-default `~/.config/goforge-bench/env` (one line: `ANTHROPIC_API_KEY=...`, with `chmod 600`).
-`bench` passes the file to Docker with `--env-file` and never reads it. Run from this directory:
+Requirements: Go and Docker. The agents need credentials in a Docker env file, by default
+`~/.config/goforge-bench/env` (`chmod 600`), with one line: either
+`CLAUDE_CODE_OAUTH_TOKEN=...`, a token from `claude setup-token` that uses a Claude subscription,
+or `ANTHROPIC_API_KEY=...`. `bench` passes the file to Docker with `--env-file` and never reads it.
+Run from this directory:
 
 ```bash
 go build -o bench ./cmd/bench

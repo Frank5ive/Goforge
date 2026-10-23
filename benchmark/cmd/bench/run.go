@@ -28,7 +28,7 @@ type runConfig struct {
 	timeout         time.Duration
 	image, imageID  string // the benchmark image's tag and ID
 	benchLinux      string // bench built for Linux, for scoring in the image
-	envFile         string // Docker env file with ANTHROPIC_API_KEY
+	envFile         string // Docker env file with the agent's credentials
 	workRoot        string // where run directories are created
 }
 
@@ -126,8 +126,11 @@ func runAgent(cfg runConfig) (Result, error) {
 		"--env-file", cfg.envFile, "-e", "BENCH_CONDITION="+cfg.condition,
 		cfg.image,
 		"claude", "-p", prompt,
-		// No CLAUDE.md, hooks, plugins, MCP servers, or settings: only the prompt
-		"--bare",
+		// The container starts with an empty home and work directory, so there is
+		// no CLAUDE.md, settings, plugins, or hooks; this rules out MCP servers too.
+		// (--bare would also do this, but it accepts only API keys, not the
+		// subscription token from `claude setup-token`.)
+		"--strict-mcp-config",
 		"--dangerously-skip-permissions",
 		"--disallowedTools", strings.Join(disallowedTools, " "),
 		"--output-format", "stream-json", "--verbose",
