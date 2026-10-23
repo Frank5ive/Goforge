@@ -36,12 +36,14 @@ A whole API in one command (each --resource is name:fields, or name/plural:field
 
   goforge generate --name shop --module github.com/you/shop --db postgres \
     --resource "category/categories:name:string,description:string?" \
-    --resource "product:name:string(1..100),price:float(0..),contact:email"
+    --resource "product:name:string(1..100),price:float(0..),category_id:ref(category)"
 
-Field types: string, int, float, bool, time, email. A trailing ? makes a string
-or email optional, and (min..max) bounds a number or a string's length; either end
-may be left out. Each resource gets paged list, create, get, PUT, PATCH, and DELETE
-routes, validation with a test per rule, and a rules.go for custom business rules.
+Field types: string, int, float, bool, time, email, and ref(<resource>). A trailing
+? makes a string, email, or ref optional, and (min..max) bounds a number or a
+string's length; either end may be left out. A ref must be the ID of an existing
+item (else 422), and that item can't be deleted while referenced (409). Each
+resource gets paged list, create, get, PUT, PATCH, and DELETE routes, validation
+with a test per rule, and a rules.go for custom business rules.
 
 Generated code uses the standard library's net/http, is tested, and passes its
 own lint config. generate and add accept --dry-run; generate, add, inspect, and

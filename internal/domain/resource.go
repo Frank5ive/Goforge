@@ -21,10 +21,13 @@ const (
 	FieldTime   FieldType = "time"
 	// FieldEmail is a string that must be an email address.
 	FieldEmail FieldType = "email"
+	// FieldRef is the ID of an item of another resource, written ref(<resource>):
+	// it must exist, and that item can't be deleted while it is referenced.
+	FieldRef FieldType = "ref"
 )
 
 // FieldTypes lists the supported field types, for help text and errors.
-var FieldTypes = []FieldType{FieldString, FieldInt, FieldFloat, FieldBool, FieldTime, FieldEmail}
+var FieldTypes = []FieldType{FieldString, FieldInt, FieldFloat, FieldBool, FieldTime, FieldEmail, FieldRef}
 
 // Field is one client-editable field of a resource.
 type Field struct {
@@ -36,11 +39,13 @@ type Field struct {
 	// (ignoring surrounding spaces). Nil means unbounded.
 	Min *float64 `json:"min,omitempty"`
 	Max *float64 `json:"max,omitempty"`
+	// Ref is the singular name of the resource a ref field points to, e.g. "category".
+	Ref string `json:"ref,omitempty"`
 }
 
-// IsText reports whether the field holds text (string or email).
+// IsText reports whether the field holds text (string, email, or ref).
 func (f Field) IsText() bool {
-	return f.Type == FieldString || f.Type == FieldEmail
+	return f.Type == FieldString || f.Type == FieldEmail || f.Type == FieldRef
 }
 
 // Required reports whether a text field must not be blank.
@@ -52,6 +57,9 @@ func (f Field) Required() bool {
 // "notes:string?".
 func (f Field) Spec() string {
 	s := f.Name + ":" + string(f.Type)
+	if f.Type == FieldRef {
+		s += "(" + f.Ref + ")"
+	}
 	if f.Min != nil || f.Max != nil {
 		s += "(" + formatBound(f.Min) + ".." + formatBound(f.Max) + ")"
 	}
@@ -145,7 +153,13 @@ func validateFields(fields []Field) error {
 			return NewValidationErrorWithField("fields", fmt.Sprintf("field %q has unsupported type %q (supported: %s)", f.Name, f.Type, fieldTypeList()))
 		}
 		if f.Optional && !f.IsText() {
-			return NewValidationErrorWithField("fields", fmt.Sprintf("field %q: only string and email fields can be optional (other types already accept their zero value)", f.Name))
+			return NewValidationErrorWithField("fields", fmt.Sprintf("field %q: only string, email, and ref fields can be optional (other types already accept their zero value)", f.Name))
+		}
+		if f.Type == FieldRef && !identifierPattern.MatchString(f.Ref) {
+			return NewValidationErrorWithField("fields", fmt.Sprintf("field %q: write a reference as ref(<resource>), with the singular resource name, e.g. category_id:ref(category)", f.Name))
+		}
+		if f.Type != FieldRef && f.Ref != "" {
+			return NewValidationErrorWithField("fields", fmt.Sprintf("field %q: only ref fields name a resource", f.Name))
 		}
 		if err := validateBounds(f); err != nil {
 			return err
@@ -234,6 +248,15 @@ func ParseFields(spec string) ([]Field, error) {
 			// Accept "?" before or after the range: string?(1..5) or string(1..5)?
 			field.Optional = strings.Contains(typ, "?")
 			typ = strings.ReplaceAll(typ, "?", "")
+			if target, ok := strings.CutPrefix(typ, "ref("); ok {
+				field.Type = FieldRef
+				field.Ref = strings.ReplaceAll(strings.TrimSpace(strings.TrimSuffix(target, ")")), "-", "_")
+				if field.Name = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(name)), "-", "_"); field.Name == "" {
+					return nil, NewValidationErrorWithField("fields", fmt.Sprintf("missing field name in %q", part))
+				}
+				fields = append(fields, field)
+				continue
+			}
 			if open := strings.Index(typ, "("); open >= 0 {
 				min, max, err := parseRange(typ[open:])
 				if err != nil {

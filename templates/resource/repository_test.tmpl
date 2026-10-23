@@ -127,6 +127,24 @@ func testRepository(t *testing.T, newRepo func(t *testing.T) Repository) {
 			}
 		}
 	})
+{{- range .Refs}}
+
+	t.Run("count by {{.JSON}}", func(t *testing.T) {
+		repo := newRepo(t)
+		for n, ref := range []string{"ref-a", "ref-b", "ref-a"} {
+			item := testItem(n + 1)
+			item.{{.GoName}} = ref
+			if err := repo.Create(t.Context(), item); err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+		}
+		for ref, want := range map[string]int{"ref-a": 2, "ref-b": 1, "ref-none": 0} {
+			if got, err := repo.CountBy{{.GoName}}(t.Context(), ref); err != nil || got != want {
+				t.Errorf("CountBy{{.GoName}}(%q) = %d, %v; want %d", ref, got, err, want)
+			}
+		}
+	})
+{{- end}}
 }
 
 func TestMemoryRepository(t *testing.T) {

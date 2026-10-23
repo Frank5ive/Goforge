@@ -311,6 +311,12 @@ added automatically.
 | `released_at:time` | RFC 3339 timestamp in JSON |
 | `name:string(1..100)` | Text from 1 to 100 characters, ignoring surrounding spaces |
 | `price:float(0..)`, `quantity:int(1..10)` | Numbers within a range; either end may be left out |
+| `category_id:ref(category)` | The ID of an existing category (`ref(...)?` for optional) |
+
+A `ref` field must be the ID of an existing item, or the request is a `422`, and that item can't
+be deleted while anything refers to it: the delete is a `409`. GoForge wires this in
+`server/routes.go` and checks it in the service, so it works the same on every database. The
+referenced resource must exist first, or be the resource itself (`manager_id:ref(employee)?`).
 
 Each rule becomes a check in the generated `Validate`, which reports every problem at once with
 a `422`, and gets its own generated test. For anything the syntax can't express, add a check to

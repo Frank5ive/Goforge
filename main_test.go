@@ -529,6 +529,14 @@ func testAddDatabase(t *testing.T, engine, databaseURL string) {
 	if _, err := container.ResourceGeneratorUsecase.Add(category); err != nil {
 		t.Fatalf("Failed to add resource after the database: %v", err)
 	}
+	// A reference to a resource registered before the database was added
+	review := &domain.ResourceConfig{ProjectDir: project, Name: "review", Fields: []domain.Field{
+		{Name: "product_id", Type: domain.FieldRef, Ref: "product"},
+		{Name: "rating", Type: domain.FieldInt, Min: bound(1), Max: bound(5)},
+	}}
+	if _, err := container.ResourceGeneratorUsecase.Add(review); err != nil {
+		t.Fatalf("Failed to add a resource with a reference: %v", err)
+	}
 	routes, _ := os.ReadFile(filepath.Join(project, "server", "routes.go"))
 	if strings.Contains(string(routes), "NewMemoryRepository") {
 		t.Errorf("a resource is still stored in memory:\n%s", routes)
@@ -546,8 +554,21 @@ func testAddDatabase(t *testing.T, engine, databaseURL string) {
 
 	baseURL, stop := startServer(t, binary, "DATABASE_URL="+databaseURL)
 	body := `{"name":"Gopher plush","notes":"","contact":"shop@example.com","stock":3,"price":19.5,"in_stock":true,"released_at":"2026-03-01T00:00:00Z"}`
-	if status, _, resp := request(t, http.MethodPost, baseURL+"/products", body); status != http.StatusCreated {
+	status, header, resp := request(t, http.MethodPost, baseURL+"/products", body)
+	if status != http.StatusCreated {
 		t.Fatalf("POST /products = %d %s", status, resp)
+	}
+	productID := strings.TrimPrefix(header.Get("Location"), "/products/")
+
+	// References: a review needs an existing product, which can't then be deleted
+	if status, _, resp := request(t, http.MethodPost, baseURL+"/reviews", `{"product_id":"nope","rating":4}`); status != http.StatusUnprocessableEntity {
+		t.Errorf("POST /reviews for an unknown product = %d %s, want 422", status, resp)
+	}
+	if status, _, resp := request(t, http.MethodPost, baseURL+"/reviews", `{"product_id":"`+productID+`","rating":4}`); status != http.StatusCreated {
+		t.Errorf("POST /reviews = %d %s, want 201", status, resp)
+	}
+	if status, _, resp := request(t, http.MethodDelete, baseURL+"/products/"+productID, ""); status != http.StatusConflict {
+		t.Errorf("DELETE a reviewed product = %d %s, want 409", status, resp)
 	}
 	if status, _, resp := request(t, http.MethodPost, baseURL+"/categories", `{"title":"Toys"}`); status != http.StatusCreated {
 		t.Fatalf("POST /categories = %d %s", status, resp)

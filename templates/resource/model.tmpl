@@ -103,6 +103,10 @@ var (
 
 	// ErrInvalid wraps validation failures so handlers can respond with 422.
 	ErrInvalid = errors.New("invalid {{.Human}}")
+
+	// ErrInUse is returned when deleting a {{.Human}} other items still refer
+	// to, so handlers can respond with 409.
+	ErrInUse = errors.New("{{.Human}} is in use")
 )
 
 // Repository stores {{.HumanPlural}}. The service depends only on this interface,
@@ -116,4 +120,8 @@ type Repository interface {
 	Create(ctx context.Context, item {{.Type}}) error
 	Update(ctx context.Context, item {{.Type}}) error
 	Delete(ctx context.Context, id string) error
+{{- range .Refs}}
+	// CountBy{{.GoName}} returns how many {{$.HumanPlural}} have the {{.JSON}} id.
+	CountBy{{.GoName}}(ctx context.Context, id string) (int, error)
+{{- end}}
 }

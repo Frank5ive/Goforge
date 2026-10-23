@@ -125,6 +125,11 @@ func (failingRepository) Get(context.Context, string) ({{.Type}}, error) {
 func (failingRepository) Create(context.Context, {{.Type}}) error { return errDatabaseDown }
 func (failingRepository) Update(context.Context, {{.Type}}) error { return errDatabaseDown }
 func (failingRepository) Delete(context.Context, string) error { return errDatabaseDown }
+{{- range .Refs}}
+func (failingRepository) CountBy{{.GoName}}(context.Context, string) (int, error) {
+	return 0, errDatabaseDown
+}
+{{- end}}
 
 func TestHandlerUnexpectedErrors(t *testing.T) {
 	mux := http.NewServeMux()
@@ -157,5 +162,20 @@ func TestHandlerUnexpectedErrors(t *testing.T) {
 		if body.Detail != wantDetail {
 			t.Errorf("development=%t: detail = %q, want %q", development, body.Detail, wantDetail)
 		}
+	}
+}
+
+func TestHandlerDeleteInUse(t *testing.T) {
+	svc := NewService(NewMemoryRepository())
+	created, err := svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	svc.BlockDeleteWhen("orders", func(context.Context, string) (bool, error) { return true, nil })
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, svc)
+
+	if rec := do(t, mux, http.MethodDelete, "{{.Path}}/"+created.ID, ""); rec.Code != http.StatusConflict {
+		t.Errorf("DELETE while in use = %d, want %d: %s", rec.Code, http.StatusConflict, rec.Body)
 	}
 }

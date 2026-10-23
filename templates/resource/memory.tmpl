@@ -88,3 +88,19 @@ func (r *MemoryRepository) Delete(_ context.Context, id string) error {
 	delete(r.items, id)
 	return nil
 }
+{{- range .Refs}}
+
+// CountBy{{.GoName}} returns how many {{$.HumanPlural}} have the {{.JSON}} id.
+func (r *MemoryRepository) CountBy{{.GoName}}(_ context.Context, id string) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	n := 0
+	for _, item := range r.items {
+		if item.{{.GoName}} == id {
+			n++
+		}
+	}
+	return n, nil
+}
+{{- end}}

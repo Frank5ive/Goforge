@@ -88,6 +88,15 @@ func (r *{{.RepoType}}) Delete(ctx context.Context, id string) error {
 	}
 	return requireOneRow(result)
 }
+{{- range .Refs}}
+
+// CountBy{{.GoName}} returns how many {{$.HumanPlural}} have the {{.JSON}} id.
+func (r *{{$.RepoType}}) CountBy{{.GoName}}(ctx context.Context, id string) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, {{.CountGo}}, id).Scan(&n)
+	return n, err
+}
+{{- end}}
 
 // requireOneRow returns ErrNotFound when a statement matched no row.
 func requireOneRow(result sql.Result) error {

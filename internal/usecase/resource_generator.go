@@ -102,7 +102,11 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Ch
 	if eng != nil {
 		repo = fmt.Sprintf("%s.New%s(deps.DB)", pkg, eng.repoType)
 	}
-	updatedRoutes, err := registerResource(routes, modulePath, pkg, repo)
+	refs, err := resolveRefs(config, manifest)
+	if err != nil {
+		return domain.Changes{}, domain.NewGenerationError("validation", "resource validation failed", err)
+	}
+	updatedRoutes, err := registerResource(routes, modulePath, pkg, repo, refs)
 	if err != nil {
 		return domain.Changes{}, domain.NewGenerationError("register_routes", "cannot register the resource in server/routes.go", err)
 	}
@@ -162,12 +166,32 @@ func (u *ResourceGeneratorUsecase) readDefaultPort(projectDir string) int {
 // registerResource returns routes.go source with the resource package imported
 // and its routes registered just above the goforge:routes marker. repo is the Go
 // expression that creates its Repository, e.g. "products.NewMemoryRepository()".
-func registerResource(src, modulePath, pkg, repo string) (string, error) {
+func registerResource(src, modulePath, pkg, repo string, refs []routeRef) (string, error) {
 	importPath := modulePath + "/" + pkg
 	registration := fmt.Sprintf("%s.RegisterRoutes(mux, %s.NewService(%s))", pkg, pkg, repo)
 
 	if strings.Contains(src, strconv.Quote(importPath)) {
 		return "", domain.WithCode(domain.CodeAlreadyExists, fmt.Errorf("%q is already imported", importPath))
+	}
+
+	// A resource with references gets a service variable, so it can be wired to
+	// the services it refers to, which need variables too
+	if len(refs) > 0 {
+		service := pkg + "Service"
+		lines := []string{fmt.Sprintf("%s := %s.NewService(%s)", service, pkg, repo)}
+		for _, ref := range refs {
+			target := ref.TargetPkg + "Service"
+			if ref.TargetPkg != pkg {
+				var err error
+				if src, err = ensureServiceVar(src, ref.TargetPkg); err != nil {
+					return "", err
+				}
+			}
+			lines = append(lines,
+				fmt.Sprintf("%s.Require%s(%s.Exists)", service, ref.GoName, target),
+				fmt.Sprintf("%s.BlockDeleteWhen(%q, %s.Has%s)", target, ref.Owner, service, ref.GoName))
+		}
+		registration = strings.Join(append(lines, fmt.Sprintf("%s.RegisterRoutes(mux, %s)", pkg, service)), "\n")
 	}
 
 	src, err := insertAboveMarker(src, routesMarker, registration)
@@ -178,6 +202,60 @@ func registerResource(src, modulePath, pkg, repo string) (string, error) {
 		return "", err
 	}
 	return formatGo("routes.go", src)
+}
+
+// routeRef is a reference from the resource being added to another resource,
+// for wiring their services in server/routes.go.
+type routeRef struct {
+	GoName    string // the field's Go name, e.g. "CategoryID"
+	TargetPkg string // the referenced resource's package, e.g. "categories"
+	Owner     string // what refers to it, for the 409 message, e.g. "products"
+}
+
+// resolveRefs checks that every ref field points to a resource that exists (or
+// to the resource itself), and returns how to wire them.
+func resolveRefs(config *domain.ResourceConfig, manifest domain.Manifest) ([]routeRef, error) {
+	var refs []routeRef
+	for _, f := range config.Fields {
+		if f.Type != domain.FieldRef {
+			continue
+		}
+		ref := routeRef{GoName: domain.CamelCase(f.Name), Owner: strings.ReplaceAll(config.PluralName(), "_", " ")}
+		if f.Ref == config.Name {
+			ref.TargetPkg = config.PackageName()
+		}
+		for _, r := range manifest.Resources {
+			if r.Name == f.Ref {
+				ref.TargetPkg = r.ResourceConfig(config.ProjectDir).PackageName()
+			}
+		}
+		if ref.TargetPkg == "" {
+			return nil, domain.NewValidationErrorWithField("fields",
+				fmt.Sprintf("field %q refers to %s, which isn't a resource in this project yet; add it first", f.Name, f.Ref))
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
+// ensureServiceVar makes sure routes.go keeps pkg's service in a variable
+// (pkgService), rewriting a one-line registration if needed, so other services
+// can refer to it.
+func ensureServiceVar(src, pkg string) (string, error) {
+	service := pkg + "Service"
+	// Indentation is spaces and tabs only, so a match never starts on a blank line
+	if regexp.MustCompile(`(?m)^[ \t]*` + service + ` := `).MatchString(src) {
+		return src, nil
+	}
+	oneLine := regexp.MustCompile(`(?m)^([ \t]*)` + pkg + `\.RegisterRoutes\(mux, (` + pkg + `\.NewService\(.*\))\)[ \t]*$`)
+	loc := oneLine.FindStringSubmatchIndex(src)
+	if loc == nil {
+		return "", domain.WithCode(domain.CodeMarkerMissing, fmt.Errorf(
+			"server/routes.go doesn't register %s the way goforge add resource does; keep its service in a variable named %s, then run the command again", pkg, service))
+	}
+	indent, newService := src[loc[2]:loc[3]], src[loc[4]:loc[5]]
+	rewritten := fmt.Sprintf("%s%s := %s\n%s%s.RegisterRoutes(mux, %s)", indent, service, newService, indent, pkg, service)
+	return src[:loc[0]] + rewritten + src[loc[1]:], nil
 }
 
 // resourceData is the template data for resource templates.
@@ -198,9 +276,11 @@ type resourceData struct {
 	UsesStrings, UsesUTF8, UsesEmail, TestsUseStrings bool
 	// InvalidCases are values that break one rule each, for the generated tests
 	InvalidCases []invalidCase
-	Port         int    // the project's default port, for requests.http
-	SampleBody   string // pretty-printed JSON create request, for requests.http
-	UpdatedBody  string // pretty-printed JSON replace request, for requests.http
+	// Refs are the resource's ref fields
+	Refs        []refData
+	Port        int    // the project's default port, for requests.http
+	SampleBody  string // pretty-printed JSON create request, for requests.http
+	UpdatedBody string // pretty-printed JSON replace request, for requests.http
 
 	// Database-specific names, set by addEngineData for projects with a database
 	Engine      string // e.g. "postgres"
@@ -249,6 +329,17 @@ type resourceField struct {
 	Checks []fieldCheck
 }
 
+// refData describes a ref field for the templates.
+type refData struct {
+	GoName      string // e.g. "CategoryID"
+	JSON        string // e.g. "category_id"
+	Optional    bool
+	TargetHuman string // the referenced resource, e.g. "category"
+	ExistsVar   string // the service field holding the existence check, e.g. "categoryIDExists"
+	Column      string // quoted SQL column, set by addEngineData
+	CountGo     string // SQL counting the items that refer to an ID, as a Go literal; set by addEngineData
+}
+
 // fieldCheck is one validation rule: Cond (a Go if condition, possibly with an
 // init statement) is true when the value breaks the rule, and Message (a Go
 // string literal) says why.
@@ -274,9 +365,9 @@ func newResourceData(config *domain.ResourceConfig, modulePath string) resourceD
 	}
 
 	for _, f := range config.Fields {
-		// Email is stored as text: only its validation differs
+		// Email and ref fields are stored as text: only their checks differ
 		storageType := f.Type
-		if f.Type == domain.FieldEmail {
+		if f.Type == domain.FieldEmail || f.Type == domain.FieldRef {
 			storageType = domain.FieldString
 		}
 		field := resourceField{
@@ -296,6 +387,14 @@ func newResourceData(config *domain.ResourceConfig, modulePath string) resourceD
 		case domain.FieldEmail:
 			field.GoType = "string"
 			field.Sample, field.Updated = `"a@example.com"`, `"b@example.com"`
+		case domain.FieldRef:
+			field.GoType = "string"
+			field.Sample, field.Updated = strconv.Quote(f.Ref+"-1"), strconv.Quote(f.Ref+"-2")
+			data.Refs = append(data.Refs, refData{
+				GoName: field.GoName, JSON: f.Name, Optional: f.Optional,
+				TargetHuman: strings.ReplaceAll(f.Ref, "_", " "),
+				ExistsVar:   strings.ToLower(field.GoName[:1]) + field.GoName[1:] + "Exists",
+			})
 		case domain.FieldInt:
 			field.GoType = "int"
 			sample, updated := fitNumber(42, 7, f, true)

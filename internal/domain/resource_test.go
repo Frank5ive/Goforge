@@ -27,7 +27,7 @@ func TestResourceConfig_Validate(t *testing.T) {
 			c.Fields = []Field{{Name: "a", Type: FieldString, Optional: false}, {Name: "b", Type: FieldInt, Optional: false}, {Name: "c", Type: FieldFloat, Optional: false}, {Name: "d", Type: FieldBool, Optional: false}, {Name: "e", Type: FieldTime, Optional: false}}
 		}, ""},
 		{"optional string", func(c *ResourceConfig) { c.Fields = []Field{{Name: "nickname", Type: FieldString, Optional: true}} }, ""},
-		{"optional non-string", func(c *ResourceConfig) { c.Fields = []Field{{Name: "age", Type: FieldInt, Optional: true}} }, "only string and email fields"},
+		{"optional non-string", func(c *ResourceConfig) { c.Fields = []Field{{Name: "age", Type: FieldInt, Optional: true}} }, "only string, email, and ref fields"},
 		{"empty project dir", func(c *ResourceConfig) { c.ProjectDir = "" }, "project directory"},
 		{"uppercase name", func(c *ResourceConfig) { c.Name = "Product" }, "snake_case"},
 		{"hyphenated name", func(c *ResourceConfig) { c.Name = "blog-post" }, "snake_case"},
@@ -211,6 +211,39 @@ func TestParseResourceSpec(t *testing.T) {
 		}
 		if err == nil {
 			t.Errorf("ParseResourceSpec(%q) = valid, want an error", spec)
+		}
+	}
+}
+
+func TestParseFields_Ref(t *testing.T) {
+	fields, err := ParseFields("category_id:ref(category), parent_id:ref(blog-post)?")
+	if err != nil {
+		t.Fatalf("ParseFields() error = %v", err)
+	}
+	want := []Field{
+		{Name: "category_id", Type: FieldRef, Ref: "category"},
+		{Name: "parent_id", Type: FieldRef, Ref: "blog_post", Optional: true},
+	}
+	if !reflect.DeepEqual(fields, want) {
+		t.Fatalf("ParseFields() = %+v, want %+v", fields, want)
+	}
+	if err := validateFields(fields); err != nil {
+		t.Errorf("validateFields() = %v", err)
+	}
+	if got := fields[1].Spec(); got != "parent_id:ref(blog_post)?" {
+		t.Errorf("Spec() = %q", got)
+	}
+	if !fields[0].Required() || fields[1].Required() {
+		t.Error("a ref field is required unless it ends with ?")
+	}
+
+	for _, spec := range []string{"category_id:ref", "category_id:ref()", "category_id:ref(Bad Name)"} {
+		fields, err := ParseFields(spec)
+		if err == nil {
+			err = validateFields(fields)
+		}
+		if err == nil {
+			t.Errorf("%q: want an error", spec)
 		}
 	}
 }

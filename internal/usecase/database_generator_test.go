@@ -76,7 +76,7 @@ func run(ctx context.Context) error {
 // with one in-memory resource.
 func newDBProject() *MockFileWriter {
 	w := newProjectWriter()
-	routes, _ := registerResource(testRoutes, "example.com/app", "products", "products.NewMemoryRepository()")
+	routes, _ := registerResource(testRoutes, "example.com/app", "products", "products.NewMemoryRepository()", nil)
 	files := map[string]string{
 		"server/routes.go":    routes,
 		"config/config.go":    testConfigGo,
@@ -250,8 +250,8 @@ func TestDatabaseGenerator_Add_ConvertsTheRightResourceWhenNamesOverlap(t *testi
 	w.FilesWritten[filepath.Join("/proj", ".goforge.json")] = `{"module": "example.com/app", "resources": [
 		{"name": "post", "plural": "posts", "fields": [{"name": "title", "type": "string"}]},
 		{"name": "blog_post", "plural": "blog_posts", "fields": [{"name": "title", "type": "string"}]}]}`
-	routes, _ := registerResource(testRoutes, "example.com/app", "posts", "posts.NewMemoryRepository()")
-	routes, _ = registerResource(routes, "example.com/app", "blogposts", "blogposts.NewMemoryRepository()")
+	routes, _ := registerResource(testRoutes, "example.com/app", "posts", "posts.NewMemoryRepository()", nil)
+	routes, _ = registerResource(routes, "example.com/app", "blogposts", "blogposts.NewMemoryRepository()", nil)
 	// Move the blogposts registration above posts
 	routes = strings.Replace(routes,
 		"\tposts.RegisterRoutes(mux, posts.NewService(posts.NewMemoryRepository()))\n\tblogposts.RegisterRoutes(mux, blogposts.NewService(blogposts.NewMemoryRepository()))\n",

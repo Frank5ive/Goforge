@@ -54,6 +54,9 @@ Fields are name:type, separated by commas. Types: %s.
   - email fields must be email addresses: contact:email
   - a (min..max) range bounds a number, or a string's length; either end may be
     left out: name:string(1..100), price:float(0..), quantity:int(1..)
+  - ref(<resource>) is the ID of an item of another resource (or this one), which
+    must exist (else 422) and can't be deleted while referenced (409):
+    category_id:ref(category), manager_id:ref(employee)?
 Each rule is checked by the generated Validate (with a test per rule), and the
 resource's rules.go is the place for any other business rules.`, fieldTypeNames()),
 		Example: `  goforge add resource product --fields "name:string(1..100),price:float(0..),in_stock:bool"

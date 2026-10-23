@@ -11,7 +11,8 @@ GoForge generated this project and can extend it. Use it instead of writing thes
   `goforge add resource <name> --fields "field:type,..."`. Types are `string`, `int`, `float`,
   `bool`, `time`, and `email`; a trailing `?` makes a string optional (`image_url:string?`), and
   `(min..max)` bounds a number or a string's length (`name:string(1..100)`, `price:float(0..)`).
-  Each rule gets a check in `Validate` and a test.
+  `ref(<resource>)` links to another resource (`category_id:ref(category)`): unknown IDs are a
+  422 and referenced items can't be deleted (409). Each rule gets a check and a test.
 - **Store data in a database:** `goforge add db <postgres|mysql|sqlite|mongo>`.
 - **Understand the project:** `goforge inspect --json` lists its resources and fields, routes,
   database, and environment variables.

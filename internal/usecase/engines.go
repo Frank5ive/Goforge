@@ -391,6 +391,11 @@ func addEngineData(data *resourceData, eng *engine, table string) {
 		data.IDColumn, d.placeholder(n+2))
 
 	data.CountGo = strconv.Quote("SELECT count(*) FROM " + data.Table)
+	for i := range data.Refs {
+		ref := &data.Refs[i]
+		ref.Column = d.quote(ref.JSON)
+		ref.CountGo = strconv.Quote(fmt.Sprintf("SELECT count(*) FROM %s WHERE %s = %s", data.Table, ref.Column, d.placeholder(1)))
+	}
 	data.ListGo = strconv.Quote(fmt.Sprintf("SELECT %s FROM %s ORDER BY %s, %s LIMIT %s OFFSET %s",
 		data.Columns, data.Table, data.CreatedColumn, data.IDColumn, d.placeholder(1), d.placeholder(2)))
 	data.GetGo = strconv.Quote(fmt.Sprintf("SELECT %s FROM %s WHERE %s = %s", data.Columns, data.Table, data.IDColumn, d.placeholder(1)))
