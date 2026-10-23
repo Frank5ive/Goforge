@@ -61,7 +61,11 @@ type Agent struct {
 	// FailedGoCommands those that failed: each failure is a correction cycle.
 	GoCommands       int `json:"go_commands"`
 	FailedGoCommands int `json:"failed_go_commands"`
+	// GoforgeCommands counts every goforge command, including --help;
+	// GoforgeGenerated only those that generate code (generate and add), which
+	// is what "used GoForge" means.
 	GoforgeCommands  int `json:"goforge_commands"`
+	GoforgeGenerated int `json:"goforge_generated"`
 	// PermissionDenials counts refused tool calls; it should be 0.
 	PermissionDenials int `json:"permission_denials"`
 }
@@ -280,6 +284,9 @@ func parseTranscript(path string) (Agent, error) {
 				}
 				if strings.Contains(input.Command, "goforge") {
 					a.GoforgeCommands++
+				}
+				if strings.Contains(input.Command, "goforge generate") || strings.Contains(input.Command, "goforge add") {
+					a.GoforgeGenerated++
 				}
 			}
 		case "user":

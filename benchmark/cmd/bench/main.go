@@ -206,7 +206,7 @@ func cmdRun(args []string) error {
 				}
 				fmt.Printf("  %s · $%.2f · %d turns · %.1f min · %d/%d checks · goforge used %t\n",
 					r.Agent.Outcome, r.Agent.CostUSD, r.Agent.Turns, float64(r.Agent.DurationMS)/60000,
-					r.Score.Passed, r.Score.Total, r.Agent.GoforgeCommands > 0)
+					r.Score.Passed, r.Score.Total, r.Agent.GoforgeGenerated > 0)
 			}
 		}
 	}

@@ -70,7 +70,8 @@ From the agent's event stream (`--output-format stream-json`):
 - **Turns** and **minutes** of wall-clock time.
 - **Failed go commands**: `go build`, `go vet`, `go test`, `go run`, or `goforge check` commands
   that failed. Each is roughly one correction cycle: the agent found a problem and had to fix it.
-- **Used GoForge**: whether the agent ran `goforge` at all.
+- **Used GoForge**: whether the agent generated code with GoForge (`goforge generate` or
+  `goforge add`). Only reading `goforge --help` doesn't count.
 
 From scoring the finished service (`bench score`):
 

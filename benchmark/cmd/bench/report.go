@@ -71,7 +71,7 @@ func summarize(results []Result) summary {
 		if r.Score.OwnTestsPassed {
 			s.ownTests++
 		}
-		if r.Agent.GoforgeCommands > 0 {
+		if r.Agent.GoforgeGenerated > 0 {
 			s.usedGoforge++
 		}
 		s.cost += r.Agent.CostUSD
