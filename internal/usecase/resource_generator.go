@@ -198,9 +198,9 @@ type resourceData struct {
 	UsesStrings, UsesUTF8, UsesEmail, TestsUseStrings bool
 	// InvalidCases are values that break one rule each, for the generated tests
 	InvalidCases []invalidCase
-	Port          int    // the project's default port, for requests.http
-	SampleBody    string // pretty-printed JSON create request, for requests.http
-	UpdatedBody   string // pretty-printed JSON replace request, for requests.http
+	Port         int    // the project's default port, for requests.http
+	SampleBody   string // pretty-printed JSON create request, for requests.http
+	UpdatedBody  string // pretty-printed JSON replace request, for requests.http
 
 	// Database-specific names, set by addEngineData for projects with a database
 	Engine      string // e.g. "postgres"
