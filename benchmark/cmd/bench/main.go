@@ -196,7 +196,8 @@ func cmdRun(args []string) error {
 				fmt.Printf("▶ %s · %s · run %d\n", t, c, run)
 				r, err := runAgent(runConfig{
 					task: t, condition: c, run: run, model: *model, budgetUSD: *budget, timeout: *timeout,
-					image: image, imageID: imageID, benchLinux: benchLinux, envFile: *envFile, workRoot: *work,
+					image: image, imageID: imageID, goforgeVersion: *goforgeVersion,
+					benchLinux: benchLinux, envFile: *envFile, workRoot: *work,
 				})
 				if err != nil {
 					return fmt.Errorf("%s %s run %d: %w", t, c, run, err)
@@ -222,5 +223,6 @@ func writeResult(out string, r Result) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, fmt.Sprintf("%s-run%d.json", r.Condition, r.Run)), append(data, '\n'), 0o644)
+	name := fmt.Sprintf("%s-run%d.json", label(r.Condition, r.GoforgeVersion), r.Run)
+	return os.WriteFile(filepath.Join(dir, name), append(data, '\n'), 0o644)
 }

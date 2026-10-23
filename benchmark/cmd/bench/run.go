@@ -36,6 +36,7 @@ type runConfig struct {
 	budgetUSD       float64
 	timeout         time.Duration
 	image, imageID  string // the benchmark image's tag and ID
+	goforgeVersion  string // the GoForge version in the image
 	benchLinux      string // bench built for Linux, for scoring in the image
 	envFile         string // Docker env file with the agent's credentials
 	workRoot        string // where run directories are created
@@ -43,16 +44,19 @@ type runConfig struct {
 
 // Result is the outcome of one agent run.
 type Result struct {
-	Task      string    `json:"task"`
-	Condition string    `json:"condition"`
-	Run       int       `json:"run"`
-	Model     string    `json:"model"`
-	Image     string    `json:"image"`
-	ImageID   string    `json:"image_id"`
-	Started   time.Time `json:"started"`
-	Agent     Agent     `json:"agent"`
-	Score     Score     `json:"score"`
-	WorkDir   string    `json:"work_dir"`
+	Task      string `json:"task"`
+	Condition string `json:"condition"`
+	Run       int    `json:"run"`
+	Model     string `json:"model"`
+	// GoforgeVersion is the GoForge version the agent could use; empty for
+	// scratch, which doesn't depend on it.
+	GoforgeVersion string    `json:"goforge_version,omitempty"`
+	Image          string    `json:"image"`
+	ImageID        string    `json:"image_id"`
+	Started        time.Time `json:"started"`
+	Agent          Agent     `json:"agent"`
+	Score          Score     `json:"score"`
+	WorkDir        string    `json:"work_dir"`
 }
 
 // Agent is what the agent's run cost and did, from its event stream.
@@ -95,7 +99,7 @@ func runAgent(cfg runConfig) (Result, error) {
 	}
 
 	started := time.Now()
-	name := fmt.Sprintf("%s-%s-%d-%s", cfg.task, cfg.condition, cfg.run, started.Format("20060102-150405"))
+	name := fmt.Sprintf("%s-%s-%d-%s", cfg.task, label(cfg.condition, cfg.goforgeVersion), cfg.run, started.Format("20060102-150405"))
 	dir, err := filepath.Abs(filepath.Join(cfg.workRoot, name))
 	if err != nil {
 		return Result{}, err
@@ -172,8 +176,12 @@ func runAgent(cfg runConfig) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	version := cfg.goforgeVersion
+	if cfg.condition == scratch {
+		version = ""
+	}
 	return Result{
-		Task: cfg.task, Condition: cfg.condition, Run: cfg.run, Model: cfg.model,
+		Task: cfg.task, Condition: cfg.condition, Run: cfg.run, Model: cfg.model, GoforgeVersion: version,
 		Image: cfg.image, ImageID: cfg.imageID, Started: started,
 		Agent: agent, Score: s, WorkDir: dir,
 	}, nil
@@ -331,4 +339,13 @@ func isGoCommand(command string) bool {
 		}
 	}
 	return false
+}
+
+// label names a condition with the GoForge version it used, e.g.
+// "goforge-required@v0.2.0"; scratch doesn't depend on the version.
+func label(condition, version string) string {
+	if condition == scratch || version == "" {
+		return condition
+	}
+	return condition + "@" + version
 }

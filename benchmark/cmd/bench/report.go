@@ -90,13 +90,19 @@ func summarize(results []Result) summary {
 func writeReport(w io.Writer, results []Result) {
 	byTask := map[string]map[string][]Result{}
 	models := map[string]bool{}
+	var labels []string
 	for _, r := range results {
+		l := label(r.Condition, r.GoforgeVersion)
 		if byTask[r.Task] == nil {
 			byTask[r.Task] = map[string][]Result{}
 		}
-		byTask[r.Task][r.Condition] = append(byTask[r.Task][r.Condition], r)
+		byTask[r.Task][l] = append(byTask[r.Task][l], r)
 		models[r.Model] = true
+		if !slices.Contains(labels, l) {
+			labels = append(labels, l)
+		}
 	}
+	slices.SortFunc(labels, compareLabels)
 
 	var modelNames []string
 	for m := range models {
@@ -109,18 +115,18 @@ func writeReport(w io.Writer, results []Result) {
 	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|---|---|")
 	var overall = map[string][]Result{}
 	for _, task := range tasks {
-		for _, condition := range conditions {
-			rs := byTask[task][condition]
+		for _, l := range labels {
+			rs := byTask[task][l]
 			if len(rs) == 0 {
 				continue
 			}
-			overall[condition] = append(overall[condition], rs...)
-			writeRow(w, task, condition, summarize(rs))
+			overall[l] = append(overall[l], rs...)
+			writeRow(w, task, l, summarize(rs))
 		}
 	}
-	for _, condition := range conditions {
-		if rs := overall[condition]; len(rs) > 0 {
-			writeRow(w, "**all tasks**", condition, summarize(rs))
+	for _, l := range labels {
+		if rs := overall[l]; len(rs) > 0 {
+			writeRow(w, "**all tasks**", l, summarize(rs))
 		}
 	}
 
@@ -128,12 +134,18 @@ func writeReport(w io.Writer, results []Result) {
 	fmt.Fprintln(w, "| Task | Condition | Run | Outcome | Checks | Cost | Tokens | Turns | Minutes | Failed go commands | Denied tools |")
 	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|---|")
 	slices.SortFunc(results, func(a, b Result) int {
-		return strings.Compare(fmt.Sprintf("%s/%s/%03d", a.Task, a.Condition, a.Run), fmt.Sprintf("%s/%s/%03d", b.Task, b.Condition, b.Run))
+		if c := strings.Compare(a.Task, b.Task); c != 0 {
+			return c
+		}
+		if c := compareLabels(label(a.Condition, a.GoforgeVersion), label(b.Condition, b.GoforgeVersion)); c != 0 {
+			return c
+		}
+		return a.Run - b.Run
 	})
 	for _, r := range results {
 		a := r.Agent
 		fmt.Fprintf(w, "| %s | %s | %d | %s | %d/%d | $%.2f | %s | %d | %.1f | %d | %d |\n",
-			r.Task, r.Condition, r.Run, a.Outcome, r.Score.Passed, r.Score.Total, a.CostUSD,
+			r.Task, label(r.Condition, r.GoforgeVersion), r.Run, a.Outcome, r.Score.Passed, r.Score.Total, a.CostUSD,
 			thousands(a.InputTokens+a.OutputTokens+a.CacheRead+a.CacheWrite), a.Turns,
 			float64(a.DurationMS)/60000, a.FailedGoCommands, a.PermissionDenials)
 	}
@@ -144,12 +156,12 @@ func writeReport(w io.Writer, results []Result) {
 		for _, c := range r.Score.Checks {
 			if !c.Passed {
 				listed = true
-				fmt.Fprintf(w, "- %s · %s · run %d: **%s**: %s\n", r.Task, r.Condition, r.Run, c.Name, oneLine(c.Detail))
+				fmt.Fprintf(w, "- %s · %s · run %d: **%s**: %s\n", r.Task, label(r.Condition, r.GoforgeVersion), r.Run, c.Name, oneLine(c.Detail))
 			}
 		}
 		for _, note := range r.Score.Notes {
 			listed = true
-			fmt.Fprintf(w, "- %s · %s · run %d: %s\n", r.Task, r.Condition, r.Run, oneLine(note))
+			fmt.Fprintf(w, "- %s · %s · run %d: %s\n", r.Task, label(r.Condition, r.GoforgeVersion), r.Run, oneLine(note))
 		}
 	}
 	if !listed {
@@ -177,4 +189,28 @@ func oneLine(s string) string {
 		s = s[:300] + "…"
 	}
 	return s
+}
+
+// compareLabels orders condition labels: scratch first, then each GoForge
+// version (released "v" versions before commits), with goforge before
+// goforge-required.
+func compareLabels(a, b string) int {
+	ca, va, _ := strings.Cut(a, "@")
+	cb, vb, _ := strings.Cut(b, "@")
+	if (ca == scratch) != (cb == scratch) {
+		if ca == scratch {
+			return -1
+		}
+		return 1
+	}
+	if va != vb {
+		if strings.HasPrefix(va, "v") != strings.HasPrefix(vb, "v") {
+			if strings.HasPrefix(va, "v") {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(va, vb)
+	}
+	return slices.Index(conditions, ca) - slices.Index(conditions, cb)
 }
