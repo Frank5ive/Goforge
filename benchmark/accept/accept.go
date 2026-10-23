@@ -41,6 +41,7 @@ var Suites = map[string]Suite{
 	"products-sqlite": func(env Env) []Result { return runChecks(env, productSQLiteChecks) },
 	"blog":            func(env Env) []Result { return runChecks(env, blogChecks) },
 	"orders":          func(env Env) []Result { return runChecks(env, orderChecks) },
+	"store":           func(env Env) []Result { return runChecks(env, storeChecks) },
 }
 
 // Count returns the number of checks for task, or 0 for an unknown task.
@@ -54,6 +55,8 @@ func Count(task string) int {
 		return len(blogChecks(Env{}))
 	case "orders":
 		return len(orderChecks(Env{}))
+	case "store":
+		return len(storeChecks(Env{}))
 	}
 	return 0
 }

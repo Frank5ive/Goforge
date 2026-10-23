@@ -109,7 +109,7 @@ func writeReport(w io.Writer, results []Result) {
 	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|---|---|")
 	var overall = map[string][]Result{}
 	for _, task := range tasks {
-		for _, condition := range []string{scratch, goforge} {
+		for _, condition := range conditions {
 			rs := byTask[task][condition]
 			if len(rs) == 0 {
 				continue
@@ -118,7 +118,7 @@ func writeReport(w io.Writer, results []Result) {
 			writeRow(w, task, condition, summarize(rs))
 		}
 	}
-	for _, condition := range []string{scratch, goforge} {
+	for _, condition := range conditions {
 		if rs := overall[condition]; len(rs) > 0 {
 			writeRow(w, "**all tasks**", condition, summarize(rs))
 		}

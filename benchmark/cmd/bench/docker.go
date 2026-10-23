@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -103,9 +104,18 @@ func hostDatabaseURL(hostPort, name string) string {
 }
 
 // ensureImage builds the benchmark image for the versions if it doesn't exist,
-// and returns its tag and ID.
+// and returns its tag and ID. The tag includes a hash of the Dockerfile and
+// entry script, so changing either builds a new image.
 func ensureImage(claudeVersion, goforgeVersion string) (string, string, error) {
-	tag := fmt.Sprintf("%s:claude-%s-goforge-%s", imageRepo, claudeVersion, goforgeVersion)
+	h := sha256.New()
+	for _, file := range []string{"Dockerfile", "bench-entry.sh"} {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return "", "", err
+		}
+		h.Write(data)
+	}
+	tag := fmt.Sprintf("%s:claude-%s-goforge-%s-%x", imageRepo, claudeVersion, goforgeVersion, h.Sum(nil)[:4])
 	if _, err := docker("image", "inspect", tag); err != nil {
 		fmt.Printf("building the benchmark image %s…\n", tag)
 		if _, err := docker("build", "--build-arg", "CLAUDE_CODE_VERSION="+claudeVersion,

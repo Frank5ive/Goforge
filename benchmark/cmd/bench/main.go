@@ -3,7 +3,7 @@
 // the results are compared.
 //
 //	bench score  -task products -dir path/to/service
-//	bench run    -task products -condition both -runs 3 -model sonnet
+//	bench run    -task products -condition all -runs 3 -model sonnet
 //	bench report -out results
 //
 // Run it from the benchmark directory. See README.md for the method.
@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-var tasks = []string{"products", "products-sqlite", "blog", "orders"}
+var tasks = []string{"products", "products-sqlite", "blog", "orders", "store"}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -114,7 +114,7 @@ func freshStorage(task string) (storage, func(), error) {
 		}
 		return storage{url: filepath.Join(dir, "data", "products.db"), testURL: filepath.Join(dir, "test", "products.db")},
 			func() { os.RemoveAll(dir) }, nil
-	case "orders":
+	case "orders", "store":
 		hostPort, err := ensurePostgres()
 		if err != nil {
 			return storage{}, func() {}, err
@@ -140,7 +140,7 @@ func cmdRun(args []string) error {
 	home, _ := os.UserHomeDir()
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	task := fs.String("task", "all", "task, or all: "+strings.Join(tasks, ", "))
-	condition := fs.String("condition", "both", "scratch, goforge, or both")
+	condition := fs.String("condition", "all", "scratch, goforge, goforge-required, or all")
 	runs := fs.Int("runs", 1, "runs per task and condition")
 	first := fs.Int("first-run", 1, "number of the first run, to add runs to earlier results")
 	model := fs.String("model", "sonnet", "model, as passed to claude --model")
@@ -161,12 +161,12 @@ func cmdRun(args []string) error {
 		}
 		selected = []string{*task}
 	}
-	conditions := []string{scratch, goforge}
-	if *condition != "both" {
-		if *condition != scratch && *condition != goforge {
+	selectedConditions := conditions
+	if *condition != "all" {
+		if !slices.Contains(conditions, *condition) {
 			return fmt.Errorf("unknown condition %q", *condition)
 		}
-		conditions = []string{*condition}
+		selectedConditions = []string{*condition}
 	}
 
 	// The key stays in the file; Docker reads it into the agent's container
@@ -192,7 +192,7 @@ func cmdRun(args []string) error {
 	// load) affect both alike
 	for run := *first; run < *first+*runs; run++ {
 		for _, t := range selected {
-			for _, c := range conditions {
+			for _, c := range selectedConditions {
 				fmt.Printf("▶ %s · %s · run %d\n", t, c, run)
 				r, err := runAgent(runConfig{
 					task: t, condition: c, run: run, model: *model, budgetUSD: *budget, timeout: *timeout,

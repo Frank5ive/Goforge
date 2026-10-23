@@ -1,13 +1,15 @@
 #!/bin/sh
 # Entry point of the benchmark image. It puts goforge on PATH only in the
-# goforge condition, and gives the run a writable home and Go directories
+# goforge conditions (goforge and goforge-required), and gives the run a writable home and Go directories
 # (containers run as the host user, who can't write the image's /go).
 set -e
 
-if [ "$BENCH_CONDITION" = "goforge" ]; then
+case "$BENCH_CONDITION" in
+goforge*)
 	PATH="/opt/goforge/bin:$PATH"
 	export PATH
-fi
+	;;
+esac
 
 export HOME="${BENCH_HOME:-/bench/home}"
 export GOPATH="$HOME/go"

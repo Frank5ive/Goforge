@@ -15,9 +15,18 @@ import (
 
 // Conditions an agent runs a task under.
 const (
-	scratch = "scratch" // the agent writes everything itself
-	goforge = "goforge" // GoForge is on PATH, and the prompt says so
+	// scratch: the agent writes everything itself.
+	scratch = "scratch"
+	// goforge: GoForge is on PATH and the prompt says so; the agent decides
+	// whether to use it. This measures whether agents adopt it.
+	goforge = "goforge"
+	// goforgeRequired: the prompt tells the agent to build the service with
+	// GoForge. This measures GoForge's effect when it is used.
+	goforgeRequired = "goforge-required"
 )
+
+// conditions lists every condition, in the order runs alternate through them.
+var conditions = []string{scratch, goforge, goforgeRequired}
 
 // runConfig configures one agent run.
 type runConfig struct {
@@ -96,7 +105,7 @@ func runAgent(cfg runConfig) (Result, error) {
 	}
 
 	var devDatabase string
-	if cfg.task == "orders" {
+	if cfg.task == "orders" || cfg.task == "store" {
 		db, drop, err := createDatabase()
 		if err != nil {
 			return Result{}, err
@@ -179,7 +188,7 @@ func scoreInContainer(cfg runConfig, dir string) (Score, error) {
 	switch cfg.task {
 	case "products-sqlite":
 		args = append(args, "-database-url", "/bench/score/data/products.db", "-test-database-url", "/bench/score/test/products.db")
-	case "orders":
+	case "orders", "store":
 		db, drop, err := createDatabase()
 		if err != nil {
 			return Score{}, err
@@ -201,8 +210,8 @@ func scoreInContainer(cfg runConfig, dir string) (Score, error) {
 	return s, nil
 }
 
-// buildPrompt returns the task prompt. The conditions differ only in the
-// sentence about GoForge.
+// buildPrompt returns the task prompt. The conditions differ only in the last
+// sentence of the requirements, about GoForge.
 func buildPrompt(condition, spec, devDatabase string) string {
 	var b strings.Builder
 	b.WriteString("Build the service described below in Go.\n\n")
@@ -214,8 +223,11 @@ func buildPrompt(condition, spec, devDatabase string) string {
 		b.WriteString("- For development and tests, a PostgreSQL database is available at " + devDatabase + "\n")
 	}
 	b.WriteString("- Work on your own: nobody will answer questions. Stop when the service is complete.\n")
-	if condition == goforge {
+	switch condition {
+	case goforge:
 		b.WriteString("\nGoForge (`goforge`), a CLI that generates and extends Go REST API projects, is installed. Run `goforge --help` to see what it can do.\n")
+	case goforgeRequired:
+		b.WriteString("\nBuild the service with GoForge (`goforge`), a CLI that generates and extends Go REST API projects. It is installed: run `goforge --help` to see what it can do.\n")
 	}
 	b.WriteString("\n---\n\n")
 	b.WriteString(spec)

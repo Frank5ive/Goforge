@@ -9,15 +9,23 @@ Results: [`results/REPORT.md`](results/REPORT.md).
 ## Method
 
 An agent gets a written spec for a service and builds it in an empty directory. Each task runs in
-two conditions, which differ in one thing only:
+three conditions, which differ only in the last sentence of the prompt and whether `goforge` is on
+`PATH`:
 
 - **scratch**: the agent writes everything itself.
-- **goforge**: GoForge is installed, and the prompt adds one sentence: *"GoForge (`goforge`), a
-  CLI that generates and extends Go REST API projects, is installed. Run `goforge --help` to see
-  what it can do."* The agent decides whether and how to use it.
+- **goforge**: GoForge is installed, and the prompt says *"GoForge (`goforge`), a CLI that
+  generates and extends Go REST API projects, is installed. Run `goforge --help` to see what it
+  can do."* The agent decides whether to use it, so this measures whether agents adopt it.
+- **goforge-required**: the prompt says *"Build the service with GoForge (`goforge`), a CLI that
+  generates and extends Go REST API projects. It is installed: run `goforge --help` to see what it
+  can do."* This measures GoForge's effect when it is used.
 
-Everything else is identical: the model, the prompt and spec, the tools the agent may use, the
-budget and time limits, and the machine.
+The third condition was added after a smoke test: offered GoForge on the small `products` task, the
+agent read `goforge --help` and wrote the service by hand. Without it, the benchmark would mostly
+measure whether agents choose GoForge, not whether it helps.
+
+Everything else is identical: the model, the spec, the tools the agent may use, the budget and time
+limits, and the environment.
 
 ### Tasks
 
@@ -27,6 +35,7 @@ budget and time limits, and the machine.
 | [`products-sqlite`](tasks/products-sqlite/spec.md) | The same, stored in SQLite and surviving a restart | 27 |
 | [`blog`](tasks/blog/spec.md) | Two related resources: referential checks, a nested route, a delete conflict | 23 |
 | [`orders`](tasks/orders/spec.md) | PostgreSQL, nested line items, a computed total, a status state machine | 20 |
+| [`store`](tasks/store/spec.md) | A larger back office: five resources on PostgreSQL, with a cross-resource rule and a delete conflict | 46 |
 
 The specs define every status code and response shape, so the checks can judge any
 implementation. The agent never sees the checks.
@@ -38,8 +47,8 @@ environment never changes between runs or conditions: Go 1.26.0 (`GOTOOLCHAIN=lo
 toolchain is downloaded), Node.js 22, a pinned Claude Code version (default 2.1.308), GoForge
 (default `v0.2.0`), `psql`, and `sqlite3`. Each result records the image ID.
 
-GoForge is installed in the image in both conditions, but on the agent's `PATH` only in the
-goforge condition. Each run starts with an empty home directory and Go module cache. The `orders`
+GoForge is installed in the image in every condition, but on the agent's `PATH` only in the two
+goforge conditions. Each run starts with an empty home directory and Go module cache. The `orders`
 task's PostgreSQL runs in its own container on a private Docker network, with a new empty
 database per run.
 
@@ -92,7 +101,8 @@ the checks aren't tuned to its output. Every reference passes every check
 
 To make sure the checks catch real mistakes, bugs were injected into the references (no price
 rule, no limit cap, PATCH not validated, deleting an author who has posts, an unrounded total,
-paying an order twice); each was caught. The double-payment bug wasn't caught at first, which led
+paying an order twice, a product in an unknown category, deleting a category that has products);
+each was caught. The double-payment bug wasn't caught at first, which led
 to a new check.
 
 ### What favors whom
@@ -104,7 +114,8 @@ to a new check.
 - Every task needs rules GoForge doesn't generate: name length and price limits, email format,
   referential checks and conflicts, a nested route, line items, a computed total, and a state
   machine. The `orders` task in particular doesn't fit GoForge's resources well (nested items and
-  status transitions), so it shows where GoForge helps less.
+  status transitions), so it shows where GoForge helps less. The `store` task is the opposite: most
+  of its work is the CRUD, validation, and storage GoForge generates, as in many real back offices.
 - The service goes in a new `service` directory because `goforge generate` can only create a new
   directory; asking for the current directory would have tested that limitation instead.
 
@@ -130,8 +141,8 @@ go build -o bench ./cmd/bench
 # Check that the acceptance checks pass against the references (on the host)
 ./bench score -task orders -dir reference/orders
 
-# Run agents: every task, both conditions, 3 runs each
-./bench run -task all -condition both -runs 3 -model sonnet -budget 5
+# Run agents: every task, all three conditions, 3 runs each
+./bench run -task all -condition all -runs 3 -model sonnet -budget 5
 
 # Summarize results/ into results/REPORT.md
 ./bench report
