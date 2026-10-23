@@ -2,8 +2,10 @@ package domain
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -17,17 +19,53 @@ const (
 	FieldFloat  FieldType = "float"
 	FieldBool   FieldType = "bool"
 	FieldTime   FieldType = "time"
+	// FieldEmail is a string that must be an email address.
+	FieldEmail FieldType = "email"
 )
 
 // FieldTypes lists the supported field types, for help text and errors.
-var FieldTypes = []FieldType{FieldString, FieldInt, FieldFloat, FieldBool, FieldTime}
+var FieldTypes = []FieldType{FieldString, FieldInt, FieldFloat, FieldBool, FieldTime, FieldEmail}
 
 // Field is one client-editable field of a resource.
 type Field struct {
 	Name string    `json:"name"` // snake_case, e.g. "in_stock"
 	Type FieldType `json:"type"`
-	// Optional string fields may be empty; other string fields are required.
+	// Optional string and email fields may be empty; otherwise they are required.
 	Optional bool `json:"optional,omitempty"`
+	// Min and Max bound a number's value, or a string's length in characters
+	// (ignoring surrounding spaces). Nil means unbounded.
+	Min *float64 `json:"min,omitempty"`
+	Max *float64 `json:"max,omitempty"`
+}
+
+// IsText reports whether the field holds text (string or email).
+func (f Field) IsText() bool {
+	return f.Type == FieldString || f.Type == FieldEmail
+}
+
+// Required reports whether a text field must not be blank.
+func (f Field) Required() bool {
+	return f.IsText() && !f.Optional
+}
+
+// Spec returns the field in the --fields syntax, e.g. "name:string(1..100)" or
+// "notes:string?".
+func (f Field) Spec() string {
+	s := f.Name + ":" + string(f.Type)
+	if f.Min != nil || f.Max != nil {
+		s += "(" + formatBound(f.Min) + ".." + formatBound(f.Max) + ")"
+	}
+	if f.Optional {
+		s += "?"
+	}
+	return s
+}
+
+func formatBound(b *float64) string {
+	if b == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*b, 'f', -1, 64)
 }
 
 // ResourceConfig describes a REST resource to add to an existing GoForge project.
@@ -106,8 +144,11 @@ func validateFields(fields []Field) error {
 		if !slices.Contains(FieldTypes, f.Type) {
 			return NewValidationErrorWithField("fields", fmt.Sprintf("field %q has unsupported type %q (supported: %s)", f.Name, f.Type, fieldTypeList()))
 		}
-		if f.Optional && f.Type != FieldString {
-			return NewValidationErrorWithField("fields", fmt.Sprintf("field %q: only string fields can be optional (other types already accept their zero value)", f.Name))
+		if f.Optional && !f.IsText() {
+			return NewValidationErrorWithField("fields", fmt.Sprintf("field %q: only string and email fields can be optional (other types already accept their zero value)", f.Name))
+		}
+		if err := validateBounds(f); err != nil {
+			return err
 		}
 
 		goName := CamelCase(f.Name)
@@ -117,6 +158,36 @@ func validateFields(fields []Field) error {
 		seen[goName] = true
 	}
 
+	return nil
+}
+
+// validateBounds checks a field's (min..max) range.
+func validateBounds(f Field) error {
+	if f.Min == nil && f.Max == nil {
+		return nil
+	}
+	invalid := func(why string) error {
+		return NewValidationErrorWithField("fields", fmt.Sprintf("field %q: %s", f.Name, why))
+	}
+	switch f.Type {
+	case FieldString, FieldInt, FieldFloat:
+	default:
+		return invalid(fmt.Sprintf("a (min..max) range applies to string, int, and float fields, not %s", f.Type))
+	}
+	for _, b := range []*float64{f.Min, f.Max} {
+		if b == nil {
+			continue
+		}
+		if f.Type != FieldFloat && *b != math.Trunc(*b) {
+			return invalid("the range must use whole numbers")
+		}
+		if f.Type == FieldString && *b < 0 {
+			return invalid("a length can't be negative")
+		}
+	}
+	if f.Min != nil && f.Max != nil && *f.Min > *f.Max {
+		return invalid("the range's minimum is above its maximum")
+	}
 	return nil
 }
 
@@ -138,10 +209,12 @@ func (c *ResourceConfig) RoutePath() string {
 	return "/" + strings.ReplaceAll(c.PluralName(), "_", "-")
 }
 
-// ParseFields parses a field list like "title:string, price:float, image_url:string?".
-// A field without a type is a string, and a trailing "?" marks a string field as
-// optional (string fields are required by default). Names may use hyphens, which
-// become underscores.
+// ParseFields parses a field list like
+// "title:string(1..100), price:float(0..), email:email, image_url:string?".
+// A field without a type is a string. A "(min..max)" range bounds a number's
+// value or a string's length, and either end may be left out. A trailing "?"
+// makes a string or email field optional (they are required by default).
+// Names may use hyphens, which become underscores.
 func ParseFields(spec string) ([]Field, error) {
 	var fields []Field
 
@@ -158,8 +231,18 @@ func ParseFields(spec string) ([]Field, error) {
 		}
 		if hasType {
 			typ = strings.ToLower(strings.TrimSpace(typ))
-			field.Optional = strings.HasSuffix(typ, "?")
-			field.Type = FieldType(strings.TrimSuffix(typ, "?"))
+			// Accept "?" before or after the range: string?(1..5) or string(1..5)?
+			field.Optional = strings.Contains(typ, "?")
+			typ = strings.ReplaceAll(typ, "?", "")
+			if open := strings.Index(typ, "("); open >= 0 {
+				min, max, err := parseRange(typ[open:])
+				if err != nil {
+					return nil, NewValidationErrorWithField("fields", fmt.Sprintf("field %q: %v", strings.TrimSpace(name), err))
+				}
+				field.Min, field.Max = min, max
+				typ = strings.TrimSpace(typ[:open])
+			}
+			field.Type = FieldType(typ)
 		}
 		if field.Name == "" {
 			return nil, NewValidationErrorWithField("fields", fmt.Sprintf("missing field name in %q", part))
@@ -169,6 +252,39 @@ func ParseFields(spec string) ([]Field, error) {
 	}
 
 	return fields, nil
+}
+
+// parseRange parses "(min..max)", where either bound may be empty.
+func parseRange(s string) (*float64, *float64, error) {
+	inner, ok := strings.CutPrefix(s, "(")
+	inner, closed := strings.CutSuffix(inner, ")")
+	lo, hi, dots := strings.Cut(inner, "..")
+	if !ok || !closed || !dots {
+		return nil, nil, fmt.Errorf("invalid range %q: use (min..max), (min..), or (..max)", s)
+	}
+	bound := func(v string) (*float64, error) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return nil, nil
+		}
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil || math.IsInf(n, 0) || math.IsNaN(n) {
+			return nil, fmt.Errorf("invalid range %q: %q is not a number", s, v)
+		}
+		return &n, nil
+	}
+	min, err := bound(lo)
+	if err != nil {
+		return nil, nil, err
+	}
+	max, err := bound(hi)
+	if err != nil {
+		return nil, nil, err
+	}
+	if min == nil && max == nil {
+		return nil, nil, fmt.Errorf("invalid range %q: give a minimum, a maximum, or both", s)
+	}
+	return min, max, nil
 }
 
 // Pluralize returns the English plural of a snake_case word using simple rules:

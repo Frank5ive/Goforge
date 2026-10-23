@@ -115,7 +115,9 @@ defaults are used instead.`,
 
 func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	out := cmd.OutOrStdout()
-	if !opts.json {
+	// The banner and summary are for people at a terminal
+	compact := opts.json || piped(out)
+	if !compact {
 		printBanner(out)
 	}
 
@@ -143,7 +145,7 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 		IncludeCI:     opts.ci,
 	}
 
-	if !opts.json {
+	if !compact {
 		displayConfig(out, config, opts)
 	}
 

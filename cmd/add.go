@@ -46,10 +46,18 @@ registered in server/routes.go automatically, so they work as soon as the server
 starts.
 
 <name> is the singular resource name in snake_case, e.g. product or blog_post.
-Field types: %s. String fields are required unless marked
-optional with a trailing "?", e.g. "image_url:string?". ID and timestamps are
-added automatically.`, fieldTypeNames()),
-		Example: `  goforge add resource product --fields "name:string,price:float,in_stock:bool"
+ID and timestamps are added automatically.
+
+Fields are name:type, separated by commas. Types: %s.
+  - string and email fields are required; a trailing ? makes one optional:
+    image_url:string?
+  - email fields must be email addresses: contact:email
+  - a (min..max) range bounds a number, or a string's length; either end may be
+    left out: name:string(1..100), price:float(0..), quantity:int(1..)
+Each rule is checked by the generated Validate (with a test per rule), and the
+resource's rules.go is the place for any other business rules.`, fieldTypeNames()),
+		Example: `  goforge add resource product --fields "name:string(1..100),price:float(0..),in_stock:bool"
+  goforge add resource customer --fields "name:string,email:email,phone:string?"
   goforge add resource blog_post --fields "title:string,body:string,cover_url:string?,published_at:time"
   goforge add resource person --plural people --fields "name:string,age:int"
   goforge add resource task --dry-run

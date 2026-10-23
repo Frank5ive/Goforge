@@ -2,6 +2,9 @@ package {{.Package}}
 
 import (
 	"errors"
+{{- if .TestsUseStrings}}
+	"strings"
+{{- end}}
 	"testing"
 	"time"
 )
@@ -67,6 +70,32 @@ func TestServiceCreateValidates(t *testing.T) {
 }
 {{- end}}
 
+{{- if .InvalidCases}}
+func TestInputValidateRules(t *testing.T) {
+	if err := validInput().Validate(); err != nil {
+		t.Fatalf("validInput().Validate() = %v, want nil", err)
+	}
+
+	tests := []struct {
+		name string
+		edit func(*Input)
+	}{
+{{- range .InvalidCases}}
+		{ {{- .Name}}, func(in *Input) { in.{{.Field}} = {{.Value}} }},
+{{- end}}
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := validInput()
+			tt.edit(&in)
+			if err := in.Validate(); err == nil {
+				t.Errorf("Validate() = nil, want an error")
+			}
+		})
+	}
+}
+
+{{end -}}
 func TestServiceUpdate(t *testing.T) {
 	svc := newTestService()
 	created, err := svc.Create(t.Context(), validInput())

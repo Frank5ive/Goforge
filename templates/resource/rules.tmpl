@@ -1,0 +1,15 @@
+package {{.Package}}
+
+// rules returns the problems with in that the field rules in Validate don't
+// cover. Add the {{.Human}}'s own business rules here, one message per problem,
+// for example:
+//
+//	if in.EndsAt.Before(in.StartsAt) {
+//		problems = append(problems, "ends_at must be after starts_at")
+//	}
+//
+// Validate runs them for create, replace, and patch.
+func (in Input) rules() []string {
+	var problems []string
+	return problems
+}
