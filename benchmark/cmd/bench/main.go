@@ -189,7 +189,7 @@ func cmdRun(args []string) error {
 	}
 
 	// Alternate conditions within each run, so changes over time (such as API
-	// load) affect both alike
+	// load) affect every condition alike
 	for run := *first; run < *first+*runs; run++ {
 		for _, t := range selected {
 			for _, c := range selectedConditions {
