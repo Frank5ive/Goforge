@@ -99,7 +99,9 @@ func runAgent(cfg runConfig) (Result, error) {
 	}
 
 	started := time.Now()
-	name := fmt.Sprintf("%s-%s-%d-%s", cfg.task, label(cfg.condition, cfg.goforgeVersion), cfg.run, started.Format("20060102-150405"))
+	// Docker names allow only letters, digits, and _.- (no @)
+	name := fmt.Sprintf("%s-%s-%d-%s", cfg.task, strings.ReplaceAll(label(cfg.condition, cfg.goforgeVersion), "@", "_"),
+		cfg.run, started.Format("20060102-150405"))
 	dir, err := filepath.Abs(filepath.Join(cfg.workRoot, name))
 	if err != nil {
 		return Result{}, err
@@ -169,6 +171,11 @@ func runAgent(cfg runConfig) (Result, error) {
 	if ctx.Err() != nil {
 		agent.Outcome = "timeout"
 	} else if runErr != nil && agent.Outcome == "" {
+		// The agent never ran (for example Docker or the credentials failed):
+		// stop, rather than record a run the agent didn't do
+		if agent.Turns == 0 && agent.ToolCalls == 0 {
+			return Result{}, fmt.Errorf("the agent didn't start: %v: %s", runErr, strings.TrimSpace(readFile(filepath.Join(dir, "stderr.txt"))))
+		}
 		agent.Outcome = "error: " + strings.TrimSpace(readFile(filepath.Join(dir, "stderr.txt")))
 	}
 
