@@ -747,7 +747,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ---
 
-## 📮 Support & Contact
+## 📮 Support and Contact
 
 - 🐛 **Issues**: [GitHub Issues](https://github.com/Frank5ive/goforge/issues)
 - 💬 **Discussions**: [GitHub Discussions](https://github.com/Frank5ive/goforge/discussions)

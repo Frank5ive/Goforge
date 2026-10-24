@@ -1,3 +1,6 @@
+// Package di wires GoForge's use cases to their infrastructure: the template
+// renderer, the file writer (recording, or dry run), the go command, and the
+// project checker.
 package di
 
 import (

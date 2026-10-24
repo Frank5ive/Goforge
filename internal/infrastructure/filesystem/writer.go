@@ -1,3 +1,5 @@
+// Package filesystem writes generated files to disk, and records every path
+// written so commands can report them, or only records them in a dry run.
 package filesystem
 
 import (

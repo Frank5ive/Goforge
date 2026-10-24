@@ -1,3 +1,7 @@
+// Package usecase implements GoForge's commands: generating a server, adding a
+// resource or a database, and inspecting a project. Changes to a project are
+// planned as a changeset, made only at // goforge: marker comments, and applied
+// all or nothing.
 package usecase
 
 import (

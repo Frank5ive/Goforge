@@ -9,6 +9,9 @@ import (
 	"github.com/Frank5ive/goforge/cmd"
 )
 
+// TemplatesFS holds the templates GoForge generates projects from, embedded in
+// the binary so it needs no other files.
+//
 //go:embed templates
 var TemplatesFS embed.FS
 

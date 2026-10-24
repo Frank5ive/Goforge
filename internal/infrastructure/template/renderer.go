@@ -1,3 +1,5 @@
+// Package template renders the embedded *.tmpl files GoForge generates projects
+// from, with text/template.
 package template
 
 import (
