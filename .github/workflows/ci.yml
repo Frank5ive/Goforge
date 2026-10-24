@@ -56,6 +56,27 @@ jobs:
       - name: Test
         run: go test ./...
 
+  # The benchmark and its reference solutions are separate Go modules, so the
+  # jobs above don't build or test them
+  benchmark:
+    name: Benchmark (${{ matrix.module }})
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [benchmark, benchmark/reference]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+      - name: Test
+        working-directory: ${{ matrix.module }}
+        run: go test ./...
+
   lint:
     runs-on: ubuntu-latest
     steps:

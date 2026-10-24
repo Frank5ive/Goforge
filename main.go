@@ -16,13 +16,19 @@ import (
 var TemplatesFS embed.FS
 
 func main() {
-	// Hand the embedded templates to the cmd package, rooted at templates/
+	os.Exit(run())
+}
+
+// run hands the embedded templates to the cmd package and runs goforge,
+// returning the process's exit code.
+func run() int {
+	// The templates are rooted at templates/
 	templates, err := fs.Sub(TemplatesFS, "templates")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	cmd.SetTemplatesFS(templates)
 
-	os.Exit(cmd.Execute())
+	return cmd.Execute()
 }
