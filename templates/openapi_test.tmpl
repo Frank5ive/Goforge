@@ -1,0 +1,95 @@
+package openapi
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func load(t *testing.T) map[string]any {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(JSON(), &doc); err != nil {
+		t.Fatalf("openapi.json is not valid JSON: %v", err)
+	}
+	return doc
+}
+
+func TestDocumentIsOpenAPI31(t *testing.T) {
+	doc := load(t)
+
+	if version, _ := doc["openapi"].(string); !strings.HasPrefix(version, "3.1") {
+		t.Errorf("openapi = %q, want 3.1.x", version)
+	}
+	if info, _ := doc["info"].(map[string]any); info["title"] == "" || info["version"] == "" {
+		t.Errorf("info = %v, want a title and a version", info)
+	}
+	if paths, _ := doc["paths"].(map[string]any); len(paths) == 0 {
+		t.Error("the document has no paths")
+	}
+}
+
+func TestEveryReferenceResolves(t *testing.T) {
+	doc := load(t)
+	components, _ := doc["components"].(map[string]any)
+	schemas, _ := components["schemas"].(map[string]any)
+
+	var walk func(v any)
+	walk = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			if ref, ok := v["$ref"].(string); ok {
+				name, found := strings.CutPrefix(ref, "#/components/schemas/")
+				if _, exists := schemas[name]; !found || !exists {
+					t.Errorf("$ref %q does not resolve", ref)
+				}
+			}
+			for _, child := range v {
+				walk(child)
+			}
+		case []any:
+			for _, child := range v {
+				walk(child)
+			}
+		}
+	}
+	walk(doc)
+}
+
+func TestOperationsAreDescribed(t *testing.T) {
+	paths, _ := load(t)["paths"].(map[string]any)
+	ids := map[string]string{}
+	for path, item := range paths {
+		for method, op := range item.(map[string]any) {
+			op, _ := op.(map[string]any)
+			where := strings.ToUpper(method) + " " + path
+
+			id, _ := op["operationId"].(string)
+			if id == "" {
+				t.Errorf("%s has no operationId", where)
+			} else if other, dup := ids[id]; dup {
+				t.Errorf("%s and %s share the operationId %q", where, other, id)
+			}
+			ids[id] = where
+
+			if responses, _ := op["responses"].(map[string]any); len(responses) == 0 {
+				t.Errorf("%s has no responses", where)
+			}
+		}
+	}
+}
+
+func TestHandlerServesTheDocument(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Handler(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/openapi.json", nil))
+
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("GET /openapi.json = %d %q, want 200 application/json", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if !bytes.Equal(rec.Body.Bytes(), JSON()) {
+		t.Error("the response body is not the document")
+	}
+}

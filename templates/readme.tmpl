@@ -5,6 +5,7 @@ A production-ready Go HTTP server, generated with [GoForge](https://github.com/F
 ## Features
 
 - `GET /health` endpoint returning JSON
+- `GET /openapi.json`: an OpenAPI 3.1 description of the API, kept current by `goforge add resource`
 - Graceful shutdown on SIGINT/SIGTERM (in-flight requests get 30 seconds to finish)
 - Request IDs (`X-Request-ID`) and panic recovery middleware
 - HTTP timeouts, including `ReadHeaderTimeout` against slow-header attacks{{if .IncludeLogger}}
@@ -113,7 +114,10 @@ trace a request across services; otherwise one is generated.
 │   ├── health.go           # GET /health
 │   ├── respond.go          # WriteJSON, WriteError, DecodeJSON, InternalError, Logger
 │   ├── health_test.go
-│   └── respond_test.go{{if .IncludeLogger}}
+│   └── respond_test.go
+├── openapi/
+│   ├── openapi.json        # OpenAPI 3.1 document, generated: don't edit by hand
+│   └── openapi.go          # Serves it at GET /openapi.json{{if .IncludeLogger}}
 ├── logger/
 │   └── logger.go           # slog setup from LOG_LEVEL and LOG_FORMAT{{end}}
 ├── .goforge.json           # Records options and resources for `goforge add`

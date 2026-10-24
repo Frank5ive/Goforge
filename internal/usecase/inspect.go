@@ -70,6 +70,11 @@ func (u *ProjectInspectorUsecase) Inspect(dir string) (domain.ProjectInfo, error
 		Problems:  []string{},
 	}
 
+	// Projects generated before the OpenAPI document existed don't serve one
+	if u.fileWriter.FileExists(filepath.Join(dir, filepath.FromSlash(OpenAPIFile))) {
+		info.Routes = append(info.Routes, domain.Route{Method: "GET", Path: "/openapi.json"})
+	}
+
 	for _, r := range manifest.Resources {
 		config := r.ResourceConfig(dir)
 		res := domain.ResourceInfo{

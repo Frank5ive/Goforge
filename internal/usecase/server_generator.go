@@ -38,6 +38,9 @@ var projectFiles = []projectFile{
 	{template: "server.tmpl", path: "server/server.go", include: always},
 	{template: "deps.tmpl", path: "server/deps.go", include: always},
 	{template: "routes.tmpl", path: "server/routes.go", include: always},
+	{template: "openapi.tmpl", path: "openapi/openapi.go", include: always},
+	{template: "openapi_test.tmpl", path: "openapi/openapi_test.go", include: always},
+	{template: "server_openapi_test.tmpl", path: "server/openapi_test.go", include: always},
 	{template: "middleware.tmpl", path: "server/middleware.go", include: always},
 	{template: "server_test.tmpl", path: "server/server_test.go", include: always},
 	{template: "handler.tmpl", path: "handlers/health.go", include: always},
@@ -106,8 +109,17 @@ func (u *ServerGeneratorUsecase) Generate(config *domain.ServerConfig) error {
 		}
 	}
 
-	if err := writeManifest(u.fileWriter, projectPath, domain.NewManifest(config)); err != nil {
+	manifest := domain.NewManifest(config)
+	if err := writeManifest(u.fileWriter, projectPath, manifest); err != nil {
 		return u.cleanup(projectPath, domain.NewGenerationError("generate_files", "failed to write "+domain.ManifestFile, err))
+	}
+	// Every resource added later regenerates this document from the manifest
+	spec, err := buildOpenAPI(manifest)
+	if err != nil {
+		return u.cleanup(projectPath, domain.NewGenerationError("generate_files", "failed to build the OpenAPI document", err))
+	}
+	if err := u.fileWriter.WriteFile(filepath.Join(projectPath, filepath.FromSlash(OpenAPIFile)), string(spec)); err != nil {
+		return u.cleanup(projectPath, domain.NewGenerationError("generate_files", "failed to write "+OpenAPIFile, err))
 	}
 
 	return nil

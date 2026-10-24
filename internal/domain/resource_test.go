@@ -247,3 +247,17 @@ func TestParseFields_Ref(t *testing.T) {
 		}
 	}
 }
+
+func TestResourceConfigValidate_ReservesTheOpenAPIPackage(t *testing.T) {
+	c := &ResourceConfig{ProjectDir: ".", Name: "spec", Plural: "openapi", Fields: []Field{{Name: "name", Type: FieldString}}}
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "openapi") {
+		t.Errorf("Validate() error = %v, want the reserved openapi package named; it would collide with the generated openapi/ directory", err)
+	}
+
+	// The same config with an ordinary plural is fine, so the error above is the reservation
+	c.Plural = "specs"
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() with an ordinary plural error = %v", err)
+	}
+}
