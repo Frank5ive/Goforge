@@ -1,0 +1,223 @@
+{
+  "task": "store",
+  "condition": "goforge",
+  "run": 2,
+  "model": "sonnet",
+  "goforge_version": "v0.2.0",
+  "image": "goforge-bench:claude-2.1.308-goforge-v0.2.0-1469c619",
+  "image_id": "sha256:a9c4e2c2af245c70240dc4d337ce6aba45363140d4535e0d2ed72f3e73d9bd22",
+  "started": "2026-10-23T15:32:36.00793892+02:00",
+  "agent": {
+    "outcome": "success",
+    "cost_usd": 0.1587707,
+    "duration_ms": 99524,
+    "turns": 6,
+    "input_tokens": 12,
+    "output_tokens": 8895,
+    "cache_read_tokens": 112687,
+    "cache_write_tokens": 14632,
+    "tool_calls": 5,
+    "go_commands": 3,
+    "failed_go_commands": 0,
+    "goforge_commands": 4,
+    "goforge_generated": 0,
+    "permission_denials": 0
+  },
+  "score": {
+    "built": true,
+    "vetted": true,
+    "own_tests_passed": true,
+    "started": true,
+    "passed": 46,
+    "total": 46,
+    "checks": [
+      {
+        "name": "health check responds 200",
+        "passed": true
+      },
+      {
+        "name": "categories: create one",
+        "passed": true
+      },
+      {
+        "name": "categories: optional fields get their defaults",
+        "passed": true
+      },
+      {
+        "name": "categories: get one by ID, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "categories: data that breaks a rule is a 422",
+        "passed": true
+      },
+      {
+        "name": "categories: list oldest first, with paging",
+        "passed": true
+      },
+      {
+        "name": "categories: PUT replaces an item, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "categories: PATCH changes only the fields sent, and an invalid PATCH changes nothing",
+        "passed": true
+      },
+      {
+        "name": "categories: delete an item, then 404",
+        "passed": true
+      },
+      {
+        "name": "products: create one",
+        "passed": true
+      },
+      {
+        "name": "products: optional fields get their defaults",
+        "passed": true
+      },
+      {
+        "name": "products: get one by ID, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "products: data that breaks a rule is a 422",
+        "passed": true
+      },
+      {
+        "name": "products: list oldest first, with paging",
+        "passed": true
+      },
+      {
+        "name": "products: PUT replaces an item, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "products: PATCH changes only the fields sent, and an invalid PATCH changes nothing",
+        "passed": true
+      },
+      {
+        "name": "products: delete an item, then 404",
+        "passed": true
+      },
+      {
+        "name": "customers: create one",
+        "passed": true
+      },
+      {
+        "name": "customers: optional fields get their defaults",
+        "passed": true
+      },
+      {
+        "name": "customers: get one by ID, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "customers: data that breaks a rule is a 422",
+        "passed": true
+      },
+      {
+        "name": "customers: list oldest first, with paging",
+        "passed": true
+      },
+      {
+        "name": "customers: PUT replaces an item, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "customers: PATCH changes only the fields sent, and an invalid PATCH changes nothing",
+        "passed": true
+      },
+      {
+        "name": "customers: delete an item, then 404",
+        "passed": true
+      },
+      {
+        "name": "suppliers: create one",
+        "passed": true
+      },
+      {
+        "name": "suppliers: optional fields get their defaults",
+        "passed": true
+      },
+      {
+        "name": "suppliers: get one by ID, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "suppliers: data that breaks a rule is a 422",
+        "passed": true
+      },
+      {
+        "name": "suppliers: list oldest first, with paging",
+        "passed": true
+      },
+      {
+        "name": "suppliers: PUT replaces an item, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "suppliers: PATCH changes only the fields sent, and an invalid PATCH changes nothing",
+        "passed": true
+      },
+      {
+        "name": "suppliers: delete an item, then 404",
+        "passed": true
+      },
+      {
+        "name": "warehouses: create one",
+        "passed": true
+      },
+      {
+        "name": "warehouses: optional fields get their defaults",
+        "passed": true
+      },
+      {
+        "name": "warehouses: get one by ID, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "warehouses: data that breaks a rule is a 422",
+        "passed": true
+      },
+      {
+        "name": "warehouses: list oldest first, with paging",
+        "passed": true
+      },
+      {
+        "name": "warehouses: PUT replaces an item, and 404 for an unknown ID",
+        "passed": true
+      },
+      {
+        "name": "warehouses: PATCH changes only the fields sent, and an invalid PATCH changes nothing",
+        "passed": true
+      },
+      {
+        "name": "warehouses: delete an item, then 404",
+        "passed": true
+      },
+      {
+        "name": "a product in an unknown category is a 422",
+        "passed": true
+      },
+      {
+        "name": "deleting a category with products is a 409 and keeps it",
+        "passed": true
+      },
+      {
+        "name": "malformed JSON is a 400",
+        "passed": true
+      },
+      {
+        "name": "invalid paging is a 400",
+        "passed": true
+      },
+      {
+        "name": "everything survives a restart",
+        "passed": true
+      }
+    ],
+    "go_lines": 451,
+    "test_lines": 80
+  },
+  "work_dir": "/home/frank/.cache/goforge-bench/store-goforge_v0.2.0-2-20261023-153236"
+}

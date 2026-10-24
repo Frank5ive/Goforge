@@ -1,0 +1,139 @@
+{
+  "task": "products",
+  "condition": "goforge",
+  "run": 2,
+  "model": "sonnet",
+  "goforge_version": "b632824cf8a7",
+  "image": "goforge-bench:claude-2.1.308-goforge-b632824cf8a7-1469c619",
+  "image_id": "sha256:1d7103974045e1ff4ff6b864b16fdf81778fe5213cf18187b1a07459cb1ebcef",
+  "started": "2026-10-23T15:42:43.446940898+02:00",
+  "agent": {
+    "outcome": "success",
+    "cost_usd": 0.0783539,
+    "duration_ms": 52654,
+    "turns": 3,
+    "input_tokens": 6,
+    "output_tokens": 5367,
+    "cache_read_tokens": 47999,
+    "cache_write_tokens": 4968,
+    "tool_calls": 2,
+    "go_commands": 1,
+    "failed_go_commands": 0,
+    "goforge_commands": 1,
+    "goforge_generated": 0,
+    "permission_denials": 0
+  },
+  "score": {
+    "built": true,
+    "vetted": true,
+    "own_tests_passed": true,
+    "started": true,
+    "passed": 25,
+    "total": 25,
+    "checks": [
+      {
+        "name": "health check responds 200",
+        "passed": true
+      },
+      {
+        "name": "create a product",
+        "passed": true
+      },
+      {
+        "name": "price and in_stock default to 0 and false",
+        "passed": true
+      },
+      {
+        "name": "a 100-character name is accepted",
+        "passed": true
+      },
+      {
+        "name": "get a product by ID",
+        "passed": true
+      },
+      {
+        "name": "an unknown ID is a 404 with an error",
+        "passed": true
+      },
+      {
+        "name": "a missing name is a 422",
+        "passed": true
+      },
+      {
+        "name": "a blank name is a 422",
+        "passed": true
+      },
+      {
+        "name": "a 101-character name is a 422",
+        "passed": true
+      },
+      {
+        "name": "a negative price is a 422",
+        "passed": true
+      },
+      {
+        "name": "malformed JSON is a 400",
+        "passed": true
+      },
+      {
+        "name": "invalid products are not stored",
+        "passed": true
+      },
+      {
+        "name": "list products oldest first with defaults",
+        "passed": true
+      },
+      {
+        "name": "limit and offset page through the list",
+        "passed": true
+      },
+      {
+        "name": "a limit above 100 is treated as 100",
+        "passed": true
+      },
+      {
+        "name": "a negative limit is a 400",
+        "passed": true
+      },
+      {
+        "name": "a non-numeric offset is a 400",
+        "passed": true
+      },
+      {
+        "name": "replace a product with PUT",
+        "passed": true
+      },
+      {
+        "name": "PUT applies the same rules as POST",
+        "passed": true
+      },
+      {
+        "name": "PUT to an unknown ID is a 404",
+        "passed": true
+      },
+      {
+        "name": "PATCH changes only the fields sent",
+        "passed": true
+      },
+      {
+        "name": "an invalid PATCH is a 422 and changes nothing",
+        "passed": true
+      },
+      {
+        "name": "PATCH to an unknown ID is a 404",
+        "passed": true
+      },
+      {
+        "name": "delete a product",
+        "passed": true
+      },
+      {
+        "name": "deleting an unknown ID is a 404",
+        "passed": true
+      }
+    ],
+    "go_lines": 269,
+    "test_lines": 82
+  },
+  "work_dir": "/home/frank/.cache/goforge-bench/products-goforge_b632824cf8a7-2-20261023-154243"
+}
