@@ -1,0 +1,48 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"regexp"
+	"strings"
+	"testing"
+
+	"{{.GetModuleName}}/openapi"
+)
+
+// pathParameter matches a path parameter in an OpenAPI path, e.g. {id}.
+var pathParameter = regexp.MustCompile(`\{[^}]+\}`)
+
+// TestOpenAPIMatchesRoutes checks that the document describes the router: each
+// operation it lists must be served by exactly the pattern it names. When a
+// route is renamed or removed without regenerating the document, this fails.
+func TestOpenAPIMatchesRoutes(t *testing.T) {
+	var doc struct {
+		Paths map[string]map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(openapi.JSON(), &doc); err != nil {
+		t.Fatalf("openapi.json is not valid JSON: %v", err)
+	}
+	if len(doc.Paths) == 0 {
+		t.Fatal("openapi.json has no paths")
+	}
+
+	mux := http.NewServeMux()
+	registerRoutes(mux, Deps{})
+
+	for path, operations := range doc.Paths {
+		for method := range operations {
+			pattern := strings.ToUpper(method) + " " + path
+			t.Run(pattern, func(t *testing.T) {
+				url := pathParameter.ReplaceAllString(path, "some-id")
+				req := httptest.NewRequestWithContext(t.Context(), strings.ToUpper(method), url, nil)
+
+				if _, got := mux.Handler(req); got != pattern {
+					t.Errorf("%s is served by the pattern %q, but openapi.json says %q; "+
+						"run `goforge add resource` to regenerate it, or fix the route", url, got, pattern)
+				}
+			})
+		}
+	}
+}

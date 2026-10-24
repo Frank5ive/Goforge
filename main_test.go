@@ -317,6 +317,8 @@ func TestAddResource(t *testing.T) {
 		{Name: "counter", Fields: []domain.Field{{Name: "count", Type: domain.FieldInt}}},
 		// Irregular plural
 		{Name: "person", Plural: "people", Fields: []domain.Field{{Name: "name", Type: domain.FieldString}}},
+		// A snake_case name: its route is /blog-posts, and so is its path in openapi.json
+		{Name: "blog_post", Fields: []domain.Field{{Name: "title", Type: domain.FieldString}}},
 	}
 	for _, r := range resources {
 		r.ProjectDir = project
@@ -390,9 +392,26 @@ func TestAddResource(t *testing.T) {
 	}
 
 	// The other resources are registered alongside it
-	for _, path := range []string{"/people", "/counters"} {
+	for _, path := range []string{"/people", "/counters", "/blog-posts"} {
 		if status, _, _ := request(t, http.MethodGet, baseURL+path, ""); status != http.StatusOK {
 			t.Errorf("GET %s = %d, want %d", path, status, http.StatusOK)
+		}
+	}
+
+	// The API describes itself, including every resource added since generation
+	var spec struct {
+		OpenAPI string                    `json:"openapi"`
+		Paths   map[string]map[string]any `json:"paths"`
+	}
+	if status, _, body := request(t, http.MethodGet, baseURL+"/openapi.json", ""); status != http.StatusOK || json.Unmarshal(body, &spec) != nil {
+		t.Fatalf("GET /openapi.json = %d %s", status, body)
+	}
+	if !strings.HasPrefix(spec.OpenAPI, "3.1") {
+		t.Errorf("openapi = %q, want 3.1.x", spec.OpenAPI)
+	}
+	for _, path := range []string{"/products", "/products/{id}", "/people", "/counters", "/blog-posts", "/health"} {
+		if _, ok := spec.Paths[path]; !ok {
+			t.Errorf("openapi.json has no %s", path)
 		}
 	}
 }

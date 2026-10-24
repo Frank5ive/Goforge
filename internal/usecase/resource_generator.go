@@ -151,6 +151,15 @@ func (u *ResourceGeneratorUsecase) Add(config *domain.ResourceConfig) (domain.Ch
 	if err := planManifest(cs, dir, manifest); err != nil {
 		return domain.Changes{}, domain.NewGenerationError("manifest", "cannot update "+domain.ManifestFile, err)
 	}
+	// Projects from before the OpenAPI document existed lack it, and adding one would
+	// mean editing their routes, so only projects that have it keep it current
+	if openAPIPath := filepath.Join(dir, filepath.FromSlash(OpenAPIFile)); u.fileWriter.FileExists(openAPIPath) {
+		spec, err := buildOpenAPI(manifest)
+		if err != nil {
+			return domain.Changes{}, domain.NewGenerationError("openapi", "cannot update "+OpenAPIFile, err)
+		}
+		cs.edit(openAPIPath, string(spec))
+	}
 
 	if err := cs.apply(nil, nil); err != nil {
 		return domain.Changes{}, domain.NewGenerationError("apply", "the project was left unchanged", err)

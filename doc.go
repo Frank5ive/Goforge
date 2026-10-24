@@ -36,7 +36,9 @@ Or step by step, inside a generated project:
 	goforge add db postgres
 
 Each resource serves a paged list, create, get, PUT, PATCH, and DELETE, with
-its validation rules checked and tested. Field types are string, int, float,
+its validation rules checked and tested. The project describes itself at
+GET /openapi.json, an OpenAPI 3.1 document that goforge regenerates for each
+resource it adds. Field types are string, int, float,
 bool, time, email, and ref(<resource>). A trailing ? makes a string, email, or
 ref optional, and (min..max) bounds a number or a string's length.
 
