@@ -255,6 +255,31 @@ stable `code`, a `message`, and a `hint` on how to fix it:
 | `cancelled` | The interactive prompts were cancelled |
 | `internal_error` | Anything else |
 
+### MCP server
+
+`goforge mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server on standard
+input and output, so any MCP client can call GoForge as tools. In Claude Code:
+
+```
+claude mcp add goforge -- goforge mcp
+```
+
+For other clients, run `goforge mcp` as a stdio server. It offers five tools, one per command, and
+each returns the same JSON as the command with `--json`:
+
+| Tool | Does |
+|------|------|
+| `goforge_generate` | Create a project, with its resources and database, in one call; nothing is created if any part fails |
+| `goforge_add_resource` | Add a REST resource to a project |
+| `goforge_add_db` | Move a project onto PostgreSQL, MySQL, SQLite, or MongoDB |
+| `goforge_inspect` | Describe a project: resources, routes, database, problems (read-only) |
+| `goforge_check` | Run gofmt, vet, the tests, and golangci-lint, and report each problem (read-only) |
+
+A failed call is a tool error whose text is the JSON result, with its stable `code` and a `hint`.
+Tools take the project directory as an argument, so the server needs no working directory. It runs
+with your permissions and writes where the tools are told to, so connect it only to clients you
+trust.
+
 ### Install the skill
 
 An agent only uses GoForge if it knows to. The [`goforge` skill](skills/goforge/SKILL.md) tells it
@@ -268,6 +293,9 @@ with `goforge check`. In Claude Code:
 
 For other agents that read `SKILL.md` files, copy the `skills/goforge` directory into the agent's
 skills directory. The skill needs the `goforge` binary installed (see [Installation](#-installation)).
+
+The skill and the MCP server work together: the skill says when and how to use GoForge, and the
+server gives the agent tools to do it without a shell.
 
 A compact reference for language models is in [`llms.txt`](llms.txt).
 

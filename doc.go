@@ -44,6 +44,10 @@ ref optional, and (min..max) bounds a number or a string's length.
 
 # Scripts and AI agents
 
+goforge mcp runs a Model Context Protocol server on standard input and output,
+with a tool for each command, so MCP clients such as Claude Code can call
+goforge directly.
+
 Commands never prompt without a terminal. generate and the add commands accept
 --dry-run, and change all files or none. generate, add, inspect, and check
 accept --json, which prints the result as JSON; a failure exits with status 1

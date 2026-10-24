@@ -31,6 +31,7 @@ func newRootCmd() *cobra.Command {
   goforge inspect         describe a project: resources, routes, database, settings
   goforge check           run gofmt, go vet, the tests, and golangci-lint, and report
                           each problem with its file and line
+  goforge mcp             run an MCP server, so agents can call these as tools
 
 A whole API in one command (each --resource is name:fields, or name/plural:fields):
 
@@ -72,6 +73,7 @@ check accept --json. Output is a compact summary when piped.`,
 	root.AddCommand(newAddCmd())
 	root.AddCommand(newInspectCmd())
 	root.AddCommand(newCheckCmd())
+	root.AddCommand(newMCPCmd())
 	return root
 }
 
