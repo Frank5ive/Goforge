@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-24
+
 ### Added
 - Field rules in `--fields`: an `email` type, and `(min..max)` ranges for numbers and string
   lengths (`name:string(1..100)`, `price:float(0..)`). Each rule becomes a check in the generated
@@ -153,6 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
-[Unreleased]: https://github.com/Frank5ive/goforge/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Frank5ive/goforge/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Frank5ive/goforge/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Frank5ive/goforge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Frank5ive/goforge/releases/tag/v0.1.0

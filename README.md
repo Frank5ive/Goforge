@@ -777,11 +777,16 @@ It helps others discover the project and motivates continued development.
 - ✅ Traceable errors in generated projects: logged causes and request IDs
 - ✅ `AGENTS.md` in generated projects, and `llms.txt` for language models
 
+### v0.2.1 (Released)
+- ✅ A whole API in one command: `goforge generate --resource ...`
+- ✅ Field rules (`email`, `(min..max)` ranges) and `ref(<resource>)` fields that link resources
+- ✅ Compact output for AI agents, and a self-sufficient `goforge --help`
+- ✅ A published [benchmark](benchmark/README.md): agents building Go backends with and without GoForge
+
 ### Next
-- [ ] **Published benchmark:** agents building Go backends with and without GoForge
 - [ ] **v0.3: In the agent ecosystem.** An agent skill, an MCP server, OpenAPI generated from
   resources, and a Homebrew tap
-- [ ] **v0.4: Production features.** Authentication, filtering and sorting, field rules, and
+- [ ] **v0.4: Production features.** Authentication, filtering and sorting, unique fields, and
   OpenTelemetry tracing with Prometheus metrics
 
 ### Later
