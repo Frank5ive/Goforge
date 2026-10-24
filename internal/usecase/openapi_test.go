@@ -284,7 +284,7 @@ func TestBuildOpenAPI_SchemasAllowWhatValidateAllows(t *testing.T) {
 	field := func(name string) map[string]any { return props[name].(map[string]any) }
 
 	// Validate rejects a required string that is blank or only spaces
-	for _, name := range []string{"title", "slug", "owner_id"} {
+	for _, name := range []string{"title", "slug", "owner_id", "contact"} {
 		if field(name)["pattern"] != `\S` {
 			t.Errorf("%s = %v, want a pattern requiring a non-space character", name, field(name))
 		}
@@ -292,8 +292,8 @@ func TestBuildOpenAPI_SchemasAllowWhatValidateAllows(t *testing.T) {
 	if _, has := field("body")["pattern"]; has {
 		t.Errorf("body = %v: an optional string may be blank", field("body"))
 	}
-	if _, has := field("contact")["pattern"]; has {
-		t.Errorf("contact = %v: an email's format already rules out blank", field("contact"))
+	if f := field("contact"); f["pattern"] != `\S` || f["format"] != "email" {
+		t.Errorf("contact = %v, want the email format and a non-space pattern: format alone may not be enforced", f)
 	}
 
 	// Validate skips an optional field's rules when it is empty, so "" must stay valid

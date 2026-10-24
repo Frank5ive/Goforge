@@ -344,9 +344,9 @@ func fieldSchema(f domain.Field) object {
 		}
 	}
 
-	// A required string or reference can't be blank or only spaces (a required
-	// email is already covered by its format)
-	if f.Required() && f.Type != domain.FieldEmail {
+	// A required string, email, or reference can't be blank or only spaces.
+	// format is only an annotation to many validators, so it can't stand in
+	if f.Required() {
 		s["pattern"] = `\S`
 	}
 
