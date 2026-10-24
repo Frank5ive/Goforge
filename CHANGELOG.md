@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- An agent skill, `skills/goforge/SKILL.md`, that teaches coding agents when to use GoForge and
+  how: one-command APIs, field syntax, where their own logic goes, and how to verify. Install it
+  in Claude Code with `/plugin marketplace add Frank5ive/Goforge`. Tests keep it in step with the
+  CLI: every command, flag, and error code it mentions must exist
+
 ## [0.2.1] - 2026-10-24
 
 ### Added

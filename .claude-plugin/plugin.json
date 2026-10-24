@@ -1,0 +1,9 @@
+{
+  "name": "goforge",
+  "description": "Generate and extend Go REST API backends with the goforge CLI: resources, databases, tests, CI, and Docker from one command.",
+  "author": { "name": "Frank Gondwe" },
+  "homepage": "https://github.com/Frank5ive/goforge",
+  "repository": "https://github.com/Frank5ive/goforge",
+  "license": "MIT",
+  "keywords": ["go", "golang", "rest", "api", "scaffold", "generator", "backend"]
+}

@@ -254,6 +254,20 @@ stable `code`, a `message`, and a `hint` on how to fix it:
 | `cancelled` | The interactive prompts were cancelled |
 | `internal_error` | Anything else |
 
+### Install the skill
+
+An agent only uses GoForge if it knows to. The [`goforge` skill](skills/goforge/SKILL.md) tells it
+when to reach for GoForge and how to drive it: build a whole API in one command, add rules, verify
+with `goforge check`. In Claude Code:
+
+```
+/plugin marketplace add Frank5ive/Goforge
+/plugin install goforge@goforge
+```
+
+For other agents that read `SKILL.md` files, copy the `skills/goforge` directory into the agent's
+skills directory. The skill needs the `goforge` binary installed (see [Installation](#-installation)).
+
 A compact reference for language models is in [`llms.txt`](llms.txt).
 
 ---

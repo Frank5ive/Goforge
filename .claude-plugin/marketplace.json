@@ -1,0 +1,11 @@
+{
+  "name": "goforge",
+  "owner": { "name": "Frank Gondwe" },
+  "plugins": [
+    {
+      "name": "goforge",
+      "source": "./",
+      "description": "Generate and extend Go REST API backends with the goforge CLI: resources, databases, tests, CI, and Docker from one command."
+    }
+  ]
+}
