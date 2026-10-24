@@ -95,7 +95,7 @@ var identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
 
 // reservedPackages are directories a generated project already uses, so a
 // resource package cannot take their names.
-var reservedPackages = []string{"bin", "config", "docs", "handlers", "internal", "logger", "main", "server", "testdata", "vendor"}
+var reservedPackages = []string{"bin", "config", "docs", "handlers", "internal", "logger", "main", "openapi", "server", "testdata", "vendor"}
 
 // reservedResourceNames would collide with the types generated in every resource
 // package (Service, Input, Repository, ...).

@@ -236,3 +236,85 @@ func TestResourceGenerator_AddLeavesProjectsWithoutADocumentAlone(t *testing.T) 
 		t.Error("an older project got an OpenAPI document that nothing serves")
 	}
 }
+
+func TestBuildOpenAPI_RefusesSchemaNamesThatCollide(t *testing.T) {
+	str := []domain.Field{{Name: "name", Type: domain.FieldString}}
+	tests := []struct {
+		name      string
+		resources []domain.ManifestResource
+		schema    string
+	}{
+		{"a resource called error", []domain.ManifestResource{{Name: "error", Plural: "errors", Fields: str}}, "Error"},
+		{"a resource named like another's page", []domain.ManifestResource{
+			{Name: "product", Plural: "products", Fields: str},
+			{Name: "product_page", Plural: "product_pages", Fields: str},
+		}, "ProductPage"},
+		{"a resource named like another's input", []domain.ManifestResource{
+			{Name: "order", Plural: "orders", Fields: str},
+			{Name: "order_input", Plural: "order_inputs", Fields: str},
+		}, "OrderInput"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := buildOpenAPI(domain.Manifest{Module: "example.com/app", Resources: tt.resources})
+			if err == nil || !strings.Contains(err.Error(), tt.schema) || !strings.Contains(err.Error(), "rename the resource") {
+				t.Fatalf("buildOpenAPI() error = %v, want it to name %s and say to rename", err, tt.schema)
+			}
+			if code := domain.ErrorCode(err); code != domain.CodeInvalidInput {
+				t.Errorf("error code = %s, want %s", code, domain.CodeInvalidInput)
+			}
+		})
+	}
+}
+
+func TestBuildOpenAPI_SchemasAllowWhatValidateAllows(t *testing.T) {
+	doc := parseSpec(t, domain.Manifest{Module: "example.com/app", Resources: []domain.ManifestResource{{
+		Name: "note", Plural: "notes", Fields: []domain.Field{
+			{Name: "title", Type: domain.FieldString},
+			{Name: "body", Type: domain.FieldString, Optional: true},
+			{Name: "summary", Type: domain.FieldString, Optional: true, Min: bound(10), Max: bound(200)},
+			{Name: "slug", Type: domain.FieldString, Min: bound(3)},
+			{Name: "tagline", Type: domain.FieldString, Optional: true, Max: bound(50)},
+			{Name: "contact", Type: domain.FieldEmail},
+			{Name: "backup", Type: domain.FieldEmail, Optional: true},
+			{Name: "owner_id", Type: domain.FieldRef, Ref: "owner"},
+		},
+	}}})
+	props := at(t, doc, "components", "schemas", "NoteInput", "properties").(map[string]any)
+	field := func(name string) map[string]any { return props[name].(map[string]any) }
+
+	// Validate rejects a required string that is blank or only spaces
+	for _, name := range []string{"title", "slug", "owner_id"} {
+		if field(name)["pattern"] != `\S` {
+			t.Errorf("%s = %v, want a pattern requiring a non-space character", name, field(name))
+		}
+	}
+	if _, has := field("body")["pattern"]; has {
+		t.Errorf("body = %v: an optional string may be blank", field("body"))
+	}
+	if _, has := field("contact")["pattern"]; has {
+		t.Errorf("contact = %v: an email's format already rules out blank", field("contact"))
+	}
+
+	// Validate skips an optional field's rules when it is empty, so "" must stay valid
+	for _, name := range []string{"summary", "backup"} {
+		anyOf, ok := field(name)["anyOf"].([]any)
+		if !ok || len(anyOf) != 2 || anyOf[0].(map[string]any)["pattern"] != `^\s*$` {
+			t.Errorf("%s = %v, want anyOf an empty value or the rules", name, field(name))
+		}
+		if field(name)["type"] != "string" {
+			t.Errorf("%s = %v, want type string kept for client generators", name, field(name))
+		}
+	}
+	rules := field("summary")["anyOf"].([]any)[1].(map[string]any)
+	if rules["minLength"] != 10.0 || rules["maxLength"] != 200.0 {
+		t.Errorf("summary's rules = %v, want 10 to 200", rules)
+	}
+	// An optional string with only a maximum has nothing an empty value breaks
+	if f := field("tagline"); f["maxLength"] != 50.0 || f["anyOf"] != nil {
+		t.Errorf("tagline = %v, want a plain maxLength", f)
+	}
+	if field("slug")["minLength"] != 3.0 {
+		t.Errorf("slug = %v, want minLength 3 beside the non-blank pattern", field("slug"))
+	}
+}

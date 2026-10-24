@@ -247,3 +247,10 @@ func TestParseFields_Ref(t *testing.T) {
 		}
 	}
 }
+
+func TestResourceConfigValidate_ReservesTheOpenAPIPackage(t *testing.T) {
+	c := &ResourceConfig{Name: "spec", Plural: "openapi", Fields: []Field{{Name: "name", Type: FieldString}}}
+	if err := c.Validate(); err == nil {
+		t.Error("a resource whose package is openapi was accepted; it would collide with the generated openapi/ directory")
+	}
+}

@@ -28,8 +28,10 @@ type openAPIDoc struct {
 	Components map[string]object   `json:"components"`
 }
 
-type pathItem map[string]operation // by lowercase method
+// pathItem holds a path's operations by lowercase HTTP method.
+type pathItem map[string]operation
 
+// operation is one HTTP method on one path.
 type operation struct {
 	Summary     string            `json:"summary"`
 	OperationID string            `json:"operationId"`
@@ -67,7 +69,9 @@ func buildOpenAPI(m domain.Manifest) ([]byte, error) {
 
 	schemas := doc.Components["schemas"]
 	for _, r := range m.Resources {
-		addResource(&doc, schemas, r, referencedBy(m, r))
+		if err := addResource(&doc, schemas, r, referencedBy(m, r)); err != nil {
+			return nil, err
+		}
 	}
 
 	content, err := json.MarshalIndent(doc, "", "  ")
@@ -90,8 +94,11 @@ func referencedBy(m domain.Manifest, r domain.ManifestResource) bool {
 	return false
 }
 
+// schemaRef points at a schema in components.schemas.
 func schemaRef(schema string) object { return object{"$ref": "#/components/schemas/" + schema} }
 
+// errorSchema describes the JSON body of every error response, as written by
+// handlers.WriteError and handlers.InternalError.
 func errorSchema() object {
 	return object{
 		"type":     "object",
@@ -104,14 +111,17 @@ func errorSchema() object {
 	}
 }
 
+// errorResponse is a response whose body is the Error schema.
 func errorResponse(description string) object {
 	return object{"description": description, "content": object{"application/json": object{"schema": schemaRef("Error")}}}
 }
 
+// jsonResponse is a response whose body is a JSON document of the given schema.
 func jsonResponse(description string, schema object) object {
 	return object{"description": description, "content": object{"application/json": object{"schema": schema}}}
 }
 
+// jsonBody is a required JSON request body of the named schema.
 func jsonBody(schema string) object {
 	return object{"required": true, "content": object{"application/json": object{"schema": schemaRef(schema)}}}
 }
@@ -154,7 +164,9 @@ func addOperationalPaths(doc *openAPIDoc) {
 }
 
 // addResource adds a resource's schemas and its two paths.
-func addResource(doc *openAPIDoc, schemas object, r domain.ManifestResource, referenced bool) {
+// It fails if one of the resource's schema names is already taken, for
+// example by a resource called "error", or by "product_page" next to "product".
+func addResource(doc *openAPIDoc, schemas object, r domain.ManifestResource, referenced bool) error {
 	name := domain.CamelCase(r.Name)
 	human := strings.ReplaceAll(r.Name, "_", " ")
 	humanPlural := strings.ReplaceAll(r.Plural, "_", " ")
@@ -189,10 +201,15 @@ func addResource(doc *openAPIDoc, schemas object, r domain.ManifestResource, ref
 	storedRequired := append([]string{"id"}, required...)
 	storedRequired = append(storedRequired, "created_at", "updated_at")
 
-	schemas[name] = object{"type": "object", "required": storedRequired, "properties": stored}
-	schemas[name+"Input"] = input
-	schemas[name+"Patch"] = patch
-	schemas[name+"Page"] = object{
+	define := func(schema string, definition object) error {
+		if _, taken := schemas[schema]; taken {
+			return domain.WithCode(domain.CodeInvalidInput, fmt.Errorf(
+				"the %s resource would define the OpenAPI schema %s, which is already defined; rename the resource", r.Name, schema))
+		}
+		schemas[schema] = definition
+		return nil
+	}
+	page := object{
 		"type":     "object",
 		"required": []string{"items", "total", "limit", "offset"},
 		"properties": object{
@@ -201,6 +218,19 @@ func addResource(doc *openAPIDoc, schemas object, r domain.ManifestResource, ref
 			"limit":  object{"type": "integer", "description": "The page size used."},
 			"offset": object{"type": "integer", "description": "How many " + humanPlural + " were skipped."},
 		},
+	}
+	for _, d := range []struct {
+		name       string
+		definition object
+	}{
+		{name, object{"type": "object", "required": storedRequired, "properties": stored}},
+		{name + "Input", input},
+		{name + "Patch", patch},
+		{name + "Page", page},
+	} {
+		if err := define(d.name, d.definition); err != nil {
+			return err
+		}
 	}
 
 	idParam := object{"name": "id", "in": "path", "required": true, "schema": object{"type": "string"}, "description": "The ID of the " + human + "."}
@@ -266,16 +296,16 @@ func addResource(doc *openAPIDoc, schemas object, r domain.ManifestResource, ref
 			Responses: deleteResponses,
 		},
 	}
+	return nil
 }
 
-// fieldSchema returns the JSON Schema of a field, with its validation rules.
+// fieldSchema returns the JSON Schema of a field, with the rules the generated
+// Validate enforces.
 func fieldSchema(f domain.Field) object {
 	s := object{}
 	switch f.Type {
-	case domain.FieldString:
+	case domain.FieldString, domain.FieldEmail:
 		s["type"] = "string"
-	case domain.FieldEmail:
-		s["type"], s["format"] = "string", "email"
 	case domain.FieldRef:
 		s["type"] = "string"
 		s["description"] = "The ID of an existing " + strings.ReplaceAll(f.Ref, "_", " ") + "."
@@ -289,15 +319,44 @@ func fieldSchema(f domain.Field) object {
 		s["type"], s["format"] = "string", "date-time"
 	}
 
-	minKey, maxKey := "minimum", "maximum"
-	if f.IsText() {
-		minKey, maxKey = "minLength", "maxLength"
+	// Rules that apply only to a value that is there: Validate skips them for
+	// an optional text field left empty, so the schema must allow "" too
+	rules := object{}
+	switch f.Type {
+	case domain.FieldEmail:
+		rules["format"] = "email"
+	case domain.FieldString:
+		if f.Min != nil {
+			rules["minLength"] = *f.Min
+		}
+		if f.Max != nil {
+			rules["maxLength"] = *f.Max
+		}
+		if f.Min != nil || f.Max != nil {
+			s["description"] = "Length is counted without surrounding spaces."
+		}
+	case domain.FieldInt, domain.FieldFloat:
+		if f.Min != nil {
+			rules["minimum"] = *f.Min
+		}
+		if f.Max != nil {
+			rules["maximum"] = *f.Max
+		}
 	}
-	if f.Min != nil {
-		s[minKey] = *f.Min
+
+	// A required string or reference can't be blank or only spaces (a required
+	// email is already covered by its format)
+	if f.Required() && f.Type != domain.FieldEmail {
+		s["pattern"] = `\S`
 	}
-	if f.Max != nil {
-		s[maxKey] = *f.Max
+
+	if _, hasMin := rules["minLength"]; f.Optional && (hasMin || rules["format"] != nil) {
+		// Empty or spaces only, or a value that follows the rules
+		s["anyOf"] = []object{{"pattern": `^\s*$`}, rules}
+		return s
+	}
+	for k, v := range rules {
+		s[k] = v
 	}
 	return s
 }
