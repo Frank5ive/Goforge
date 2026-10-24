@@ -395,3 +395,19 @@ func copyDir(t *testing.T, src, dst string) {
 		t.Fatal(err)
 	}
 }
+
+// TestRun runs goforge the way main does, with the embedded templates.
+func TestRun(t *testing.T) {
+	args := os.Args
+	t.Cleanup(func() { os.Args = args })
+
+	dir := t.TempDir()
+	os.Args = []string{"goforge", "generate", "-n", "shop", "-o", dir, "--yes", "--dry-run"}
+	if code := run(); code != 0 {
+		t.Errorf("run() generate --dry-run = %d, want 0", code)
+	}
+	os.Args = []string{"goforge", "no-such-command"}
+	if code := run(); code != 1 {
+		t.Errorf("run() with an unknown command = %d, want 1", code)
+	}
+}
