@@ -1,3 +1,7 @@
+// Package domain holds GoForge's core types and rules, independent of the CLI
+// and the filesystem: the configuration of a project, resource, or database;
+// field parsing and validation; the .goforge.json manifest; the interfaces the
+// use cases depend on; and the stable error codes reported by --json.
 package domain
 
 import (
