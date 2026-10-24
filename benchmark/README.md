@@ -8,7 +8,7 @@ Full results: [`results/REPORT.md`](results/REPORT.md).
 
 ## Results (October 2026)
 
-Claude Sonnet 5.5 in Claude Code 2.1.308, five tasks, 59 valid runs. "v0.3 work" is GoForge at
+Claude Sonnet 5.5 in Claude Code 2.1.308, five tasks, 59 valid runs. "v0.2.1" is GoForge at
 commit `b632824`, the changes made after the first smoke tests (one-command generation with
 `--resource`, field rules, `ref` fields, compact output, and a self-sufficient `--help`).
 
@@ -16,9 +16,9 @@ commit `b632824`, the changes made after the first smoke tests (one-command gene
 |---|---|---|---|---|---|---|---|
 | scratch | 15 | 15/15 | $0.118 | 90,832 | 4.3 | 1.44 | 15/15 |
 | GoForge offered, v0.2.0 (used in 3 of 14) | 14 | 14/14 | $0.12 | 118,374 | 5 | 1.4 | 14/14 |
-| GoForge offered, v0.3 work (used in 3 of 10) | 10 | 10/10 | $0.11 | 113,274 | 5 | 1.4 | 10/10 |
+| GoForge offered, v0.2.1 (used in 3 of 10) | 10 | 10/10 | $0.11 | 113,274 | 5 | 1.4 | 10/10 |
 | GoForge required, v0.2.0 | 10 | 7/10 | $0.175 | 276,549 | 10.4 | 1.61 | 8/10 |
-| GoForge required, v0.3 work | 10 | 8/10 | $0.122 | 205,665 | 8.7 | 1.29 | 10/10 |
+| GoForge required, v0.2.1 | 10 | 8/10 | $0.122 | 205,665 | 8.7 | 1.29 | 10/10 |
 
 What the results show:
 
@@ -26,7 +26,7 @@ What the results show:
   check, for about $0.12. GoForge doesn't make these tasks more correct.
 - **Offered GoForge, agents mostly don't use it** (6 of 24 runs). Those runs match scratch, as you
   would expect.
-- **The v0.3 work makes building with GoForge much cheaper.** Required to use GoForge, agents
+- **GoForge v0.2.1 makes building with GoForge much cheaper.** Required to use GoForge, agents
   spent 30% less, used 26% fewer tokens and 16% fewer turns, finished 20% faster, and every run's
   own tests passed (8 of 10 before). On the largest task, `store` (five resources on PostgreSQL),
   cost fell 55% ($0.239 to $0.107), tokens 59%, and turns from 16.5 to 9.5; that is also 33%
@@ -51,10 +51,10 @@ Dockerfile, Makefile, CI). Three runs only, so treat it as indicative:
 |---|---|---|---|---|---|---|---|
 | store | scratch | $0.16 | 1.9 | 46/46 | 2 | 442 / 97 | 1% |
 | store | scratch-production (2 runs) | $0.30 | 3.1 | 46/46 | 11 | 775 / 147 | 21% |
-| store | GoForge required, v0.3 work | $0.11 | 1.3 | 46/46 | 11 | 4,122 / 3,504 | 75% |
+| store | GoForge required, v0.2.1 | $0.11 | 1.3 | 46/46 | 11 | 4,122 / 3,504 | 75% |
 | products | scratch | $0.09 | 0.8 | 25/25 | 1 | 280 / 82 | 88% |
 | products | scratch-production (1 run) | $0.22 | 1.6 | 25/25 | 10 | 731 / 249 | 82% |
-| products | GoForge required, v0.3 work | $0.07 | 0.8 | 23/25 | 9.5 | 1,189 / 1,068 | 86% |
+| products | GoForge required, v0.2.1 | $0.07 | 0.8 | 23/25 | 9.5 | 1,189 / 1,068 | 86% |
 
 \*Statement coverage of `go test ./...` without a database, so tests that need PostgreSQL don't
 count for anyone. The `products` task stores items in memory, so it has no migrations. The
