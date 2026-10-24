@@ -25,7 +25,7 @@ generated projects; automated, reproducible releases.
 
 ## Phase 4 (v0.2.0): Discoverable and agent-ready
 
-**Status:** released in v0.2.0, except the benchmark and the awesome-go listing, which follow.
+**Status:** released in v0.2.0; the benchmark followed in v0.2.1. The awesome-go listing remains.
 
 **Goal:** an agent or developer looking for a way to build a Go backend finds GoForge, can tell
 within seconds that it fits, and can drive it without a human at the keyboard.
@@ -58,8 +58,8 @@ within seconds that it fits, and can drive it without a human at the keyboard.
    cost, time to passing tests, correction cycles, and test pass rate. The harness lives in the repo
    so anyone can reproduce it.
 8. **Listings**: submit GoForge to awesome-go. It meets their criteria (a year of history, a
-   `vX.Y.Z` release, docs on pkg.go.dev, about 82% test coverage) except one: the coverage must be
-   published on Codecov or Coveralls. (Go Report Card, once planned here, has shut down.)
+   `vX.Y.Z` release, docs on pkg.go.dev, about 88% test coverage, published on Coveralls); only the
+   submission remains. (Go Report Card, once planned here, has shut down.)
 
 ### Done when
 
@@ -115,7 +115,7 @@ The benchmark comes last, after every other Phase 4 item, so it measures the fin
    resource's routes. Scope to be decided (see below).
 2. **Richer resources**
    - Filtering and sorting on list endpoints, e.g. `?sort=-created_at&in_stock=true`
-   - Field rules beyond required and optional: min and max, maximum length, unique
+   - Unique fields (v0.2.1 added ranges, `email`, and `ref` fields)
 3. **`goforge add observability`**: OpenTelemetry tracing (requests and database calls) and
    Prometheus metrics, off by default
 4. **`goforge doctor`**: checks a project's markers and `.goforge.json`, and explains how to fix
