@@ -168,6 +168,14 @@ func TestResultCompact(t *testing.T) {
 	if out.String() != want {
 		t.Errorf("compact output =\n%s\nwant\n%s", out.String(), want)
 	}
+
+	r.DryRun = true
+	r.Notes, r.NextSteps = nil, nil
+	out.Reset()
+	r.printCompact(&out)
+	if want := "2 files would be created, 1 would be updated"; !strings.Contains(out.String(), want) {
+		t.Errorf("dry-run compact output =\n%s\nwant it to contain %q", out.String(), want)
+	}
 }
 
 func TestPiped(t *testing.T) {

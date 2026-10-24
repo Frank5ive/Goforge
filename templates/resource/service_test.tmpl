@@ -316,6 +316,9 @@ func TestServiceListsItemsCreatedTogetherInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
+	if len(page.Items) != len(want) {
+		t.Fatalf("List() returned %d items, want %d", len(page.Items), len(want))
+	}
 	for i, item := range page.Items {
 		if item.ID != want[i] {
 			t.Fatalf("List() item %d = %s, want the creation order %v", i, item.ID, want)

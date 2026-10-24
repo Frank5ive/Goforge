@@ -98,8 +98,12 @@ func (r *result) printCompact(out io.Writer) {
 	if r.DryRun {
 		prefix = "🔍 Dry run: "
 	}
-	fmt.Fprintf(out, "%s%s (%d files created, %d updated; --json lists them)\n",
-		prefix, strings.TrimSuffix(r.Summary, "."), len(r.Created), len(r.Updated))
+	created, updated := "files created", "updated"
+	if r.DryRun {
+		created, updated = "files would be created", "would be updated"
+	}
+	fmt.Fprintf(out, "%s%s (%d %s, %d %s; --json lists them)\n",
+		prefix, strings.TrimSuffix(r.Summary, "."), len(r.Created), created, len(r.Updated), updated)
 	switch {
 	case len(r.Endpoints) > 6:
 		// Several resources: name their collections, not every route

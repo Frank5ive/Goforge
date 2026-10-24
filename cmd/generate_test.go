@@ -200,3 +200,21 @@ func TestGenerate_ResourceFailureCreatesNothing(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateRejectsDuplicateResources(t *testing.T) {
+	for _, dryRun := range []bool{true, false} {
+		dir := t.TempDir()
+		args := []string{"-n", "shop", "-o", dir, "--yes",
+			"--resource", "product:name:string", "--resource", "product:title:string"}
+		if dryRun {
+			args = append(args, "--dry-run")
+		}
+		_, err := runGenerateCmd(t, args...)
+		if err == nil || !strings.Contains(err.Error(), "already in an earlier --resource") {
+			t.Errorf("dry run %t: error = %v, want the duplicate rejected", dryRun, err)
+		}
+		if _, statErr := os.Stat(filepath.Join(dir, "shop")); !os.IsNotExist(statErr) {
+			t.Errorf("dry run %t: the project was created", dryRun)
+		}
+	}
+}

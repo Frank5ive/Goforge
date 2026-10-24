@@ -143,6 +143,14 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 		if err := rc.Validate(); err != nil {
 			return fmt.Errorf("--resource %q: %w", spec, err)
 		}
+		// Two resources can't share a name or a package, so a real run would
+		// fail on the second; reject it here, before anything is created
+		for _, earlier := range resources {
+			if earlier.Name == rc.Name || earlier.PackageName() == rc.PackageName() {
+				return domain.WithCode(domain.CodeInvalidInput,
+					fmt.Errorf("--resource %q: the %s resource is already in an earlier --resource", spec, earlier.Name))
+			}
+		}
 		resources = append(resources, rc)
 	}
 

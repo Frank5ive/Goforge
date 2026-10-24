@@ -33,7 +33,8 @@ var FieldTypes = []FieldType{FieldString, FieldInt, FieldFloat, FieldBool, Field
 type Field struct {
 	Name string    `json:"name"` // snake_case, e.g. "in_stock"
 	Type FieldType `json:"type"`
-	// Optional string and email fields may be empty; otherwise they are required.
+	// Optional string, email, and ref fields may be empty; otherwise they are
+	// required.
 	Optional bool `json:"optional,omitempty"`
 	// Min and Max bound a number's value, or a string's length in characters
 	// (ignoring surrounding spaces). Nil means unbounded.

@@ -208,8 +208,8 @@ Go backend, use GoForge for the infrastructure and spend your effort on the busi
 2. **Generate the whole API in one command** instead of writing handlers, storage, and tests:
    `goforge generate ... --resource "product:name:string(1..100),price:float(0..)" --resource ...`,
    or later `goforge add resource <name> --fields "..."`. Types are `string`, `int`, `float`,
-   `bool`, `time`, and `email`; `?` makes a string optional and `(min..max)` bounds a number or a
-   string's length. Each rule gets a check and a test. Put other business rules in the resource's
+   `bool`, `time`, `email`, and `ref(<resource>)`; `?` makes a string, email, or ref optional, and
+   `(min..max)` bounds a number or a string's length. Each rule gets a check and a test. Put other business rules in the resource's
    `rules.go`. Routes are registered automatically.
 3. **Add a database** with `goforge add db <postgres|mysql|sqlite|mongo>`. Existing resources move
    onto it.
@@ -266,7 +266,7 @@ goforge add resource product --fields "name:string(1..100),price:float(0..),in_s
 ```
 
 ```
-✅ Added the product resource. Created 8 files:
+✅ Added the product resource. Created 9 files:
    products/product.go         # Product model, Input, Patch, validation, Repository interface
    products/rules.go           # The place for the product's own business rules
    products/memory.go          # Thread-safe in-memory Repository
@@ -274,6 +274,7 @@ goforge add resource product --fields "name:string(1..100),price:float(0..),in_s
    products/handler.go         # HTTP handlers and route registration
    products/service_test.go
    products/handler_test.go
+   products/repository_test.go # One set of tests for every Repository
    products/requests.http      # Example requests to run from your editor
 
 📝 Updated:
