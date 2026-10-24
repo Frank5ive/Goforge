@@ -23,10 +23,24 @@ const (
 	// goforgeRequired: the prompt tells the agent to build the service with
 	// GoForge. This measures GoForge's effect when it is used.
 	goforgeRequired = "goforge-required"
+	// scratchProduction: scratch, with the prompt also asking for what GoForge
+	// projects come with (structure, graceful shutdown, logging, Docker, CI),
+	// so both build the same thing. Not part of "all".
+	scratchProduction = "scratch-production"
 )
 
-// conditions lists every condition, in the order runs alternate through them.
+// conditions lists the conditions "all" runs, in the order runs alternate
+// through them.
 var conditions = []string{scratch, goforge, goforgeRequired}
+
+// knownConditions lists every condition, in report order.
+var knownConditions = []string{scratch, scratchProduction, goforge, goforgeRequired}
+
+// usesGoforge reports whether condition gives the agent GoForge, so its
+// results depend on the GoForge version.
+func usesGoforge(condition string) bool {
+	return strings.HasPrefix(condition, "goforge")
+}
 
 // runConfig configures one agent run.
 type runConfig struct {
@@ -197,7 +211,7 @@ func runAgent(cfg runConfig) (Result, error) {
 		return Result{}, err
 	}
 	version := cfg.goforgeVersion
-	if cfg.condition == scratch {
+	if !usesGoforge(cfg.condition) {
 		version = ""
 	}
 	return Result{
@@ -239,7 +253,7 @@ func scoreInContainer(cfg runConfig, dir string) (Score, error) {
 }
 
 // buildPrompt returns the task prompt. The conditions differ only in the last
-// sentence of the requirements, about GoForge.
+// requirements: production readiness, or GoForge.
 func buildPrompt(condition, spec, devDatabase string) string {
 	var b strings.Builder
 	b.WriteString("Build the service described below in Go.\n\n")
@@ -251,6 +265,12 @@ func buildPrompt(condition, spec, devDatabase string) string {
 		b.WriteString("- For development and tests, a PostgreSQL database is available at " + devDatabase + "\n")
 	}
 	b.WriteString("- Work on your own: nobody will answer questions. Stop when the service is complete.\n")
+	if condition == scratchProduction {
+		b.WriteString("- Make it production-ready: organize the code into packages that keep HTTP handling, business logic, and storage separate; " +
+			"shut down gracefully on SIGTERM; set server timeouts; recover from panics; log in a structured format with a request ID per request; " +
+			"limit request body size; add a health endpoint; manage the database schema with migrations; " +
+			"and add a Dockerfile, a Makefile, and a GitHub Actions workflow that builds, vets, and tests it.\n")
+	}
 	switch condition {
 	case goforge:
 		b.WriteString("\nGoForge (`goforge`), a CLI that generates and extends Go REST API projects, is installed. Run `goforge --help` to see what it can do.\n")
@@ -372,7 +392,7 @@ func isGoCommand(command string) bool {
 // label names a condition with the GoForge version it used, e.g.
 // "goforge-required@v0.2.0"; scratch doesn't depend on the version.
 func label(condition, version string) string {
-	if condition == scratch || version == "" {
+	if !usesGoforge(condition) || version == "" {
 		return condition
 	}
 	return condition + "@" + version

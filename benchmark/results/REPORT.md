@@ -5,6 +5,7 @@ Model: sonnet. Values are means per run unless noted.
 | Task | Condition | Runs | Checks passed | Fully correct | Cost | Tokens | Turns | Minutes | Failed go commands | Own tests pass | Used GoForge |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | products | scratch | 3 | 100% | 3/3 | $0.09 | 65,842 | 3 | 0.8 | 0.3 | 3/3 | 0/3 |
+| products | scratch-production | 1 | 100% | 1/1 | $0.22 | 96,789 | 4 | 1.6 | 0.0 | 1/1 | 0/1 |
 | products | goforge@v0.2.0 | 3 | 100% | 3/3 | $0.09 | 58,040 | 3 | 0.8 | 0.0 | 3/3 | 0/3 |
 | products | goforge-required@v0.2.0 | 2 | 94% | 0/2 | $0.10 | 186,030 | 9 | 0.8 | 1.5 | 2/2 | 2/2 |
 | products | goforge@b632824cf8a7 | 2 | 100% | 2/2 | $0.08 | 58,244 | 3 | 0.9 | 0.0 | 2/2 | 0/2 |
@@ -25,11 +26,13 @@ Model: sonnet. Values are means per run unless noted.
 | orders | goforge@b632824cf8a7 | 2 | 100% | 2/2 | $0.13 | 94,619 | 4 | 1.4 | 1.0 | 2/2 | 0/2 |
 | orders | goforge-required@b632824cf8a7 | 2 | 100% | 2/2 | $0.20 | 173,501 | 7 | 1.6 | 0.0 | 2/2 | 2/2 |
 | store | scratch | 3 | 100% | 3/3 | $0.16 | 150,393 | 6 | 1.8 | 1.0 | 3/3 | 0/3 |
+| store | scratch-production | 2 | 100% | 2/2 | $0.30 | 205,313 | 7 | 3.1 | 0.0 | 2/2 | 0/2 |
 | store | goforge@v0.2.0 | 2 | 100% | 2/2 | $0.17 | 164,611 | 7 | 1.8 | 0.5 | 2/2 | 0/2 |
 | store | goforge-required@v0.2.0 | 2 | 99% | 1/2 | $0.24 | 535,649 | 16 | 2.1 | 0.0 | 0/2 | 2/2 |
 | store | goforge@b632824cf8a7 | 2 | 100% | 2/2 | $0.12 | 128,042 | 6 | 1.4 | 0.5 | 2/2 | 1/2 |
 | store | goforge-required@b632824cf8a7 | 2 | 100% | 2/2 | $0.11 | 219,416 | 10 | 1.3 | 0.5 | 2/2 | 2/2 |
 | **all tasks** | scratch | 15 | 100% | 15/15 | $0.12 | 90,832 | 4 | 1.4 | 0.5 | 15/15 | 0/15 |
+| **all tasks** | scratch-production | 3 | 100% | 3/3 | $0.27 | 169,138 | 6 | 2.6 | 0.0 | 3/3 | 0/3 |
 | **all tasks** | goforge@v0.2.0 | 14 | 100% | 14/14 | $0.12 | 118,374 | 5 | 1.4 | 0.3 | 14/14 | 3/14 |
 | **all tasks** | goforge-required@v0.2.0 | 10 | 99% | 7/10 | $0.17 | 276,548 | 10 | 1.6 | 0.5 | 8/10 | 10/10 |
 | **all tasks** | goforge@b632824cf8a7 | 10 | 100% | 10/10 | $0.11 | 113,274 | 5 | 1.4 | 0.5 | 10/10 | 3/10 |
@@ -66,6 +69,7 @@ Model: sonnet. Values are means per run unless noted.
 | products | scratch | 1 | success | 25/25 | $0.09 | 57,255 | 3 | 0.9 | 0 | 0 |
 | products | scratch | 2 | success | 25/25 | $0.09 | 78,952 | 4 | 0.8 | 0 | 0 |
 | products | scratch | 3 | success | 25/25 | $0.08 | 61,319 | 3 | 0.8 | 1 | 0 |
+| products | scratch-production | 1 | success | 25/25 | $0.22 | 96,789 | 4 | 1.6 | 0 | 0 |
 | products | goforge@v0.2.0 | 1 | success | 25/25 | $0.09 | 57,509 | 3 | 0.9 | 0 | 0 |
 | products | goforge@v0.2.0 | 2 | success | 25/25 | $0.08 | 58,253 | 3 | 0.8 | 0 | 0 |
 | products | goforge@v0.2.0 | 3 | success | 25/25 | $0.08 | 58,360 | 3 | 0.9 | 0 | 0 |
@@ -90,6 +94,8 @@ Model: sonnet. Values are means per run unless noted.
 | store | scratch | 1 | success | 46/46 | $0.16 | 167,533 | 7 | 1.9 | 1 | 0 |
 | store | scratch | 2 | success | 46/46 | $0.15 | 90,957 | 4 | 1.5 | 1 | 0 |
 | store | scratch | 3 | success | 46/46 | $0.16 | 192,691 | 8 | 2.2 | 1 | 0 |
+| store | scratch-production | 1 | success | 46/46 | $0.31 | 212,870 | 7 | 3.5 | 0 | 0 |
+| store | scratch-production | 2 | success | 46/46 | $0.30 | 197,756 | 7 | 2.7 | 0 | 0 |
 | store | goforge@v0.2.0 | 1 | success | 46/46 | $0.18 | 192,996 | 8 | 1.9 | 1 | 0 |
 | store | goforge@v0.2.0 | 2 | success | 46/46 | $0.16 | 136,226 | 6 | 1.7 | 0 | 0 |
 | store | goforge-required@v0.2.0 | 1 | success | 45/46 | $0.20 | 347,972 | 12 | 1.9 | 0 | 0 |

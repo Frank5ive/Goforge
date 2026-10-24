@@ -41,6 +41,25 @@ What the results show:
   `created_at` were broken by the random ID. It is fixed after `b632824` (timestamps now always
   increase).
 
+**Asked for the same production features, scratch costs about twice as much and still tests less.**
+The `scratch-production` condition adds one requirement to the prompt: the structure and
+production features GoForge projects come with (separate packages, graceful shutdown, timeouts,
+panic recovery, structured logs with request IDs, body limits, health endpoint, migrations,
+Dockerfile, Makefile, CI). Three runs only, so treat it as indicative:
+
+| Task | Condition | Cost | Minutes | Checks | Features (of 11) | Code / test lines | Coverage* |
+|---|---|---|---|---|---|---|---|
+| store | scratch | $0.16 | 1.9 | 46/46 | 2 | 442 / 97 | 1% |
+| store | scratch-production (2 runs) | $0.30 | 3.1 | 46/46 | 11 | 775 / 147 | 21% |
+| store | GoForge required, v0.3 work | $0.11 | 1.3 | 46/46 | 11 | 4,122 / 3,504 | 75% |
+| products | scratch | $0.09 | 0.8 | 25/25 | 1 | 280 / 82 | 88% |
+| products | scratch-production (1 run) | $0.22 | 1.6 | 25/25 | 10 | 731 / 249 | 82% |
+| products | GoForge required, v0.3 work | $0.07 | 0.8 | 23/25 | 9.5 | 1,189 / 1,068 | 86% |
+
+\*Statement coverage of `go test ./...` without a database, so tests that need PostgreSQL don't
+count for anyone. The `products` task stores items in memory, so it has no migrations. The
+GoForge `products` runs predate the ordering fix, which caused their two failed checks.
+
 Caveats: two runs per GoForge condition (the third round was stopped by the plan's usage limit,
 and those runs were discarded; see below), one model, and differences of a cent or two are within
 run-to-run variation.

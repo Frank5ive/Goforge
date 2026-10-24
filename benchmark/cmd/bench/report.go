@@ -191,14 +191,14 @@ func oneLine(s string) string {
 	return s
 }
 
-// compareLabels orders condition labels: scratch first, then each GoForge
-// version (released "v" versions before commits), with goforge before
-// goforge-required.
+// compareLabels orders condition labels: the scratch conditions first, then
+// each GoForge version (released "v" versions before commits), with goforge
+// before goforge-required.
 func compareLabels(a, b string) int {
 	ca, va, _ := strings.Cut(a, "@")
 	cb, vb, _ := strings.Cut(b, "@")
-	if (ca == scratch) != (cb == scratch) {
-		if ca == scratch {
+	if usesGoforge(ca) != usesGoforge(cb) {
+		if !usesGoforge(ca) {
 			return -1
 		}
 		return 1
@@ -212,5 +212,5 @@ func compareLabels(a, b string) int {
 		}
 		return strings.Compare(va, vb)
 	}
-	return slices.Index(conditions, ca) - slices.Index(conditions, cb)
+	return slices.Index(knownConditions, ca) - slices.Index(knownConditions, cb)
 }
