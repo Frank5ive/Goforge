@@ -27,7 +27,7 @@ func TestInspect(t *testing.T) {
 	if res := r.Resources[0]; res.Path != "/products" || res.Package != "products" || len(res.Fields) != 2 || !res.Fields[1].Optional {
 		t.Errorf("resource = %+v", res)
 	}
-	if len(r.Routes) != 8 { // /health, /readyz, and six for the resource
+	if len(r.Routes) != 9 { // /health, /readyz, /openapi.json, and six for the resource
 		t.Errorf("routes = %+v", r.Routes)
 	}
 	if len(r.Problems) != 0 {
@@ -89,5 +89,24 @@ func TestInspect_NotAProject(t *testing.T) {
 	r, code := runJSON(t, "inspect", "--dir", t.TempDir())
 	if code != 1 || r.Error == nil || r.Error.Code != "not_a_goforge_project" {
 		t.Errorf("exit %d, error %+v", code, r.Error)
+	}
+}
+
+// Projects generated before the OpenAPI document existed don't serve it, so
+// inspect must not claim they do.
+func TestInspect_OpenAPIRouteOnlyForProjectsThatServeIt(t *testing.T) {
+	project := generatedProject(t)
+	if err := os.Remove(filepath.Join(project, "openapi", "openapi.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	var r inspectResult
+	if code := runJSONInto(t, &r, "inspect", "--dir", project); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	for _, route := range r.Routes {
+		if route.Path == "/openapi.json" {
+			t.Errorf("routes = %+v, want no /openapi.json without the document", r.Routes)
+		}
 	}
 }

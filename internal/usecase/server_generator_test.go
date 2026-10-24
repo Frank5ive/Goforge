@@ -162,9 +162,12 @@ func TestServerGeneratorUsecase_Generate_Success(t *testing.T) {
 		t.Errorf("Expected only the project directory to be created, got %v", writer.DirsCreated)
 	}
 
-	// Every project file plus the .goforge.json manifest
-	if len(writer.FilesWritten) != len(projectFiles)+1 {
-		t.Errorf("Expected %d files to be written, got %d", len(projectFiles)+1, len(writer.FilesWritten))
+	// Every project file plus the .goforge.json manifest and the OpenAPI document
+	if len(writer.FilesWritten) != len(projectFiles)+2 {
+		t.Errorf("Expected %d files to be written, got %d", len(projectFiles)+2, len(writer.FilesWritten))
+	}
+	if _, ok := writer.FilesWritten[projectFilePath(OpenAPIFile)]; !ok {
+		t.Errorf("%s was not written", OpenAPIFile)
 	}
 
 	manifest, ok := writer.FilesWritten[projectFilePath(".goforge.json")]
