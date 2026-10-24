@@ -261,7 +261,12 @@ func (u *ResourceGeneratorUsecase) checkRefTargets(dir string, config *domain.Re
 			continue
 		}
 		service, err := u.fileWriter.ReadFile(filepath.Join(dir, ref.TargetPkg, "service.go"))
-		if err != nil || !strings.Contains(service, "BlockDeleteWhen(") {
+		if err != nil {
+			return domain.WithHint(domain.CodeNotAProject,
+				"Nothing was changed. Restore the file, or refer to a resource whose package is intact.",
+				domain.NewGenerationError("project_check", fmt.Sprintf("cannot read %s/service.go to check that %s can be referenced", ref.TargetPkg, ref.TargetPkg), err))
+		}
+		if !strings.Contains(service, "BlockDeleteWhen(") {
 			return domain.WithHint(domain.CodeOutdatedProject,
 				"Nothing was changed. Refer only to resources added with GoForge v0.2.1 or later, or make the field a string and check it in the resource's rules.go.",
 				domain.NewGenerationError("validation", fmt.Sprintf(
