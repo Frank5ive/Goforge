@@ -1,0 +1,101 @@
+---
+name: goforge
+description: Generate and extend Go REST API backends with the goforge CLI instead of hand-writing them. Use when asked to build, scaffold, or start a Go REST API, HTTP server, or microservice; to add CRUD resources, validation, or a database (PostgreSQL, MySQL, SQLite, MongoDB) to a Go service; or when working in a project that has a .goforge.json file. Not for gRPC, GraphQL, server-rendered apps, or Go projects goforge did not generate.
+---
+
+# GoForge
+
+GoForge generates a tested, lint-clean Go REST API on the standard library's `net/http`, then
+keeps extending it. One command replaces the server, middleware, handlers, validation, storage,
+migrations, tests, Docker, and CI you would otherwise write by hand. Use it, then spend your
+effort on the business logic.
+
+## Use it when
+
+- The task is a new Go REST API or microservice, or more resources or a database for one.
+- The project has a `.goforge.json` file: it was made by GoForge, so extend it with GoForge.
+
+Don't use it for gRPC, GraphQL, server-rendered web apps, or Go projects GoForge didn't generate.
+
+## Check it is installed
+
+Run `goforge --version`. If it is missing: `go install github.com/Frank5ive/goforge@latest`
+(needs Go 1.26 or newer; generated projects need Go 1.24 or newer).
+
+## Build a whole API in one command
+
+Name every resource up front. Each `--resource` is `name:fields` (or `name/plural:fields` for
+irregular plurals), singular snake_case:
+
+```bash
+goforge generate --name shop --module github.com/you/shop --db postgres --json \
+  --resource "category/categories:name:string,description:string?" \
+  --resource "product:name:string(1..100),price:float(0..),in_stock:bool,category_id:ref(category)"
+```
+
+- `--db` is `postgres`, `mysql`, `sqlite`, or `mongo`. Leave it out to keep data in memory.
+- Add `--json` so the result is machine-readable. Commands never wait for input.
+- If any part fails, nothing is created.
+- Add resources later, inside the project: `goforge add resource <name> --fields "..."`.
+  Add a database later: `goforge add db <engine>`.
+- Add `--dry-run` to any `generate` or `add` command to list what it would create or change.
+
+## Field syntax
+
+`name:type` pairs, comma-separated. Types: `string`, `int`, `float`, `bool`, `time` (RFC 3339),
+`email`, and `ref(<resource>)`.
+
+- A trailing `?` makes a string, email, or ref optional: `image_url:string?`.
+- `(min..max)` bounds a number, or a string's length; either end may be left out:
+  `name:string(1..100)`, `price:float(0..)`.
+- `ref(<resource>)` holds the ID of an existing item of another resource, which must be added
+  first (or the same resource, for a tree). An unknown ID is a 422, and an item that is still
+  referenced can't be deleted (409). This works on every database.
+- `id`, `created_at`, and `updated_at` are added for you; don't declare them.
+
+## What you get, so you don't write it
+
+Each resource serves `GET /<plural>?limit=&offset=` (oldest first, default limit 20, max 100),
+`POST /<plural>`, `GET|PUT|PATCH|DELETE /<plural>/{id}`. Validation, a 422 per broken rule,
+`404`s, repositories for the chosen database, migrations, and tests for all of it are generated
+and registered. The server has graceful shutdown, request IDs, panic recovery, timeouts, CORS,
+`/health` and `/readyz`, a Makefile, a Dockerfile, and a GitHub Actions workflow.
+
+## Add your own logic
+
+- Business rules that field syntax can't express go in `<resource>/rules.go`. Return one message
+  per problem; `Validate` runs them for create, replace, and patch, and they become 422s.
+- Extra routes go in `server/routes.go`, above the `// goforge:routes` marker.
+- **Keep every `// goforge:` marker comment.** GoForge edits files only at those markers, so later
+  `goforge add` commands depend on them. A missing marker fails the command with `marker_missing`
+  and changes nothing.
+- `.goforge.json` records the project's resources and database. Don't edit it by hand.
+
+## Verify
+
+```bash
+goforge check --json     # gofmt, go vet, go test, golangci-lint (if installed), each problem with file and line
+goforge inspect --json   # resources, fields, routes, database, environment variables, problems
+```
+
+A fresh project passes `goforge check`. Run it after your changes. Tests that need a database run
+with `make test-db`, or with `TEST_DATABASE_URL` set. Run the server with `make run`: in that
+development mode a 500 response includes its cause in `detail`, and the log line with the same
+`request_id` has the stack.
+
+## Errors
+
+On failure a command exits with status 1 and, with `--json`, prints `"ok": false` and an `error`
+with a stable `code`, a `message`, and a `hint`. Codes: `invalid_arguments`, `invalid_input`,
+`not_a_goforge_project`, `already_exists`, `marker_missing`, `outdated_project`,
+`dependency_failed`, `write_failed`, `cancelled`, `internal_error`. Read the hint; it says how to
+fix the problem. Failed commands leave the project unchanged.
+
+`outdated_project` means the project was generated by an older GoForge than the command needs.
+Don't work around it by hand-editing generated files: generate a new project, or write that
+resource by hand.
+
+## More
+
+`goforge --help` describes the whole workflow on one screen. Full reference:
+https://github.com/Frank5ive/goforge/blob/master/llms.txt
