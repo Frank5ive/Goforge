@@ -20,7 +20,7 @@ vendor/
 go.work
 
 # Build output
-goforge
+/goforge
 dist/
 build/
 

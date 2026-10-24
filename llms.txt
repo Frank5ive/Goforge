@@ -32,6 +32,10 @@ Each resource serves `GET /<plural>?limit=&offset=`, `POST /<plural>`, `GET /<pl
 - `GET /health` reports liveness and `GET /readyz` readiness, including the database.
 - With Docker databases: `make db-up` starts the database, `make test-db` runs the tests against it.
 
+## Agent skill
+
+`skills/goforge/SKILL.md` teaches an agent when and how to use GoForge. Claude Code: `/plugin marketplace add Frank5ive/Goforge`, then `/plugin install goforge@goforge`.
+
 ## Docs
 
 - [README](https://github.com/Frank5ive/goforge/blob/master/README.md): features, examples, and every flag

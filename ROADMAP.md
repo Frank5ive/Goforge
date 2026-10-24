@@ -80,8 +80,9 @@ The benchmark comes last, after every other Phase 4 item, so it measures the fin
 
 ### Deliverables
 
-1. **Agent skill**: teaches agents when and how to use GoForge, published where Claude Code and
-   Codex users install skills and plugins
+1. **Agent skill** (done: `skills/goforge`, installable as a Claude Code plugin): teaches agents
+   when and how to use GoForge. Still to do: list it where Claude Code and Codex users look for
+   skills, and measure it in the benchmark (item 5)
 2. **`goforge mcp`**: a Model Context Protocol server exposing `generate`, `add`, `inspect`, and
    `check`, built on the Phase 4 JSON results and listed in the MCP registry
 3. **OpenAPI from resources**: an OpenAPI 3.1 document generated from `.goforge.json` (paths,
