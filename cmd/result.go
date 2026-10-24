@@ -253,6 +253,7 @@ var hints = map[string]string{
 	domain.CodeInvalidInput:     "Run the command with --help to see the accepted values.",
 	domain.CodeNotAProject:      "Run the command inside a project created by `goforge generate`, or point --dir at one.",
 	domain.CodeAlreadyExists:    "Nothing was changed. Use a name or directory that isn't taken.",
+	domain.CodeOutdatedProject:  "Nothing was changed. The project, or a resource it refers to, predates a feature this command needs.",
 	domain.CodeMarkerMissing:    "A file lost a `// goforge:` marker comment GoForge edits at. Restore it, or make this change by hand.",
 	domain.CodeDependencyFailed: "Check your network connection and Go proxy settings (GOPROXY), then run the command again. Nothing was changed.",
 	domain.CodeWriteFailed:      "Check that the directory exists and is writable.",
