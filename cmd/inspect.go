@@ -114,11 +114,7 @@ func printProjectInfo(out io.Writer, project string, info domain.ProjectInfo) {
 	for _, r := range info.Resources {
 		fields := make([]string, 0, len(r.Fields))
 		for _, f := range r.Fields {
-			field := f.Name + " " + string(f.Type)
-			if f.Optional {
-				field += " (optional)"
-			}
-			fields = append(fields, field)
+			fields = append(fields, f.Spec())
 		}
 		fmt.Fprintf(out, "   %-12s %-16s %-12s %s\n", r.Name, r.Path, r.Package+"/", strings.Join(fields, ", "))
 	}

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -23,10 +24,10 @@ func TestResourceConfig_Validate(t *testing.T) {
 		{"valid snake_case", func(c *ResourceConfig) { c.Name = "blog_post" }, ""},
 		{"valid explicit plural", func(c *ResourceConfig) { c.Name, c.Plural = "person", "people" }, ""},
 		{"all field types", func(c *ResourceConfig) {
-			c.Fields = []Field{{"a", FieldString, false}, {"b", FieldInt, false}, {"c", FieldFloat, false}, {"d", FieldBool, false}, {"e", FieldTime, false}}
+			c.Fields = []Field{{Name: "a", Type: FieldString, Optional: false}, {Name: "b", Type: FieldInt, Optional: false}, {Name: "c", Type: FieldFloat, Optional: false}, {Name: "d", Type: FieldBool, Optional: false}, {Name: "e", Type: FieldTime, Optional: false}}
 		}, ""},
-		{"optional string", func(c *ResourceConfig) { c.Fields = []Field{{"nickname", FieldString, true}} }, ""},
-		{"optional non-string", func(c *ResourceConfig) { c.Fields = []Field{{"age", FieldInt, true}} }, "only string fields"},
+		{"optional string", func(c *ResourceConfig) { c.Fields = []Field{{Name: "nickname", Type: FieldString, Optional: true}} }, ""},
+		{"optional non-string", func(c *ResourceConfig) { c.Fields = []Field{{Name: "age", Type: FieldInt, Optional: true}} }, "only string, email, and ref fields"},
 		{"empty project dir", func(c *ResourceConfig) { c.ProjectDir = "" }, "project directory"},
 		{"uppercase name", func(c *ResourceConfig) { c.Name = "Product" }, "snake_case"},
 		{"hyphenated name", func(c *ResourceConfig) { c.Name = "blog-post" }, "snake_case"},
@@ -36,10 +37,10 @@ func TestResourceConfig_Validate(t *testing.T) {
 		{"reserved package", func(c *ResourceConfig) { c.Name, c.Plural = "srv", "server" }, "reserved"},
 		{"plural equals name", func(c *ResourceConfig) { c.Name, c.Plural = "sheep", "sheep" }, "must differ"},
 		{"no fields", func(c *ResourceConfig) { c.Fields = nil }, "at least one field"},
-		{"automatic field", func(c *ResourceConfig) { c.Fields = []Field{{"id", FieldString, false}} }, "added automatically"},
-		{"unsupported type", func(c *ResourceConfig) { c.Fields = []Field{{"price", "decimal", false}} }, "unsupported type"},
+		{"automatic field", func(c *ResourceConfig) { c.Fields = []Field{{Name: "id", Type: FieldString, Optional: false}} }, "added automatically"},
+		{"unsupported type", func(c *ResourceConfig) { c.Fields = []Field{{Name: "price", Type: "decimal", Optional: false}} }, "unsupported type"},
 		{"duplicate field", func(c *ResourceConfig) {
-			c.Fields = []Field{{"title", FieldString, false}, {"title", FieldInt, false}}
+			c.Fields = []Field{{Name: "title", Type: FieldString, Optional: false}, {Name: "title", Type: FieldInt, Optional: false}}
 		}, "more than once"},
 	}
 
@@ -80,8 +81,8 @@ func TestParseFields(t *testing.T) {
 	}
 
 	want := []Field{
-		{"title", FieldString, false}, {"price", FieldFloat, false}, {"in_stock", FieldBool, false},
-		{"notes", FieldString, false}, {"image_url", FieldString, true},
+		{Name: "title", Type: FieldString, Optional: false}, {Name: "price", Type: FieldFloat, Optional: false}, {Name: "in_stock", Type: FieldBool, Optional: false},
+		{Name: "notes", Type: FieldString, Optional: false}, {Name: "image_url", Type: FieldString, Optional: true},
 	}
 	if len(fields) != len(want) {
 		t.Fatalf("ParseFields() = %v, want %v", fields, want)
@@ -123,6 +124,126 @@ func TestCamelCase(t *testing.T) {
 	} {
 		if got := CamelCase(snake); got != want {
 			t.Errorf("CamelCase(%q) = %q, want %q", snake, got, want)
+		}
+	}
+}
+
+func TestParseFields_Rules(t *testing.T) {
+	bound := func(v float64) *float64 { return &v }
+	fields, err := ParseFields("name:string(1..100), price:float(0..), qty:int(..9), contact:email, alt:email?, nick:string?(3..), code:STRING(2..2)?")
+	if err != nil {
+		t.Fatalf("ParseFields() error = %v", err)
+	}
+
+	want := []Field{
+		{Name: "name", Type: FieldString, Min: bound(1), Max: bound(100)},
+		{Name: "price", Type: FieldFloat, Min: bound(0)},
+		{Name: "qty", Type: FieldInt, Max: bound(9)},
+		{Name: "contact", Type: FieldEmail},
+		{Name: "alt", Type: FieldEmail, Optional: true},
+		{Name: "nick", Type: FieldString, Optional: true, Min: bound(3)},
+		{Name: "code", Type: FieldString, Optional: true, Min: bound(2), Max: bound(2)},
+	}
+	if !reflect.DeepEqual(fields, want) {
+		t.Fatalf("ParseFields() = %+v, want %+v", fields, want)
+	}
+	for _, f := range fields {
+		if err := validateFields([]Field{f}); err != nil {
+			t.Errorf("%s: %v", f.Spec(), err)
+		}
+		// Spec writes a field back in the syntax it was parsed from
+		again, err := ParseFields(f.Spec())
+		if err != nil || !reflect.DeepEqual(again[0], f) {
+			t.Errorf("ParseFields(%q) = %+v, %v; want %+v", f.Spec(), again, err, f)
+		}
+	}
+}
+
+func TestParseFields_InvalidRanges(t *testing.T) {
+	for _, spec := range []string{"n:int(1-5)", "n:int(..)", "n:int(a..b)", "n:int(1..5", "n:float(1..inf)"} {
+		if _, err := ParseFields(spec); err == nil {
+			t.Errorf("ParseFields(%q) = nil error, want one", spec)
+		}
+	}
+}
+
+func TestValidateBounds(t *testing.T) {
+	bound := func(v float64) *float64 { return &v }
+	tests := []struct {
+		field Field
+		want  string
+	}{
+		{Field{Name: "ok", Type: FieldBool, Min: bound(1)}, "applies to string, int, and float"},
+		{Field{Name: "e", Type: FieldEmail, Max: bound(5)}, "applies to string, int, and float"},
+		{Field{Name: "n", Type: FieldInt, Min: bound(1.5)}, "whole numbers"},
+		{Field{Name: "s", Type: FieldString, Min: bound(-1)}, "can't be negative"},
+		{Field{Name: "f", Type: FieldFloat, Min: bound(5), Max: bound(1)}, "minimum is above its maximum"},
+	}
+	for _, tt := range tests {
+		if err := validateFields([]Field{tt.field}); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: error = %v, want it to contain %q", tt.field.Spec(), err, tt.want)
+		}
+	}
+	if err := validateFields([]Field{{Name: "price", Type: FieldFloat, Min: bound(0.5), Max: bound(9.99)}}); err != nil {
+		t.Errorf("float bounds may be fractional: %v", err)
+	}
+}
+
+func TestParseResourceSpec(t *testing.T) {
+	rc, err := ParseResourceSpec("person/people:name:string(1..50), email:email?")
+	if err != nil {
+		t.Fatalf("ParseResourceSpec() error = %v", err)
+	}
+	if rc.Name != "person" || rc.Plural != "people" || len(rc.Fields) != 2 || rc.Fields[1].Type != FieldEmail || !rc.Fields[1].Optional {
+		t.Errorf("ParseResourceSpec() = %+v", rc)
+	}
+
+	rc, err = ParseResourceSpec("blog-post:title:string")
+	if err != nil || rc.Name != "blog_post" || rc.Plural != "" {
+		t.Errorf("ParseResourceSpec(blog-post) = %+v, %v", rc, err)
+	}
+
+	for _, spec := range []string{"product", "product:", " :name:string"} {
+		rc, err := ParseResourceSpec(spec)
+		if err == nil {
+			rc.ProjectDir = "."
+			err = rc.Validate()
+		}
+		if err == nil {
+			t.Errorf("ParseResourceSpec(%q) = valid, want an error", spec)
+		}
+	}
+}
+
+func TestParseFields_Ref(t *testing.T) {
+	fields, err := ParseFields("category_id:ref(category), parent_id:ref(blog-post)?")
+	if err != nil {
+		t.Fatalf("ParseFields() error = %v", err)
+	}
+	want := []Field{
+		{Name: "category_id", Type: FieldRef, Ref: "category"},
+		{Name: "parent_id", Type: FieldRef, Ref: "blog_post", Optional: true},
+	}
+	if !reflect.DeepEqual(fields, want) {
+		t.Fatalf("ParseFields() = %+v, want %+v", fields, want)
+	}
+	if err := validateFields(fields); err != nil {
+		t.Errorf("validateFields() = %v", err)
+	}
+	if got := fields[1].Spec(); got != "parent_id:ref(blog_post)?" {
+		t.Errorf("Spec() = %q", got)
+	}
+	if !fields[0].Required() || fields[1].Required() {
+		t.Error("a ref field is required unless it ends with ?")
+	}
+
+	for _, spec := range []string{"category_id:ref", "category_id:ref()", "category_id:ref(Bad Name)"} {
+		fields, err := ParseFields(spec)
+		if err == nil {
+			err = validateFields(fields)
+		}
+		if err == nil {
+			t.Errorf("%q: want an error", spec)
 		}
 	}
 }

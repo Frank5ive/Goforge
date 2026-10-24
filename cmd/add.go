@@ -46,10 +46,21 @@ registered in server/routes.go automatically, so they work as soon as the server
 starts.
 
 <name> is the singular resource name in snake_case, e.g. product or blog_post.
-Field types: %s. String fields are required unless marked
-optional with a trailing "?", e.g. "image_url:string?". ID and timestamps are
-added automatically.`, fieldTypeNames()),
-		Example: `  goforge add resource product --fields "name:string,price:float,in_stock:bool"
+ID and timestamps are added automatically.
+
+Fields are name:type, separated by commas. Types: %s.
+  - string and email fields are required; a trailing ? makes one optional:
+    image_url:string?
+  - email fields must be email addresses: contact:email
+  - a (min..max) range bounds a number, or a string's length; either end may be
+    left out: name:string(1..100), price:float(0..), quantity:int(1..)
+  - ref(<resource>) is the ID of an item of another resource (or this one), which
+    must exist (else 422) and can't be deleted while referenced (409):
+    category_id:ref(category), manager_id:ref(employee)?
+Each rule is checked by the generated Validate (with a test per rule), and the
+resource's rules.go is the place for any other business rules.`, fieldTypeNames()),
+		Example: `  goforge add resource product --fields "name:string(1..100),price:float(0..),in_stock:bool"
+  goforge add resource customer --fields "name:string,email:email,phone:string?"
   goforge add resource blog_post --fields "title:string,body:string,cover_url:string?,published_at:time"
   goforge add resource person --plural people --fields "name:string,age:int"
   goforge add resource task --dry-run
@@ -102,15 +113,7 @@ func runAddResource(out io.Writer, name string, opts *addResourceOptions) error 
 		r.Summary = fmt.Sprintf("Added the %s resource", config.Name)
 	}
 
-	path := config.RoutePath()
-	r.Endpoints = []endpoint{
-		{Method: "GET", Path: path, Query: "limit=20&offset=0"},
-		{Method: "POST", Path: path},
-		{Method: "GET", Path: path + "/{id}"},
-		{Method: "PUT", Path: path + "/{id}"},
-		{Method: "PATCH", Path: path + "/{id}"},
-		{Method: "DELETE", Path: path + "/{id}"},
-	}
+	r.Endpoints = resourceEndpoints(config.RoutePath())
 
 	if !opts.dryRun {
 		pkg := config.PackageName()
@@ -135,4 +138,16 @@ func fieldTypeNames() string {
 		names[i] = string(t)
 	}
 	return strings.Join(names, ", ")
+}
+
+// resourceEndpoints lists the routes a resource at path serves.
+func resourceEndpoints(path string) []endpoint {
+	return []endpoint{
+		{Method: "GET", Path: path, Query: "limit=20&offset=0"},
+		{Method: "POST", Path: path},
+		{Method: "GET", Path: path + "/{id}"},
+		{Method: "PUT", Path: path + "/{id}"},
+		{Method: "PATCH", Path: path + "/{id}"},
+		{Method: "DELETE", Path: path + "/{id}"},
+	}
 }

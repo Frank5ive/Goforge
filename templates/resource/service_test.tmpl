@@ -1,7 +1,11 @@
 package {{.Package}}
 
 import (
+	"context"
 	"errors"
+{{- if .TestsUseStrings}}
+	"strings"
+{{- end}}
 	"testing"
 	"time"
 )
@@ -63,6 +67,32 @@ func TestServiceCreateValidates(t *testing.T) {
 	_, err := newTestService().Create(t.Context(), Input{})
 	if !errors.Is(err, ErrInvalid) {
 		t.Errorf("Create(empty) error = %v, want ErrInvalid", err)
+	}
+}
+{{- end}}
+{{- if .InvalidCases}}
+
+func TestInputValidateRules(t *testing.T) {
+	if err := validInput().Validate(); err != nil {
+		t.Fatalf("validInput().Validate() = %v, want nil", err)
+	}
+
+	tests := []struct {
+		name string
+		edit func(*Input)
+	}{
+{{- range .InvalidCases}}
+		{ {{- .Name}}, func(in *Input) { in.{{.Field}} = {{.Value}} }},
+{{- end}}
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := validInput()
+			tt.edit(&in)
+			if err := in.Validate(); err == nil {
+				t.Errorf("Validate() = nil, want an error")
+			}
+		})
 	}
 }
 {{- end}}
@@ -204,5 +234,94 @@ func TestServiceNotFound(t *testing.T) {
 	}
 	if err := svc.Delete(t.Context(), "missing"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Delete() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestServiceExists(t *testing.T) {
+	svc := newTestService()
+	created, err := svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if ok, err := svc.Exists(t.Context(), created.ID); !ok || err != nil {
+		t.Errorf("Exists(created) = %t, %v; want true", ok, err)
+	}
+	if ok, err := svc.Exists(t.Context(), "missing"); ok || err != nil {
+		t.Errorf("Exists(missing) = %t, %v; want false", ok, err)
+	}
+}
+
+func TestServiceBlockDeleteWhen(t *testing.T) {
+	svc := newTestService()
+	created, err := svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	inUse := true
+	svc.BlockDeleteWhen("orders", func(context.Context, string) (bool, error) { return inUse, nil })
+
+	if err := svc.Delete(t.Context(), created.ID); !errors.Is(err, ErrInUse) {
+		t.Fatalf("Delete() while in use error = %v, want ErrInUse", err)
+	}
+	inUse = false
+	if err := svc.Delete(t.Context(), created.ID); err != nil {
+		t.Errorf("Delete() once unused error = %v", err)
+	}
+}
+{{- range .Refs}}
+
+func TestServiceRequire{{.GoName}}(t *testing.T) {
+	svc := newTestService()
+	known := validInput().{{.GoName}}
+	svc.Require{{.GoName}}(func(_ context.Context, id string) (bool, error) { return id == known, nil })
+
+	if _, err := svc.Create(t.Context(), validInput()); err != nil {
+		t.Fatalf("Create() with an existing {{.TargetHuman}} error = %v", err)
+	}
+	in := validInput()
+	in.{{.GoName}} = "unknown"
+	if _, err := svc.Create(t.Context(), in); !errors.Is(err, ErrInvalid) {
+		t.Errorf("Create() with an unknown {{.JSON}} error = %v, want ErrInvalid", err)
+	}
+{{- if .Optional}}
+	in.{{.GoName}} = ""
+	if _, err := svc.Create(t.Context(), in); err != nil {
+		t.Errorf("Create() without the optional {{.JSON}} error = %v", err)
+	}
+{{- end}}
+
+	if has, err := svc.Has{{.GoName}}(t.Context(), known); !has || err != nil {
+		t.Errorf("Has{{.GoName}}(known) = %t, %v; want true", has, err)
+	}
+	if has, err := svc.Has{{.GoName}}(t.Context(), "unknown"); has || err != nil {
+		t.Errorf("Has{{.GoName}}(unknown) = %t, %v; want false", has, err)
+	}
+}
+{{- end}}
+
+func TestServiceListsItemsCreatedTogetherInOrder(t *testing.T) {
+	// The real clock: several creates usually land in the same millisecond
+	svc := NewService(NewMemoryRepository())
+	var want []string
+	for range 5 {
+		item, err := svc.Create(t.Context(), validInput())
+		if err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		want = append(want, item.ID)
+	}
+
+	page, err := svc.List(t.Context(), 0, 0)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(page.Items) != len(want) {
+		t.Fatalf("List() returned %d items, want %d", len(page.Items), len(want))
+	}
+	for i, item := range page.Items {
+		if item.ID != want[i] {
+			t.Fatalf("List() item %d = %s, want the creation order %v", i, item.ID, want)
+		}
 	}
 }

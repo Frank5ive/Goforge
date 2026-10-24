@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/Frank5ive/goforge/internal/domain"
 )
@@ -64,15 +67,70 @@ func newResult(command, project string, dryRun bool) *result {
 	return &result{Command: command, OK: true, DryRun: dryRun, Project: project, Created: []string{}, Updated: []string{}}
 }
 
-// print writes r as JSON or as text.
+// print writes r as JSON, as a compact summary when out is piped (as it is for
+// scripts and AI agents, where every line costs reading time), or in full text
+// for a terminal.
 func (r *result) print(out io.Writer, asJSON bool) error {
-	if asJSON {
+	switch {
+	case asJSON:
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(r)
+	case piped(out):
+		r.printCompact(out)
+	default:
+		r.printText(out)
 	}
-	r.printText(out)
 	return nil
+}
+
+// piped reports whether out is a pipe or file rather than a terminal. Other
+// writers, such as test buffers, get the full text.
+func piped(out io.Writer) bool {
+	f, ok := out.(*os.File)
+	return ok && !term.IsTerminal(int(f.Fd()))
+}
+
+// printCompact writes the summary, counts instead of file lists, the routes on
+// one line, notes, and next steps on one line. --json has the full details.
+func (r *result) printCompact(out io.Writer) {
+	prefix := "✅ "
+	if r.DryRun {
+		prefix = "🔍 Dry run: "
+	}
+	created, updated := "files created", "updated"
+	if r.DryRun {
+		created, updated = "files would be created", "would be updated"
+	}
+	fmt.Fprintf(out, "%s%s (%d %s, %d %s; --json lists them)\n",
+		prefix, strings.TrimSuffix(r.Summary, "."), len(r.Created), created, len(r.Updated), updated)
+	switch {
+	case len(r.Endpoints) > 6:
+		// Several resources: name their collections, not every route
+		var collections []string
+		for _, e := range r.Endpoints {
+			if !strings.Contains(e.Path, "{") && !slices.Contains(collections, e.Path) {
+				collections = append(collections, e.Path)
+			}
+		}
+		fmt.Fprintf(out, "Routes: GET (paged), POST, and GET, PUT, PATCH, DELETE /{id} at %s\n", strings.Join(collections, ", "))
+	case len(r.Endpoints) > 0:
+		routes := make([]string, 0, len(r.Endpoints))
+		for _, e := range r.Endpoints {
+			routes = append(routes, e.Method+" "+e.Path)
+		}
+		fmt.Fprintf(out, "Routes: %s\n", strings.Join(routes, ", "))
+	}
+	for _, note := range r.Notes {
+		fmt.Fprintf(out, "⚠️  %s\n", note)
+	}
+	if len(r.NextSteps) > 0 {
+		steps := make([]string, 0, len(r.NextSteps))
+		for _, step := range r.NextSteps {
+			steps = append(steps, step.Command)
+		}
+		fmt.Fprintf(out, "Next: %s\n", strings.Join(steps, " · "))
+	}
 }
 
 func (r *result) printText(out io.Writer) {

@@ -42,6 +42,9 @@ type generateOptions struct {
 	// db is the database engine from --db or the prompt; "" means none
 	db string
 
+	// resources are --resource specs, added after the project is created
+	resources []string
+
 	yes     bool
 	dryRun  bool
 	initGit bool
@@ -86,6 +89,7 @@ defaults are used instead.`,
   goforge generate -n user-service -p 3000 -o ./services --yes
   goforge generate -n worker --docker=false --yes --git
   goforge generate -n my-api --dry-run
+  goforge generate -n shop --db postgres --resource "product:name:string(1..100),price:float(0..)"
   goforge generate -n shop --db postgres --json`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -108,6 +112,7 @@ defaults are used instead.`,
 	flags.BoolVarP(&opts.yes, "yes", "y", false, "Skip prompts and use flag values and defaults")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show the files that would be created without writing anything")
 	flags.BoolVar(&opts.initGit, "git", false, "Initialize a git repository in the new project")
+	flags.StringArrayVar(&opts.resources, "resource", nil, `Add a resource, as name:fields (repeatable), e.g. --resource "product:name:string(1..100),price:float(0..)"; see goforge add resource --help`)
 	flags.BoolVar(&opts.json, "json", false, "Print the result as JSON, for scripts and AI agents (implies no prompts)")
 
 	return cmd
@@ -115,7 +120,9 @@ defaults are used instead.`,
 
 func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	out := cmd.OutOrStdout()
-	if !opts.json {
+	// The banner and summary are for people at a terminal
+	compact := opts.json || piped(out)
+	if !compact {
 		printBanner(out)
 	}
 
@@ -123,6 +130,28 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	if opts.db != "" && !slices.Contains(domain.DatabaseEngines, opts.db) {
 		return domain.WithCode(domain.CodeInvalidInput,
 			fmt.Errorf("unsupported --db %q (supported: %s)", opts.db, strings.Join(domain.DatabaseEngines, ", ")))
+	}
+
+	// Check every resource before creating anything
+	var resources []*domain.ResourceConfig
+	for _, spec := range opts.resources {
+		rc, err := domain.ParseResourceSpec(spec)
+		if err != nil {
+			return err
+		}
+		rc.ProjectDir = "."
+		if err := rc.Validate(); err != nil {
+			return fmt.Errorf("--resource %q: %w", spec, err)
+		}
+		// Two resources can't share a name or a package, so a real run would
+		// fail on the second; reject it here, before anything is created
+		for _, earlier := range resources {
+			if earlier.Name == rc.Name || earlier.PackageName() == rc.PackageName() {
+				return domain.WithCode(domain.CodeInvalidInput,
+					fmt.Errorf("--resource %q: the %s resource is already in an earlier --resource", spec, earlier.Name))
+			}
+		}
+		resources = append(resources, rc)
 	}
 
 	// Prompt only when a person is at the terminal
@@ -143,7 +172,7 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 		IncludeCI:     opts.ci,
 	}
 
-	if !opts.json {
+	if !compact {
 		displayConfig(out, config, opts)
 	}
 
@@ -165,7 +194,29 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 		if opts.db != "" {
 			r.Info = append(r.Info, fmt.Sprintf("%s would then be added, as with `goforge add db %s`.", domain.DatabaseLabel(opts.db), opts.db))
 		}
+		for _, rc := range resources {
+			r.Info = append(r.Info, fmt.Sprintf("The %s resource would then be added at %s.", rc.Name, rc.RoutePath()))
+		}
 		return r.print(out, opts.json)
+	}
+
+	// generate is all or nothing: if adding the database or a resource fails,
+	// remove the new project so the command can simply be run again
+	fail := func(step string, err error) error {
+		if rmErr := os.RemoveAll(projectPath); rmErr != nil {
+			return fmt.Errorf("%s failed: %w (and removing the partly created %s also failed: %w)", step, err, projectPath, rmErr)
+		}
+		return fmt.Errorf("%s failed, so nothing was created: %w", step, err)
+	}
+	// Files the later steps change were all just created, so list them once
+	addCreated := func(paths ...[]string) {
+		for _, list := range paths {
+			for _, path := range list {
+				if !slices.Contains(r.Created, path) {
+					r.Created = append(r.Created, path)
+				}
+			}
+		}
 	}
 
 	r.Summary = fmt.Sprintf("Created the %s project in %s", config.AppName, projectPath)
@@ -173,16 +224,24 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 		label := domain.DatabaseLabel(opts.db)
 		changes, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: projectPath, Engine: opts.db})
 		if err != nil {
-			return fmt.Errorf("the project was created in %s, but adding %s failed: %w\nRun `goforge add db %s` inside it to try again", projectPath, label, err, opts.db)
+			return fail("adding "+label, err)
 		}
 		r.Summary += ", storing data in " + label
-		// Files the database step changed were all just created, so list them once
-		for _, path := range changes.Created {
-			if !slices.Contains(r.Created, path) {
-				r.Created = append(r.Created, path)
-			}
-		}
+		addCreated(changes.Created, changes.Updated)
 		r.Notes = append(r.Notes, changes.Notes...)
+	}
+
+	for _, rc := range resources {
+		rc.ProjectDir = projectPath
+		changes, err := container.ResourceGeneratorUsecase.Add(rc)
+		if err != nil {
+			return fail("adding the "+rc.Name+" resource", err)
+		}
+		addCreated(changes.Created, changes.Updated)
+		r.Endpoints = append(r.Endpoints, resourceEndpoints(rc.RoutePath())...)
+	}
+	if len(resources) > 0 {
+		r.Summary += fmt.Sprintf(", with %d %s", len(resources), plural(len(resources), "resource"))
 	}
 
 	if opts.initGit {
@@ -197,10 +256,10 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	if opts.db != "" && opts.db != domain.DatabaseSQLite {
 		r.NextSteps = append(r.NextSteps, nextStep{Command: "make db-up", Description: "start " + domain.DatabaseLabel(opts.db) + " in Docker"})
 	}
-	r.NextSteps = append(r.NextSteps,
-		nextStep{Command: "make run", Description: "start the server in development mode"},
-		nextStep{Command: `goforge add resource product --fields "name:string,price:float"`, Description: "add a REST resource"},
-	)
+	r.NextSteps = append(r.NextSteps, nextStep{Command: "make run", Description: "start the server in development mode"})
+	if len(resources) == 0 {
+		r.NextSteps = append(r.NextSteps, nextStep{Command: `goforge add resource product --fields "name:string,price:float"`, Description: "add a REST resource"})
+	}
 	r.Info = append(r.Info,
 		fmt.Sprintf("The server listens on http://localhost:%d, with a health check at /health.", config.Port))
 

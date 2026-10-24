@@ -136,6 +136,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		handlers.WriteError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrInvalid):
 		handlers.WriteError(w, http.StatusUnprocessableEntity, err.Error())
+	case errors.Is(err, ErrInUse):
+		handlers.WriteError(w, http.StatusConflict, err.Error())
 	default:
 		handlers.InternalError(w, r, err)
 	}

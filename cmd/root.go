@@ -32,15 +32,22 @@ func newRootCmd() *cobra.Command {
   goforge check           run gofmt, go vet, the tests, and golangci-lint, and report
                           each problem with its file and line
 
-Generated code uses the standard library's net/http, is tested, and passes its
-own lint config. generate and the add commands accept --dry-run to preview
-their changes, and generate, add, inspect, and check accept --json for output
-that programs and AI agents can read.
+A whole API in one command (each --resource is name:fields, or name/plural:fields):
 
-Example:
-  goforge generate --name shop --module github.com/you/shop --db postgres --yes
-  cd shop
-  goforge add resource product --fields "name:string,price:float"`,
+  goforge generate --name shop --module github.com/you/shop --db postgres \
+    --resource "category/categories:name:string,description:string?" \
+    --resource "product:name:string(1..100),price:float(0..),category_id:ref(category)"
+
+Field types: string, int, float, bool, time, email, and ref(<resource>). A trailing
+? makes a string, email, or ref optional, and (min..max) bounds a number or a
+string's length; either end may be left out. A ref must be the ID of an existing
+item (else 422), and that item can't be deleted while referenced (409). Each
+resource gets paged list, create, get, PUT, PATCH, and DELETE routes, validation
+with a test per rule, and a rules.go for custom business rules.
+
+Generated code uses the standard library's net/http, is tested, and passes its
+own lint config. generate and add accept --dry-run; generate, add, inspect, and
+check accept --json. Output is a compact summary when piped.`,
 		Run: func(cmd *cobra.Command, _ []string) {
 			out := cmd.OutOrStdout()
 			printBanner(out)

@@ -3,6 +3,7 @@ package usecase
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -198,7 +199,7 @@ func TestResourceGenerator_Add_WritesNothingWhenInvalid(t *testing.T) {
 }
 
 func TestRegisterResource(t *testing.T) {
-	routes, err := registerResource(testRoutes, "example.com/app", "products", "products.NewMemoryRepository()")
+	routes, err := registerResource(testRoutes, "example.com/app", "products", "products.NewMemoryRepository()", nil)
 	if err != nil {
 		t.Fatalf("registerResource() error = %v", err)
 	}
@@ -216,11 +217,11 @@ func TestRegisterResource(t *testing.T) {
 		t.Errorf("expected registration above the marker:\n%s", routes)
 	}
 
-	if _, err := registerResource(routes, "example.com/app", "products", "products.NewMemoryRepository()"); err == nil {
+	if _, err := registerResource(routes, "example.com/app", "products", "products.NewMemoryRepository()", nil); err == nil {
 		t.Error("registering the same resource twice should fail")
 	}
 
-	again, err := registerResource(routes, "example.com/app", "categories", "categories.NewPostgresRepository(deps.DB)")
+	again, err := registerResource(routes, "example.com/app", "categories", "categories.NewPostgresRepository(deps.DB)", nil)
 	if err != nil {
 		t.Fatalf("registering a second resource: %v", err)
 	}
@@ -349,5 +350,67 @@ func TestStorage(t *testing.T) {
 		if got := storage(tt.engine); !strings.HasPrefix(got, tt.want) {
 			t.Errorf("storage(%v) = %q, want it to start with %q", tt.engine, got, tt.want)
 		}
+	}
+}
+
+func TestRegisterResource_WithReferences(t *testing.T) {
+	// categories is registered the one-line way, as before references existed
+	routes, err := registerResource(testRoutes, "example.com/app", "categories", "categories.NewMemoryRepository()", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err = registerResource(routes, "example.com/app", "products", "products.NewMemoryRepository()",
+		[]routeRef{{GoName: "CategoryID", TargetPkg: "categories", Owner: "products"}})
+	if err != nil {
+		t.Fatalf("registerResource() error = %v", err)
+	}
+
+	for _, want := range []string{
+		"categoriesService := categories.NewService(categories.NewMemoryRepository())\n\tcategories.RegisterRoutes(mux, categoriesService)",
+		"productsService := products.NewService(products.NewMemoryRepository())",
+		"productsService.RequireCategoryID(categoriesService.Exists)",
+		`categoriesService.BlockDeleteWhen("products", productsService.HasCategoryID)`,
+		"products.RegisterRoutes(mux, productsService)",
+	} {
+		if !strings.Contains(routes, want) {
+			t.Errorf("routes.go is missing %q:\n%s", want, routes)
+		}
+	}
+	// The products registration comes after categoriesService exists
+	if strings.Index(routes, "productsService.RequireCategoryID") < strings.Index(routes, "categoriesService :=") {
+		t.Errorf("products is wired before categoriesService exists:\n%s", routes)
+	}
+}
+
+func TestEnsureServiceVar_UnrecognizedRegistration(t *testing.T) {
+	src := "package server\n\nfunc registerRoutes() {\n\tcategories.Register(mux)\n}\n"
+	_, err := ensureServiceVar(src, "categories")
+	if domain.ErrorCode(err) != domain.CodeMarkerMissing || !strings.Contains(err.Error(), "categoriesService") {
+		t.Errorf("ensureServiceVar() error = %v, want marker_missing naming categoriesService", err)
+	}
+}
+
+func TestResolveRefs(t *testing.T) {
+	manifest := domain.Manifest{Resources: []domain.ManifestResource{{Name: "category", Plural: "categories"}}}
+	config := &domain.ResourceConfig{ProjectDir: ".", Name: "product", Fields: []domain.Field{
+		{Name: "category_id", Type: domain.FieldRef, Ref: "category"},
+		{Name: "parent_id", Type: domain.FieldRef, Ref: "product", Optional: true},
+	}}
+
+	refs, err := resolveRefs(config, manifest)
+	if err != nil {
+		t.Fatalf("resolveRefs() error = %v", err)
+	}
+	want := []routeRef{
+		{GoName: "CategoryID", TargetPkg: "categories", Owner: "products"},
+		{GoName: "ParentID", TargetPkg: "products", Owner: "products"},
+	}
+	if !reflect.DeepEqual(refs, want) {
+		t.Errorf("resolveRefs() = %+v, want %+v", refs, want)
+	}
+
+	config.Fields = []domain.Field{{Name: "brand_id", Type: domain.FieldRef, Ref: "brand"}}
+	if _, err := resolveRefs(config, manifest); err == nil || !strings.Contains(err.Error(), "add it first") {
+		t.Errorf("resolveRefs() for an unknown resource error = %v", err)
 	}
 }

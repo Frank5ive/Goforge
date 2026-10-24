@@ -9,7 +9,10 @@ GoForge generated this project and can extend it. Use it instead of writing thes
 
 - **Add a REST resource** (model, validation, storage, service, handlers, tests, and routes):
   `goforge add resource <name> --fields "field:type,..."`. Types are `string`, `int`, `float`,
-  `bool`, and `time`; a trailing `?` makes a string optional, e.g. `image_url:string?`.
+  `bool`, `time`, and `email`; a trailing `?` makes a string optional (`image_url:string?`), and
+  `(min..max)` bounds a number or a string's length (`name:string(1..100)`, `price:float(0..)`).
+  `ref(<resource>)` links to another resource (`category_id:ref(category)`): unknown IDs are a
+  422 and referenced items can't be deleted (409). Each rule gets a check and a test.
 - **Store data in a database:** `goforge add db <postgres|mysql|sqlite|mongo>`.
 - **Understand the project:** `goforge inspect --json` lists its resources and fields, routes,
   database, and environment variables.
@@ -27,8 +30,9 @@ Install GoForge with `go install github.com/Frank5ive/goforge@latest`.
 - Keep the `// goforge:` and `# goforge:` marker comments. GoForge inserts code above them; without
   them, `goforge add` can't update the file.
 - Don't edit `.goforge.json` by hand; `goforge add` keeps it up to date.
-- Put business rules in the resource's package: validation in `Input.Validate` (in `<resource>.go`)
-  and use cases in `service.go`. Handlers only translate between HTTP and the service.
+- Express field rules in `--fields` where you can. Put other business rules in the resource's
+  `rules.go` (run by `Input.Validate` for create, replace, and patch) and use cases in
+  `service.go`. Handlers only translate between HTTP and the service.
 - For client errors, return (or wrap) the resource's `ErrNotFound` or `ErrInvalid`. Any other error
   becomes a 500 that is logged with its cause.
 - Log with `handlers.Logger(ctx)`, so log lines carry the request ID.

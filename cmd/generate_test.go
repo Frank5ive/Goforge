@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -159,5 +160,61 @@ func TestGenerate_RejectsUnknownDatabase(t *testing.T) {
 	_, err := runGenerateCmd(t, "--name", "x", "--output", t.TempDir(), "--db", "oracle", "--yes")
 	if err == nil || !strings.Contains(err.Error(), "unsupported --db") {
 		t.Errorf("error = %v, want unsupported --db", err)
+	}
+}
+
+func TestGenerate_WithResources(t *testing.T) {
+	dir := t.TempDir()
+	var r result
+	code := runJSONInto(t, &r, "generate", "--name", "shop", "--output", dir, "--db", "sqlite",
+		"--resource", "category/categories:name:string", "--resource", "product:name:string(1..100),price:float(0..)")
+	if code != 0 || !r.OK {
+		t.Fatalf("exit %d, result %+v", code, r)
+	}
+	for _, want := range []string{"categories/category.go", "products/rules.go", "db/db.go"} {
+		if !slices.Contains(r.Created, want) {
+			t.Errorf("created does not list %s", want)
+		}
+	}
+	if len(r.Updated) != 0 || len(r.Endpoints) != 12 || !strings.Contains(r.Summary, "with 2 resources") {
+		t.Errorf("updated %v, %d endpoints, summary %q", r.Updated, len(r.Endpoints), r.Summary)
+	}
+	routes, _ := os.ReadFile(filepath.Join(dir, "shop", "server", "routes.go"))
+	if !strings.Contains(string(routes), "categories.RegisterRoutes") || !strings.Contains(string(routes), "products.RegisterRoutes") {
+		t.Errorf("routes.go doesn't register both resources:\n%s", routes)
+	}
+}
+
+func TestGenerate_ResourceFailureCreatesNothing(t *testing.T) {
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"--resource", "product:price:float(5..1)"},                               // rejected before generating
+		{"--resource", "product:name:string", "--resource", "product:sku:string"}, // fails after
+	} {
+		r, code := runJSON(t, append([]string{"generate", "--name", "shop", "--output", dir}, args...)...)
+		if code != 1 || r.Error == nil {
+			t.Fatalf("%v: exit %d, result %+v; want a failure", args, code, r)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "shop")); !os.IsNotExist(err) {
+			t.Errorf("%v: the project directory was left behind", args)
+		}
+	}
+}
+
+func TestGenerateRejectsDuplicateResources(t *testing.T) {
+	for _, dryRun := range []bool{true, false} {
+		dir := t.TempDir()
+		args := []string{"-n", "shop", "-o", dir, "--yes",
+			"--resource", "product:name:string", "--resource", "product:title:string"}
+		if dryRun {
+			args = append(args, "--dry-run")
+		}
+		_, err := runGenerateCmd(t, args...)
+		if err == nil || !strings.Contains(err.Error(), "already in an earlier --resource") {
+			t.Errorf("dry run %t: error = %v, want the duplicate rejected", dryRun, err)
+		}
+		if _, statErr := os.Stat(filepath.Join(dir, "shop")); !os.IsNotExist(statErr) {
+			t.Errorf("dry run %t: the project was created", dryRun)
+		}
 	}
 }

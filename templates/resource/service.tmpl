@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -13,15 +15,42 @@ import (
 type Service struct {
 	repo Repository
 	now  func() time.Time
+	// deleteChecks stop Delete while other items refer to a {{.Human}}; see BlockDeleteWhen
+	deleteChecks []deleteCheck
+{{- range .Refs}}
+	// {{.ExistsVar}} checks {{.JSON}}; see Require{{.GoName}}
+	{{.ExistsVar}} func(context.Context, string) (bool, error)
+{{- end}}
+}
+
+// deleteCheck reports whether items named by what still refer to a {{.Human}}.
+type deleteCheck struct {
+	what  string
+	inUse func(ctx context.Context, id string) (bool, error)
 }
 
 // NewService returns a Service that stores {{.HumanPlural}} in repo.
 func NewService(repo Repository) *Service {
-	return &Service{
-		repo: repo,
-		// Millisecond precision is what every supported database stores (MongoDB
-		// keeps milliseconds), so values read back match the ones returned
-		now: func() time.Time { return time.Now().UTC().Truncate(time.Millisecond) },
+	return &Service{repo: repo, now: increasingClock()}
+}
+
+// increasingClock returns a clock with millisecond precision, which every
+// supported database stores (MongoDB keeps milliseconds), so values read back
+// match the ones returned. Each time it returns is later than the one before,
+// so {{.HumanPlural}} created in the same millisecond still list in the order
+// they were created.
+func increasingClock() func() time.Time {
+	var mu sync.Mutex
+	var last time.Time
+	return func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		if !now.After(last) {
+			now = last.Add(time.Millisecond)
+		}
+		last = now
+		return now
 	}
 }
 
@@ -54,10 +83,61 @@ func (s *Service) Get(ctx context.Context, id string) ({{.Type}}, error) {
 	return s.repo.Get(ctx, id)
 }
 
+// Exists reports whether a {{.Human}} with the ID exists. Resources that refer
+// to {{.HumanPlural}} use it to check their references.
+func (s *Service) Exists(ctx context.Context, id string) (bool, error) {
+	_, err := s.repo.Get(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// BlockDeleteWhen makes Delete fail with ErrInUse while inUse reports that
+// other items, named by what (e.g. "orders"), still refer to the {{.Human}}.
+// server/routes.go wires it for each resource that refers to {{.HumanPlural}}.
+func (s *Service) BlockDeleteWhen(what string, inUse func(ctx context.Context, id string) (bool, error)) {
+	s.deleteChecks = append(s.deleteChecks, deleteCheck{what: what, inUse: inUse})
+}
+{{- range .Refs}}
+
+// Require{{.GoName}} makes Create, Update, and Patch check that {{.JSON}} is the
+// ID of an existing {{.TargetHuman}}, using exists (wired in server/routes.go).
+func (s *Service) Require{{.GoName}}(exists func(ctx context.Context, id string) (bool, error)) {
+	s.{{.ExistsVar}} = exists
+}
+
+// Has{{.GoName}} reports whether any {{$.Human}} has the {{.JSON}} id, so the
+// {{.TargetHuman}} can't be deleted while one does.
+func (s *Service) Has{{.GoName}}(ctx context.Context, id string) (bool, error) {
+	n, err := s.repo.CountBy{{.GoName}}(ctx, id)
+	return n > 0, err
+}
+{{- end}}
+
+// check validates in, then checks its references to other resources.
+func (s *Service) check({{if .Refs}}ctx{{else}}_{{end}} context.Context, in Input) error {
+	if err := in.Validate(); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+{{- range .Refs}}
+	if s.{{.ExistsVar}} != nil{{if .Optional}} && in.{{.GoName}} != ""{{end}} {
+		ok, err := s.{{.ExistsVar}}(ctx, in.{{.GoName}})
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("%w: {{.JSON}} is not the ID of an existing {{.TargetHuman}}", ErrInvalid)
+		}
+	}
+{{- end}}
+	return nil
+}
+
 // Create validates in and stores a new {{.Human}}.
 func (s *Service) Create(ctx context.Context, in Input) ({{.Type}}, error) {
-	if err := in.Validate(); err != nil {
-		return {{.Type}}{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	if err := s.check(ctx, in); err != nil {
+		return {{.Type}}{}, err
 	}
 
 	now := s.now()
@@ -72,8 +152,8 @@ func (s *Service) Create(ctx context.Context, in Input) ({{.Type}}, error) {
 
 // Update validates in and replaces the fields of the {{.Human}} with the given ID.
 func (s *Service) Update(ctx context.Context, id string, in Input) ({{.Type}}, error) {
-	if err := in.Validate(); err != nil {
-		return {{.Type}}{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	if err := s.check(ctx, in); err != nil {
+		return {{.Type}}{}, err
 	}
 
 	item, err := s.repo.Get(ctx, id)
@@ -99,8 +179,8 @@ func (s *Service) Patch(ctx context.Context, id string, p Patch) ({{.Type}}, err
 
 	in := item.input()
 	p.applyTo(&in)
-	if err := in.Validate(); err != nil {
-		return {{.Type}}{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	if err := s.check(ctx, in); err != nil {
+		return {{.Type}}{}, err
 	}
 	item.apply(in)
 	item.UpdatedAt = s.now()
@@ -111,8 +191,18 @@ func (s *Service) Patch(ctx context.Context, id string, p Patch) ({{.Type}}, err
 	return item, nil
 }
 
-// Delete removes the {{.Human}} with the given ID.
+// Delete removes the {{.Human}} with the given ID, unless other items still
+// refer to it (ErrInUse).
 func (s *Service) Delete(ctx context.Context, id string) error {
+	for _, c := range s.deleteChecks {
+		inUse, err := c.inUse(ctx, id)
+		if err != nil {
+			return err
+		}
+		if inUse {
+			return fmt.Errorf("%w: %s still refer to it", ErrInUse, c.what)
+		}
+	}
 	return s.repo.Delete(ctx, id)
 }
 

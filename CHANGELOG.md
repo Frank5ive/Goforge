@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Field rules in `--fields`: an `email` type, and `(min..max)` ranges for numbers and string
+  lengths (`name:string(1..100)`, `price:float(0..)`). Each rule becomes a check in the generated
+  `Validate` and gets its own generated test; sample values in the generated tests satisfy them
+- `ref(<resource>)` fields link resources (`category_id:ref(category)`): an unknown ID is a
+  `422`, and an item can't be deleted while others refer to it (`409`). The services are wired in
+  `server/routes.go` and the checks run in the service, so they work on every database; every
+  repository can count references, and the shared repository tests check it
+- Each resource has a `rules.go`, the place for its own business rules, which `Validate` runs
+  after the field rules
+- `goforge generate --resource name:fields` (repeatable) creates resources in the same command;
+  if adding the database or a resource fails, nothing is created
+- `goforge --help` describes the whole workflow on one screen: every command, a one-command
+  example, and the field syntax
+
+### Fixed
+- Items created within the same millisecond were listed in the wrong order: ties in
+  `created_at` were broken by the random ID. Each service's clock now always moves forward
+  (found by the benchmark)
+
+### Changed
+- When output is piped (scripts and AI agents), `generate` and `add` print a compact summary
+  instead of every file: about 95% shorter. `--json` still has the full details
+- `inspect` shows fields in the `--fields` syntax
+- If adding the database fails during `generate --db`, the new project is removed instead of
+  left half-made
+
 ## [0.2.0] - 2026-10-22
 
 ### Fixed

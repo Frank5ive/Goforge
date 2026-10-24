@@ -59,7 +59,7 @@ func TestInspectText(t *testing.T) {
 	}
 
 	output, _ = runText(t, "inspect", "--dir", project)
-	assertContains(t, output, "📦 Resources (1):", "/products", "name string, notes string (optional)",
+	assertContains(t, output, "📦 Resources (1):", "/products", "name:string, notes:string?",
 		"⚠️  server/routes.go is missing")
 }
 

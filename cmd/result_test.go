@@ -148,3 +148,47 @@ func TestResultText(t *testing.T) {
 		}
 	}
 }
+
+func TestResultCompact(t *testing.T) {
+	r := newResult("add resource", ".", false)
+	r.Summary = "Added the product resource"
+	r.Created = []string{"products/product.go", "products/service.go"}
+	r.Updated = []string{"server/routes.go"}
+	r.Endpoints = []endpoint{{Method: "GET", Path: "/products", Query: "limit=20&offset=0"}, {Method: "POST", Path: "/products"}}
+	r.Notes = []string{"CI needs a database"}
+	r.Info = []string{"a tip"}
+	r.NextSteps = []nextStep{{Command: "go test ./products"}, {Command: "make run"}}
+
+	var out bytes.Buffer
+	r.printCompact(&out)
+	want := "✅ Added the product resource (2 files created, 1 updated; --json lists them)\n" +
+		"Routes: GET /products, POST /products\n" +
+		"⚠️  CI needs a database\n" +
+		"Next: go test ./products · make run\n"
+	if out.String() != want {
+		t.Errorf("compact output =\n%s\nwant\n%s", out.String(), want)
+	}
+
+	r.DryRun = true
+	r.Notes, r.NextSteps = nil, nil
+	out.Reset()
+	r.printCompact(&out)
+	if want := "2 files would be created, 1 would be updated"; !strings.Contains(out.String(), want) {
+		t.Errorf("dry-run compact output =\n%s\nwant it to contain %q", out.String(), want)
+	}
+}
+
+func TestPiped(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	if !piped(w) {
+		t.Error("a pipe should count as piped")
+	}
+	if piped(&bytes.Buffer{}) {
+		t.Error("a buffer should not count as piped")
+	}
+}

@@ -5,10 +5,11 @@ package {{.Package}}
 import (
 	"context"
 	"errors"
-{{- if .RequiredField}}
 	"strings"
-{{- end}}
 	"time"
+{{- if .UsesUTF8}}
+	"unicode/utf8"
+{{- end}}
 )
 
 // {{.Type}} is a {{.Human}} as stored and returned by the API.
@@ -29,25 +30,30 @@ type Input struct {
 {{- end}}
 }
 
-// Validate checks the business rules for a {{.Human}} and reports every problem at once.
+// Validate checks the rules for a {{.Human}} and reports every problem at once:
+// the field rules generated from --fields, then the custom ones in rules.go.
 func (in Input) Validate() error {
-{{- if .RequiredField}}
 	var problems []string
-{{- range .Fields}}{{if .Required}}
-	if strings.TrimSpace(in.{{.GoName}}) == "" {
-		problems = append(problems, "{{.JSON}} is required")
+{{- range .Fields}}{{range .Checks}}
+	if {{.Cond}} {
+		problems = append(problems, {{.Message}})
 	}
 {{- end}}{{end}}
+	problems = append(problems, in.rules()...)
 
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
-{{- else}}
-	// Add business rules here; return an error describing every invalid field.
-	return nil
-{{- end}}
 }
+{{- if .UsesEmail}}
+
+// validEmail reports whether s has exactly one @ with text on both sides.
+func validEmail(s string) bool {
+	user, domain, ok := strings.Cut(s, "@")
+	return ok && user != "" && domain != "" && !strings.Contains(domain, "@")
+}
+{{- end}}
 
 // apply copies the editable fields from in.
 func (item *{{.Type}}) apply(in Input) {
@@ -97,6 +103,10 @@ var (
 
 	// ErrInvalid wraps validation failures so handlers can respond with 422.
 	ErrInvalid = errors.New("invalid {{.Human}}")
+
+	// ErrInUse is returned when deleting a {{.Human}} other items still refer
+	// to, so handlers can respond with 409.
+	ErrInUse = errors.New("{{.Human}} is in use")
 )
 
 // Repository stores {{.HumanPlural}}. The service depends only on this interface,
@@ -110,4 +120,8 @@ type Repository interface {
 	Create(ctx context.Context, item {{.Type}}) error
 	Update(ctx context.Context, item {{.Type}}) error
 	Delete(ctx context.Context, id string) error
+{{- range .Refs}}
+	// CountBy{{.GoName}} returns how many {{$.HumanPlural}} have the {{.JSON}} id.
+	CountBy{{.GoName}}(ctx context.Context, id string) (int, error)
+{{- end}}
 }

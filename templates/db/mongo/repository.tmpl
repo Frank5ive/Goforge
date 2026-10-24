@@ -149,3 +149,11 @@ func (r *MongoRepository) Delete(ctx context.Context, id string) error {
 	}
 	return nil
 }
+{{- range .Refs}}
+
+// CountBy{{.GoName}} returns how many {{$.HumanPlural}} have the {{.JSON}} id.
+func (r *MongoRepository) CountBy{{.GoName}}(ctx context.Context, id string) (int, error) {
+	n, err := r.collection().CountDocuments(ctx, bson.D{ {Key: "{{.JSON}}", Value: id} })
+	return int(n), err
+}
+{{- end}}
