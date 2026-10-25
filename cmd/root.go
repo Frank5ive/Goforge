@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -84,11 +85,26 @@ func Execute() int {
 	return execute(newRootCmd(), os.Args[1:])
 }
 
+// commandContext returns the context cmd was run with, which is cancelled when
+// the caller (such as an MCP client) gives up on the command.
+func commandContext(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
 func execute(root *cobra.Command, args []string) int {
+	return executeContext(context.Background(), root, args)
+}
+
+// executeContext is execute with a context the commands honor: cancelling it
+// stops the external tools they run (go, git), and the command fails.
+func executeContext(ctx context.Context, root *cobra.Command, args []string) int {
 	root.SetArgs(args)
 	// Usage text would break JSON output; the error result has a hint instead
 	root.SilenceUsage = wantsJSON(nil, args)
-	c, err := root.ExecuteC()
+	c, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		return 0
 	}

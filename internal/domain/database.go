@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -87,12 +88,14 @@ type Changes struct {
 type DatabaseGenerator interface {
 	// Add connects the project to the database and moves every existing
 	// resource onto it.
-	Add(config *DatabaseConfig) (Changes, error)
+	// Cancelling ctx stops the dependency download; the project is left unchanged.
+	Add(ctx context.Context, config *DatabaseConfig) (Changes, error)
 }
 
 // ModuleManager manages the Go module dependencies of a generated project.
 type ModuleManager interface {
 	// Require adds module at version to the project in dir and tidies its
 	// go.mod and go.sum.
-	Require(dir, module, version string) error
+	// Cancelling ctx stops the go command.
+	Require(ctx context.Context, dir, module, version string) error
 }

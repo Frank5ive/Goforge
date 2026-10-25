@@ -1,6 +1,7 @@
 package gocheck
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -15,14 +16,14 @@ func installedWithLint() map[string]bool {
 func TestCheck_ReportsLintProblems(t *testing.T) {
 	issues := `{"Issues":[{"FromLinter":"errcheck","Text":"unchecked","Pos":{"Filename":"main.go","Line":4,"Column":2}}]}`
 	tools := &fakeTools{installed: installedWithLint()}
-	run := func(dir, name string, args ...string) ([]byte, []byte, error) {
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
 		if strings.HasSuffix(name, "golangci-lint") {
 			return []byte(issues), nil, errors.New("exit status 1")
 		}
-		return tools.run(dir, name, args...)
+		return tools.run(ctx, dir, name, args...)
 	}
 
-	report, err := (&Checker{run: run, lookPath: tools.lookPath}).Check(project(t), domain.CheckOptions{})
+	report, err := (&Checker{run: run, lookPath: tools.lookPath}).Check(t.Context(), project(t), domain.CheckOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,14 +47,14 @@ func TestCheck_LintFailureWithoutUsableOutputFailsTheStep(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			run := func(dir, name string, args ...string) ([]byte, []byte, error) {
+			run := func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
 				if strings.HasSuffix(name, "golangci-lint") {
 					return []byte(tt.stdout), []byte(tt.stderr), tt.err
 				}
-				return tools.run(dir, name, args...)
+				return tools.run(ctx, dir, name, args...)
 			}
 
-			report, err := (&Checker{run: run, lookPath: tools.lookPath}).Check(project(t), domain.CheckOptions{})
+			report, err := (&Checker{run: run, lookPath: tools.lookPath}).Check(t.Context(), project(t), domain.CheckOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,5 +76,39 @@ func TestTruncateCapsLongMessages(t *testing.T) {
 	got := truncate(long)
 	if len(got) >= len(long) || !strings.HasSuffix(got, "(truncated)") {
 		t.Errorf("truncate() = %d characters ending %q, want it shortened and marked", len(got), got[len(got)-12:])
+	}
+}
+
+// A cancelled check returns the cancellation, not the killed tools' output
+// presented as problems with the project, whether or not golangci-lint is installed.
+func TestCheck_StopsWhenCancelled(t *testing.T) {
+	for name, installed := range map[string]map[string]bool{
+		"with golangci-lint":    installedWithLint(),
+		"without golangci-lint": {"go": true, "gofmt": true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tools := &fakeTools{installed: installed}
+			ctx, cancel := context.WithCancel(t.Context())
+			run := func(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+				if len(args) > 0 && args[0] == "test" {
+					cancel() // the caller gives up while the tests run
+					return nil, []byte("signal: killed"), errors.New("signal: killed")
+				}
+				return tools.run(ctx, dir, name, args...)
+			}
+
+			report, err := (&Checker{run: run, lookPath: tools.lookPath}).Check(ctx, project(t), domain.CheckOptions{})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("Check() error = %v, want context.Canceled", err)
+			}
+			if len(report.Problems) != 0 {
+				t.Errorf("problems = %+v, want none: a stopped tool says nothing about the project", report.Problems)
+			}
+			for _, step := range report.Steps {
+				if step.Name == domain.CheckTest {
+					t.Errorf("steps = %+v, want no test step for the stopped tests", report.Steps)
+				}
+			}
+		})
 	}
 }

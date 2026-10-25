@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
-	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -28,21 +27,50 @@ Every tool returns the same JSON as the goforge command with --json: ok, created
 failure an error with a stable code, a message, and a hint. A failed call changes nothing.`
 
 // mcpRun serializes tool calls: each one edits a project on disk, and two at
-// once could write the same files.
-var mcpRun sync.Mutex
+// once could write the same files. It is a channel so a call that is waiting
+// for its turn can give up when its request is cancelled.
+var mcpRun = make(chan struct{}, 1)
+
+// cancelledResult is the tool result for a call whose request was cancelled
+// before or while it ran. A command that was stopped changes nothing: they plan
+// every change first and apply them all or none.
+func cancelledResult() *mcp.CallToolResult {
+	message, _ := json.Marshal("the request was cancelled")
+	hint, _ := json.Marshal(hints[codeCancelled])
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: `{"ok": false, "error": {"code": "cancelled", "message": ` + string(message) + `, "hint": ` + string(hint) + `}}`}},
+		IsError: true,
+	}
+}
 
 // runGoforge runs goforge with args and --json, as the command line would,
 // and returns its result as a tool result: the JSON text, marked as an error
-// when the command failed.
-func runGoforge(args ...string) *mcp.CallToolResult {
-	mcpRun.Lock()
-	defer mcpRun.Unlock()
+// when the command failed. Cancelling ctx stops the command, and the call
+// waits for its turn only as long as ctx lives.
+func runGoforge(ctx context.Context, args ...string) *mcp.CallToolResult {
+	// A cancelled request must not start anything: select would pick at random
+	// when both a free turn and the cancellation are ready
+	if ctx.Err() != nil {
+		return cancelledResult()
+	}
+	select {
+	case mcpRun <- struct{}{}:
+		defer func() { <-mcpRun }()
+	case <-ctx.Done():
+		return cancelledResult()
+	}
 
 	root := newRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	code := execute(root, append(args, "--json"))
+	code := executeContext(ctx, root, append(args, "--json"))
+	// A command that finished did its work, so report that even if the request
+	// was cancelled a moment later; one that failed because it was stopped
+	// changed nothing
+	if code != 0 && ctx.Err() != nil {
+		return cancelledResult()
+	}
 
 	text := out.String()
 	if !json.Valid(out.Bytes()) {
@@ -124,7 +152,7 @@ func newMCPServer(version string) *mcp.Server {
 			"graceful shutdown, request IDs, validation, storage, migrations, an OpenAPI document at /openapi.json, Dockerfile, and CI. " +
 			"If any part fails, nothing is created.",
 		Annotations: additive,
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in generateInput) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in generateInput) (*mcp.CallToolResult, any, error) {
 		args := []string{"generate", "--yes", "--name", in.Name}
 		args = append(args, valueFlag("module", in.Module)...)
 		args = append(args, valueFlag("output", in.Output)...)
@@ -145,7 +173,7 @@ func newMCPServer(version string) *mcp.Server {
 		if in.DryRun {
 			args = append(args, "--dry-run")
 		}
-		return runGoforge(args...), nil, nil
+		return runGoforge(ctx, args...), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -153,25 +181,25 @@ func newMCPServer(version string) *mcp.Server {
 		Description: "Add a REST resource to a GoForge project: model, validation from the field rules, repository for the project's database, " +
 			"service, handlers, tests, routes, and its OpenAPI paths. Business rules go in <resource>/rules.go afterwards.",
 		Annotations: additive,
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in addResourceInput) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in addResourceInput) (*mcp.CallToolResult, any, error) {
 		args := []string{"add", "resource", in.Name, "--dir", in.Dir, "--fields", in.Fields}
 		args = append(args, valueFlag("plural", in.Plural)...)
 		if in.DryRun {
 			args = append(args, "--dry-run")
 		}
-		return runGoforge(args...), nil, nil
+		return runGoforge(ctx, args...), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "goforge_add_db",
 		Description: "Move a GoForge project onto postgres, mysql, sqlite, or mongo: adds the driver, migrations, a repository for each existing resource, docker-compose, and CI.",
 		Annotations: additive,
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in addDBInput) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in addDBInput) (*mcp.CallToolResult, any, error) {
 		args := []string{"add", "db", in.Engine, "--dir", in.Dir}
 		if in.DryRun {
 			args = append(args, "--dry-run")
 		}
-		return runGoforge(args...), nil, nil
+		return runGoforge(ctx, args...), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -179,8 +207,8 @@ func newMCPServer(version string) *mcp.Server {
 		Description: "Describe a GoForge project without reading its code: module, database, resources with their fields, every route, " +
 			"the environment variables it reads, and problems that would stop goforge from extending it.",
 		Annotations: readOnly,
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in projectInput) (*mcp.CallToolResult, any, error) {
-		return runGoforge("inspect", "--dir", in.Dir), nil, nil
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in projectInput) (*mcp.CallToolResult, any, error) {
+		return runGoforge(ctx, "inspect", "--dir", in.Dir), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -188,12 +216,12 @@ func newMCPServer(version string) *mcp.Server {
 		Description: "Run gofmt, go vet, the tests, and golangci-lint (if installed) on a Go project and report each problem with its file and line. " +
 			"A freshly generated project passes; run it after changing code.",
 		Annotations: readOnly,
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in checkInput) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in checkInput) (*mcp.CallToolResult, any, error) {
 		args := []string{"check", "--dir", in.Dir}
 		if in.Race {
 			args = append(args, "--race")
 		}
-		return runGoforge(args...), nil, nil
+		return runGoforge(ctx, args...), nil, nil
 	})
 
 	return server

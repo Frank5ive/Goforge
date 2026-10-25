@@ -3,12 +3,14 @@
 package gomod
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/Frank5ive/goforge/internal/domain"
+	"github.com/Frank5ive/goforge/internal/infrastructure/proc"
 )
 
 // Manager implements domain.ModuleManager by running the go command in the
@@ -23,7 +25,7 @@ func New(dryRun bool) *Manager {
 }
 
 // Require implements domain.ModuleManager.Require with `go get` and `go mod tidy`.
-func (m *Manager) Require(dir, module, version string) error {
+func (m *Manager) Require(ctx context.Context, dir, module, version string) error {
 	if m.dryRun {
 		return nil
 	}
@@ -32,7 +34,7 @@ func (m *Manager) Require(dir, module, version string) error {
 	}
 
 	for _, args := range [][]string{{"get", module + "@" + version}, {"mod", "tidy"}} {
-		cmd := exec.Command("go", args...)
+		cmd := proc.Command(ctx, "go", args...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "GOWORK=off")
 		if output, err := cmd.CombinedOutput(); err != nil {

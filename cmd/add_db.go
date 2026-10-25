@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -45,7 +46,7 @@ go.mod. If any step fails, the project is left unchanged.`,
 		ValidArgs: domain.DatabaseEngines,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
-			return runAddDB(cmd.OutOrStdout(), args[0], opts)
+			return runAddDB(commandContext(cmd), cmd.OutOrStdout(), args[0], opts)
 		},
 	}
 
@@ -57,7 +58,7 @@ go.mod. If any step fails, the project is left unchanged.`,
 	return cmd
 }
 
-func runAddDB(out io.Writer, engine string, opts *addDBOptions) error {
+func runAddDB(ctx context.Context, out io.Writer, engine string, opts *addDBOptions) error {
 	container, err := di.BuildContainer(templatesFS, di.Options{DryRun: opts.dryRun})
 	if err != nil {
 		return err
@@ -66,7 +67,7 @@ func runAddDB(out io.Writer, engine string, opts *addDBOptions) error {
 	engine = domain.NormalizeDatabase(engine)
 	label := domain.DatabaseLabel(engine)
 
-	changes, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: opts.dir, Engine: engine})
+	changes, err := container.DatabaseGeneratorUsecase.Add(ctx, &domain.DatabaseConfig{ProjectDir: opts.dir, Engine: engine})
 	if err != nil {
 		return err
 	}

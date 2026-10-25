@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call), `goforge_add_resource`, `goforge_add_db`, and the read-only `goforge_inspect` and
   `goforge_check`. Each runs the real command and returns its `--json` result; a failure is a tool
   error with the stable `code` and a `hint`. Add it to Claude Code with
-  `claude mcp add goforge -- goforge mcp`. GoForge now depends on the official MCP Go SDK
+  `claude mcp add goforge -- goforge mcp`. Cancelling a request stops the command and the go and
+  git processes it started, and a call waiting for its turn gives up instead of queuing. GoForge now
+  depends on the official MCP Go SDK
 - Every new project serves an OpenAPI 3.1 description of itself at `GET /openapi.json`: the
   health endpoints, and for each resource its paths, schemas with your field rules (`minLength`,
   `maximum`, `format: email`, required fields), pagination, and the error responses, including a

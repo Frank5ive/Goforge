@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/Frank5ive/goforge/internal/di"
 	"github.com/Frank5ive/goforge/internal/domain"
+	"github.com/Frank5ive/goforge/internal/infrastructure/proc"
 )
 
 var templatesFS fs.FS
@@ -222,7 +224,7 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	r.Summary = fmt.Sprintf("Created the %s project in %s", config.AppName, projectPath)
 	if opts.db != "" {
 		label := domain.DatabaseLabel(opts.db)
-		changes, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: projectPath, Engine: opts.db})
+		changes, err := container.DatabaseGeneratorUsecase.Add(commandContext(cmd), &domain.DatabaseConfig{ProjectDir: projectPath, Engine: opts.db})
 		if err != nil {
 			return fail("adding "+label, err)
 		}
@@ -245,7 +247,7 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	}
 
 	if opts.initGit {
-		if err := initGitRepo(projectPath); err != nil {
+		if err := initGitRepo(commandContext(cmd), projectPath); err != nil {
 			r.Notes = append(r.Notes, fmt.Sprintf("The git repository was not initialized: %v", err))
 		} else {
 			r.Info = append(r.Info, "Initialized a git repository.")
@@ -362,12 +364,12 @@ func displayConfig(out io.Writer, config *domain.ServerConfig, opts *generateOpt
 }
 
 // initGitRepo runs `git init` in the project.
-func initGitRepo(projectPath string) error {
+func initGitRepo(ctx context.Context, projectPath string) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return errors.New("git not found in PATH")
 	}
 
-	gitInit := exec.Command("git", "init", "--quiet")
+	gitInit := proc.Command(ctx, "git", "init", "--quiet")
 	gitInit.Dir = projectPath
 	if output, err := gitInit.CombinedOutput(); err != nil {
 		return fmt.Errorf("git init: %w: %s", err, output)

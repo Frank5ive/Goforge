@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ type mockModules struct {
 	err   error
 }
 
-func (m *mockModules) Require(dir, module, version string) error {
+func (m *mockModules) Require(_ context.Context, dir, module, version string) error {
 	m.calls = append(m.calls, module+"@"+version)
 	return m.err
 }
@@ -106,7 +107,7 @@ func TestDatabaseGenerator_Add(t *testing.T) {
 	w := newDBProject()
 	modules := &mockModules{}
 
-	changes, err := newTestDatabaseGenerator(w, modules).Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: "postgres"})
+	changes, err := newTestDatabaseGenerator(w, modules).Add(t.Context(), &domain.DatabaseConfig{ProjectDir: "/proj", Engine: "postgres"})
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
@@ -185,7 +186,7 @@ func TestDatabaseGenerator_Add_RefusesAndChangesNothing(t *testing.T) {
 			before := len(w.FilesWritten)
 			modules := &mockModules{}
 
-			_, err := newTestDatabaseGenerator(w, modules).Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: "postgres"})
+			_, err := newTestDatabaseGenerator(w, modules).Add(t.Context(), &domain.DatabaseConfig{ProjectDir: "/proj", Engine: "postgres"})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Add() error = %v, want it to contain %q", err, tt.want)
 			}
@@ -208,7 +209,7 @@ func TestDatabaseGenerator_Add_RollsBackWhenDependencyFails(t *testing.T) {
 	}
 
 	_, err := newTestDatabaseGenerator(w, &mockModules{err: errors.New("network down")}).
-		Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: "postgres"})
+		Add(t.Context(), &domain.DatabaseConfig{ProjectDir: "/proj", Engine: "postgres"})
 	if err == nil || !strings.Contains(err.Error(), "left unchanged") {
 		t.Fatalf("Add() error = %v, want a rollback error", err)
 	}
@@ -225,7 +226,7 @@ func TestDatabaseGenerator_Add_RollsBackWhenDependencyFails(t *testing.T) {
 
 func TestDatabaseGenerator_Add_UnsupportedEngine(t *testing.T) {
 	_, err := newTestDatabaseGenerator(newDBProject(), &mockModules{}).
-		Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: "oracle"})
+		Add(t.Context(), &domain.DatabaseConfig{ProjectDir: "/proj", Engine: "oracle"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported database") {
 		t.Errorf("Add() error = %v, want unsupported database", err)
 	}
@@ -258,7 +259,7 @@ func TestDatabaseGenerator_Add_ConvertsTheRightResourceWhenNamesOverlap(t *testi
 		"\tblogposts.RegisterRoutes(mux, blogposts.NewService(blogposts.NewMemoryRepository()))\n\tposts.RegisterRoutes(mux, posts.NewService(posts.NewMemoryRepository()))\n", 1)
 	w.FilesWritten[filepath.Join("/proj", "server", "routes.go")] = routes
 
-	if _, err := newTestDatabaseGenerator(w, &mockModules{}).Add(&domain.DatabaseConfig{ProjectDir: "/proj", Engine: "postgres"}); err != nil {
+	if _, err := newTestDatabaseGenerator(w, &mockModules{}).Add(t.Context(), &domain.DatabaseConfig{ProjectDir: "/proj", Engine: "postgres"}); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
 

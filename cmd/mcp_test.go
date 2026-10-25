@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -217,7 +219,7 @@ func TestMCPServerShowsInstructions(t *testing.T) {
 
 func TestRunGoforgeReportsOutputThatIsNotJSON(t *testing.T) {
 	// An unknown command prints usage text, not a result; the tool must still return JSON
-	res := runGoforge("no-such-command")
+	res := runGoforge(t.Context(), "no-such-command")
 	text := res.Content[0].(*mcp.TextContent).Text
 	if !res.IsError || !json.Valid([]byte(text)) {
 		t.Fatalf("runGoforge(no-such-command) = error %t, %q; want a JSON error result", res.IsError, text)
@@ -329,4 +331,75 @@ func snapshotFiles(t *testing.T, dir string) []string {
 	}
 	slices.Sort(files)
 	return files
+}
+
+func errorOf(t *testing.T, res *mcp.CallToolResult) *errorInfo {
+	t.Helper()
+	var r result
+	if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &r); err != nil {
+		t.Fatal(err)
+	}
+	return r.Error
+}
+
+func TestRunGoforgeStopsForACancelledRequest(t *testing.T) {
+	SetTemplatesFS(os.DirFS(filepath.Join("..", "templates")))
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	res := runGoforge(ctx, "generate", "--yes", "--name", "shop", "--output", dir)
+	if e := errorOf(t, res); !res.IsError || e == nil || e.Code != "cancelled" || e.Hint == "" {
+		t.Errorf("a cancelled call = %+v, error %+v; want a cancelled error with a hint", res, e)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("a cancelled generate wrote %d entries", len(entries))
+	}
+}
+
+// A call waiting for its turn gives up when its request is cancelled, instead
+// of queuing behind a call that never finishes.
+func TestRunGoforgeWaitingCallGivesUpWhenCancelled(t *testing.T) {
+	mcpRun <- struct{}{} // another call holds the turn
+	t.Cleanup(func() { <-mcpRun })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	done := make(chan *mcp.CallToolResult, 1)
+	go func() { done <- runGoforge(ctx, "inspect", "--dir", t.TempDir()) }()
+
+	select {
+	case res := <-done:
+		if e := errorOf(t, res); e == nil || e.Code != "cancelled" {
+			t.Errorf("waiting call = %+v, want a cancelled error", e)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a waiting call stayed queued after its request was cancelled")
+	}
+}
+
+// Cancelling stops a long check, which would otherwise run the project's tests to the end.
+func TestRunGoforgeStopsARunningCheck(t *testing.T) {
+	SetTemplatesFS(os.DirFS(filepath.Join("..", "templates")))
+	dir := t.TempDir()
+	if res := runGoforge(t.Context(), "generate", "--yes", "--name", "shop", "--output", dir); res.IsError {
+		t.Fatalf("generate failed: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+	// A test that takes a minute, so the check is still running when the request is cancelled
+	slow := "package server\n\nimport (\n\t\"testing\"\n\t\"time\"\n)\n\nfunc TestSlow(t *testing.T) { time.Sleep(time.Minute) }\n"
+	if err := os.WriteFile(filepath.Join(dir, "shop", "server", "slow_test.go"), []byte(slow), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	time.AfterFunc(3*time.Second, cancel)
+	start := time.Now()
+	res := runGoforge(ctx, "check", "--dir", filepath.Join(dir, "shop"))
+
+	if e := errorOf(t, res); e == nil || e.Code != "cancelled" {
+		t.Errorf("check = %s, want a cancelled error", res.Content[0].(*mcp.TextContent).Text)
+	}
+	if took := time.Since(start); took > 30*time.Second {
+		t.Errorf("a cancelled check ran for %s, so the minute-long test was not stopped", took)
+	}
 }
