@@ -70,6 +70,25 @@ limit"* without doing the task, which an earlier version of the harness recorded
 `./bench run -first-run 3 -runs 1 -condition goforge -goforge-version <version>` (and
 `goforge-required`).
 
+## Skill and MCP server (October 2026)
+
+GoForge at commit `08741df` (the version with the agent skill, `goforge mcp`, and OpenAPI), three
+tasks (`products`, `blog`, `store`), two runs each, offered-only: the prompt is identical in all
+three conditions and only what the agent has installed differs. Every run passed every check.
+
+| Condition | Runs | Fully correct | Used GoForge | Cost | Tokens | Turns | Minutes |
+|---|---|---|---|---|---|---|---|
+| goforge (prompt only) | 6 | 6/6 | 0/6 | $0.12 | 72,540 | 4 | 1.8 |
+| goforge-skill | 6 | 6/6 | 6/6 | $0.08 | 151,836 | 8 | 1.6 |
+| goforge-mcp | 6 | 6/6 | 1/6 | $0.11 | 120,775 | 6 | 2.1 |
+
+- **The skill gets agents to use GoForge** (6 of 6 runs, against 0 of 6 with the prompt alone).
+  The MCP server alone barely did (1 of 6): the five tools were connected and visible, and agents
+  still wrote the API by hand. Tools need to be paired with instructions on when to use them.
+- **Using GoForge via the skill was cheaper on `products` and `store`** (`store`: $0.08 against
+  $0.15) and about equal on `blog`, with more tokens read (a larger project). Two runs per cell:
+  indicative, not conclusive.
+
 ## Method
 
 An agent gets a written spec for a service and builds it in an empty directory. Each task runs in

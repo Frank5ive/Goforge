@@ -1,0 +1,133 @@
+{
+  "task": "blog",
+  "condition": "goforge-skill",
+  "run": 2,
+  "model": "sonnet",
+  "goforge_version": "08741df0046e",
+  "image": "goforge-bench:claude-2.1.308-goforge-08741df0046e-1a0112df",
+  "image_id": "sha256:1ea3baa9fb5eeeaf47c418487dfab4f5a2924145a5a33ae4ad78f4d1d92a08d1",
+  "started": "2026-10-25T13:12:33.107379534+02:00",
+  "agent": {
+    "outcome": "success",
+    "cost_usd": 0.14485080000000003,
+    "duration_ms": 92984,
+    "turns": 12,
+    "input_tokens": 20,
+    "output_tokens": 4519,
+    "cache_read_tokens": 240688,
+    "cache_write_tokens": 18888,
+    "tool_calls": 10,
+    "go_commands": 3,
+    "failed_go_commands": 1,
+    "goforge_commands": 2,
+    "goforge_generated": 1,
+    "permission_denials": 0,
+    "skill_loaded": true,
+    "mcp_connected": false
+  },
+  "score": {
+    "built": true,
+    "vetted": true,
+    "own_tests_passed": true,
+    "started": true,
+    "passed": 23,
+    "total": 23,
+    "checks": [
+      {
+        "name": "health check responds 200",
+        "passed": true
+      },
+      {
+        "name": "create an author",
+        "passed": true
+      },
+      {
+        "name": "an email without @ is a 422",
+        "passed": true
+      },
+      {
+        "name": "an email with two @ is a 422",
+        "passed": true
+      },
+      {
+        "name": "an email with nothing before @ is a 422",
+        "passed": true
+      },
+      {
+        "name": "a blank author name is a 422",
+        "passed": true
+      },
+      {
+        "name": "create a post, unpublished by default",
+        "passed": true
+      },
+      {
+        "name": "a post by an unknown author is a 422",
+        "passed": true
+      },
+      {
+        "name": "a post without a title is a 422",
+        "passed": true
+      },
+      {
+        "name": "malformed JSON is a 400",
+        "passed": true
+      },
+      {
+        "name": "get an author and a post by ID",
+        "passed": true
+      },
+      {
+        "name": "unknown IDs are a 404",
+        "passed": true
+      },
+      {
+        "name": "list an author's posts",
+        "passed": true
+      },
+      {
+        "name": "an unknown author's posts are a 404",
+        "passed": true
+      },
+      {
+        "name": "list every post oldest first",
+        "passed": true
+      },
+      {
+        "name": "limit and offset page through authors",
+        "passed": true
+      },
+      {
+        "name": "an invalid limit is a 400",
+        "passed": true
+      },
+      {
+        "name": "deleting an author with posts is a 409 and keeps them",
+        "passed": true
+      },
+      {
+        "name": "replace a post with PUT",
+        "passed": true
+      },
+      {
+        "name": "PUT a post to an unknown author is a 422",
+        "passed": true
+      },
+      {
+        "name": "replace an author with PUT, applying the rules",
+        "passed": true
+      },
+      {
+        "name": "an author can be deleted once their posts are gone",
+        "passed": true
+      },
+      {
+        "name": "deleting an unknown post is a 404",
+        "passed": true
+      }
+    ],
+    "go_lines": 1896,
+    "test_lines": 1922
+  },
+  "work_dir": "/home/frank/.cache/goforge-bench/blog-goforge-skill_08741df0046e-2-20261025-131233"
+}
