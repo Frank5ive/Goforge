@@ -140,7 +140,7 @@ func cmdRun(args []string) error {
 	home, _ := os.UserHomeDir()
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	task := fs.String("task", "all", "task, or all: "+strings.Join(tasks, ", "))
-	condition := fs.String("condition", "all", "scratch, scratch-production, goforge, goforge-required, or all (all but scratch-production)")
+	condition := fs.String("condition", "all", "scratch, scratch-production, goforge, goforge-skill, goforge-mcp, goforge-required, or all (scratch, goforge, goforge-required)")
 	runs := fs.Int("runs", 1, "runs per task and condition")
 	first := fs.Int("first-run", 1, "number of the first run, to add runs to earlier results")
 	model := fs.String("model", "sonnet", "model, as passed to claude --model")

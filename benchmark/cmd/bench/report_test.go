@@ -158,3 +158,12 @@ func TestReadResultsAndReport(t *testing.T) {
 		t.Error("cmdReport() on an empty directory = nil, want an error")
 	}
 }
+
+func TestCompareLabelsPlacesSkillAndMCPBetweenOfferedAndRequired(t *testing.T) {
+	labels := []string{"goforge-required@v1", "goforge-mcp@v1", "goforge-skill@v1", "goforge@v1", "scratch"}
+	slices.SortFunc(labels, compareLabels)
+	want := []string{"scratch", "goforge@v1", "goforge-skill@v1", "goforge-mcp@v1", "goforge-required@v1"}
+	if !slices.Equal(labels, want) {
+		t.Errorf("sorted labels = %v, want %v", labels, want)
+	}
+}

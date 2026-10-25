@@ -84,7 +84,21 @@ three conditions, which differ only in the last sentence of the prompt and wheth
   generates and extends Go REST API projects. It is installed: run `goforge --help` to see what it
   can do."* This measures GoForge's effect when it is used.
 
-The third condition was added after a smoke test: offered GoForge on the small `products` task, the
+Two more conditions test whether the agent integrations raise adoption. Both use exactly the
+**goforge** prompt, so the only difference is what the agent has installed, and neither runs with
+`all`:
+
+- **goforge-skill**: the [`goforge` skill](../skills/goforge/SKILL.md) that ships with the GoForge
+  version under test is installed in the agent's `~/.claude/skills`.
+- **goforge-mcp**: the GoForge MCP server (`goforge mcp`) is connected, through `--mcp-config`.
+
+Claude Code lists what it started with, and the harness refuses to record a run unless the skill
+loaded only in `goforge-skill` and the server connected only in `goforge-mcp`, so a failed load
+can't pass as a result. MCP calls to `goforge_generate`, `goforge_add_resource`, and
+`goforge_add_db` count as using GoForge, like the commands. Claude Code also ships built-in skills,
+which every condition has.
+
+The `goforge-required` condition was added after a smoke test: offered GoForge on the small `products` task, the
 agent read `goforge --help` and wrote the service by hand. Without it, the benchmark would mostly
 measure whether agents choose GoForge, not whether it helps.
 

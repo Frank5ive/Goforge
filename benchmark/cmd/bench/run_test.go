@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -125,6 +126,83 @@ func TestUsesGoforge(t *testing.T) {
 	for condition, want := range map[string]bool{scratch: false, scratchProduction: false, goforge: true, goforgeRequired: true} {
 		if got := usesGoforge(condition); got != want {
 			t.Errorf("usesGoforge(%q) = %t, want %t", condition, got, want)
+		}
+	}
+}
+
+func TestParseTranscriptRecordsWhatClaudeStartedWith(t *testing.T) {
+	tests := []struct {
+		name  string
+		init  string
+		skill bool
+		mcp   bool
+	}{
+		{"nothing extra", `{"type":"system","subtype":"init","mcp_servers":[],"skills":["design","dataviz"]}`, false, false},
+		{"the goforge skill", `{"type":"system","subtype":"init","mcp_servers":[],"skills":["design","goforge"]}`, true, false},
+		{"the goforge server connected", `{"type":"system","subtype":"init","mcp_servers":[{"name":"goforge","status":"connected"}],"skills":[]}`, false, true},
+		{"the goforge server failed", `{"type":"system","subtype":"init","mcp_servers":[{"name":"goforge","status":"failed"}],"skills":[]}`, false, false},
+		{"another server", `{"type":"system","subtype":"init","mcp_servers":[{"name":"other","status":"connected"}],"skills":[]}`, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "transcript.jsonl")
+			if err := os.WriteFile(path, []byte(tt.init+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			a, err := parseTranscript(path)
+			if err != nil || a.SkillLoaded != tt.skill || a.MCPConnected != tt.mcp {
+				t.Errorf("parseTranscript() = skill %t, mcp %t, %v; want %t, %t", a.SkillLoaded, a.MCPConnected, err, tt.skill, tt.mcp)
+			}
+		})
+	}
+}
+
+func TestParseTranscriptCountsMCPToolCallsAsUsingGoforge(t *testing.T) {
+	use := func(id, tool string) string {
+		return `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"` + id + `","name":"` + tool + `","input":{}}]}}`
+	}
+	lines := []string{
+		use("1", "mcp__goforge__goforge_generate"),
+		use("2", "mcp__goforge__goforge_add_resource"),
+		use("3", "mcp__goforge__goforge_add_db"),
+		use("4", "mcp__goforge__goforge_inspect"),
+		use("5", "mcp__goforge__goforge_check"),
+		use("6", "mcp__other__goforge_generate"),
+		use("7", "Write"),
+	}
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a, err := parseTranscript(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only generating and adding count as using GoForge, as for the commands;
+	// inspect and check are looking, and another server's tool is not ours
+	if a.GoforgeGenerated != 3 || a.GoforgeCommands != 5 || a.ToolCalls != 7 {
+		t.Errorf("GoforgeGenerated = %d, GoforgeCommands = %d, ToolCalls = %d; want 3, 5, 7", a.GoforgeGenerated, a.GoforgeCommands, a.ToolCalls)
+	}
+}
+
+func TestSkillAndMCPConditionsOfferGoforgeTheSameWay(t *testing.T) {
+	const spec = "# Spec"
+	offered := buildPrompt(goforge, spec, "")
+	for _, c := range []string{goforgeSkill, goforgeMCP} {
+		if got := buildPrompt(c, spec, ""); got != offered {
+			t.Errorf("the %s prompt differs from the goforge prompt, so the condition would not isolate the skill or the server:\n%s", c, got)
+		}
+		if !usesGoforge(c) {
+			t.Errorf("usesGoforge(%q) = false", c)
+		}
+	}
+	for _, c := range []string{goforgeSkill, goforgeMCP} {
+		if slices.Contains(conditions, c) {
+			t.Errorf("%s runs with `all`, which would spend usage nobody asked for", c)
+		}
+		if !slices.Contains(knownConditions, c) {
+			t.Errorf("%s is not a known condition", c)
 		}
 	}
 }

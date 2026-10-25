@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -20,6 +21,12 @@ const (
 	// goforge: GoForge is on PATH and the prompt says so; the agent decides
 	// whether to use it. This measures whether agents adopt it.
 	goforge = "goforge"
+	// goforgeSkill: like goforge, with the GoForge agent skill installed. This
+	// measures whether the skill makes agents adopt it.
+	goforgeSkill = "goforge-skill"
+	// goforgeMCP: like goforge, with the GoForge MCP server connected. This
+	// measures whether tools make agents adopt it.
+	goforgeMCP = "goforge-mcp"
 	// goforgeRequired: the prompt tells the agent to build the service with
 	// GoForge. This measures GoForge's effect when it is used.
 	goforgeRequired = "goforge-required"
@@ -34,7 +41,7 @@ const (
 var conditions = []string{scratch, goforge, goforgeRequired}
 
 // knownConditions lists every condition, in report order.
-var knownConditions = []string{scratch, scratchProduction, goforge, goforgeRequired}
+var knownConditions = []string{scratch, scratchProduction, goforge, goforgeSkill, goforgeMCP, goforgeRequired}
 
 // usesGoforge reports whether condition gives the agent GoForge, so its
 // results depend on the GoForge version.
@@ -95,6 +102,11 @@ type Agent struct {
 	GoforgeGenerated int `json:"goforge_generated"`
 	// PermissionDenials counts refused tool calls; it should be 0.
 	PermissionDenials int `json:"permission_denials"`
+	// SkillLoaded and MCPConnected record what Claude Code started with, from its
+	// init event, so a run whose skill or server failed to load is not mistaken
+	// for one that had it.
+	SkillLoaded  bool `json:"skill_loaded"`
+	MCPConnected bool `json:"mcp_connected"`
 	// Error is set when Claude Code reported an error instead of doing the
 	// task, such as a usage limit; such a run is not recorded.
 	Error string `json:"error,omitempty"`
@@ -153,15 +165,28 @@ func runAgent(cfg runConfig) (Result, error) {
 	}
 	defer stderr.Close()
 
+	// The MCP condition connects the GoForge server; --strict-mcp-config below
+	// then makes it the only one
+	mcpArgs := []string{}
+	if cfg.condition == goforgeMCP {
+		config := `{"mcpServers": {"goforge": {"command": "goforge", "args": ["mcp"]}}}` + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "mcp.json"), []byte(config), 0o644); err != nil {
+			return Result{}, err
+		}
+		mcpArgs = []string{"--mcp-config", "/bench/mcp.json"}
+	}
+
 	container := "bench-" + name
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--name", container,
+	dockerArgs := []string{"run", "--rm", "--name", container,
 		"--network", benchNetwork, "--user", hostUser(),
-		"-v", dir+":/bench", "-w", "/bench/work",
-		"--env-file", cfg.envFile, "-e", "BENCH_CONDITION="+cfg.condition,
+		"-v", dir + ":/bench", "-w", "/bench/work",
+		"--env-file", cfg.envFile, "-e", "BENCH_CONDITION=" + cfg.condition,
 		cfg.image,
-		"claude", "-p", prompt,
+		"claude", "-p", prompt}
+	dockerArgs = append(dockerArgs, mcpArgs...)
+	dockerArgs = append(dockerArgs,
 		// The container starts with an empty home and work directory, so there is
 		// no CLAUDE.md, settings, plugins, or hooks; this rules out MCP servers too.
 		// (--bare would also do this, but it accepts only API keys, not the
@@ -174,6 +199,7 @@ func runAgent(cfg runConfig) (Result, error) {
 		"--max-budget-usd", fmt.Sprintf("%.2f", cfg.budgetUSD),
 		"--no-session-persistence",
 	)
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
 	cmd.Stdout, cmd.Stderr = transcript, stderr
 	cmd.Cancel = func() error { // a timeout kills the container, not just the docker client
 		_, err := docker("kill", container)
@@ -184,6 +210,15 @@ func runAgent(cfg runConfig) (Result, error) {
 	agent, err := parseTranscript(filepath.Join(dir, "transcript.jsonl"))
 	if err != nil {
 		return Result{}, fmt.Errorf("reading the transcript: %w", err)
+	}
+	// A run is only valid if the agent started with what its condition gives it,
+	// and with nothing else: the skill only in goforge-skill, the server only in goforge-mcp
+	ran := agent.Turns > 0 || agent.ToolCalls > 0 // otherwise the start failure below is the cause
+	if ran && agent.SkillLoaded != (cfg.condition == goforgeSkill) {
+		return Result{}, fmt.Errorf("%s: the goforge skill loaded = %t, want %t; the run does not measure its condition", cfg.condition, agent.SkillLoaded, cfg.condition == goforgeSkill)
+	}
+	if ran && agent.MCPConnected != (cfg.condition == goforgeMCP) {
+		return Result{}, fmt.Errorf("%s: the goforge MCP server connected = %t, want %t; the run does not measure its condition", cfg.condition, agent.MCPConnected, cfg.condition == goforgeMCP)
 	}
 	// An error from Claude Code itself (a usage limit, an API error) means the
 	// agent didn't do the task: stop instead of recording it as a result
@@ -272,7 +307,7 @@ func buildPrompt(condition, spec, devDatabase string) string {
 			"and add a Dockerfile, a Makefile, and a GitHub Actions workflow that builds, vets, and tests it.\n")
 	}
 	switch condition {
-	case goforge:
+	case goforge, goforgeSkill, goforgeMCP:
 		b.WriteString("\nGoForge (`goforge`), a CLI that generates and extends Go REST API projects, is installed. Run `goforge --help` to see what it can do.\n")
 	case goforgeRequired:
 		b.WriteString("\nBuild the service with GoForge (`goforge`), a CLI that generates and extends Go REST API projects. It is installed: run `goforge --help` to see what it can do.\n")
@@ -296,6 +331,12 @@ type event struct {
 			IsError   bool            `json:"is_error"`
 		} `json:"content"`
 	} `json:"message"`
+	// The "init" event
+	MCPServers []struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	} `json:"mcp_servers"`
+	Skills []string `json:"skills"`
 	// The final "result" event
 	IsError      bool    `json:"is_error"`
 	Result       string  `json:"result"`
@@ -329,12 +370,29 @@ func parseTranscript(path string) (Agent, error) {
 			continue
 		}
 		switch e.Type {
+		case "system":
+			if e.Subtype == "init" {
+				a.SkillLoaded = slices.Contains(e.Skills, "goforge")
+				for _, s := range e.MCPServers {
+					if s.Name == "goforge" && s.Status == "connected" {
+						a.MCPConnected = true
+					}
+				}
+			}
 		case "assistant":
 			for _, c := range e.Message.Content {
 				if c.Type != "tool_use" {
 					continue
 				}
 				a.ToolCalls++
+				if tool, ok := strings.CutPrefix(c.Name, "mcp__goforge__goforge_"); ok {
+					// The MCP tools: generate and add change a project, as the commands do
+					a.GoforgeCommands++
+					if tool == "generate" || strings.HasPrefix(tool, "add_") {
+						a.GoforgeGenerated++
+					}
+					continue
+				}
 				if c.Name != "Bash" {
 					continue
 				}
