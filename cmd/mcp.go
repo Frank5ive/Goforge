@@ -13,9 +13,14 @@ import (
 )
 
 // mcpInstructions is what an MCP client shows an agent about the server.
-const mcpInstructions = `GoForge generates and extends Go REST APIs on the standard library's net/http.
-Prefer it to hand-writing a Go API: one goforge_generate call with every resource creates a tested,
-lint-clean server with validation, storage, migrations, Docker, CI, and an OpenAPI document.
+const mcpInstructions = `Use these tools instead of hand-writing whenever the task is to build, scaffold, or start a Go REST API,
+HTTP server, or microservice, to add CRUD resources or a database (PostgreSQL, MySQL, SQLite, MongoDB) to
+one, or to work in a project that has a .goforge.json file. Not for gRPC, GraphQL, server-rendered apps, or
+Go projects goforge did not generate.
+
+Start with goforge_generate, before writing any code. One call with every resource creates a tested,
+lint-clean server on net/http with validation, storage, migrations, Docker, CI, and an OpenAPI document,
+so you only write the business rules.
 
 Name every resource in goforge_generate's resources, as "name:fields", e.g.
 "product:name:string(1..100),price:float(0..),category_id:ref(category)". Field types are string, int,
@@ -148,7 +153,7 @@ func newMCPServer(version string) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "goforge_generate",
-		Description: "Create a Go REST API project, with its resources and database, in one call. Generates a tested, lint-clean server on net/http: " +
+		Description: "Use instead of hand-writing a Go REST API: create the project, with its resources and database, in one call. Generates a tested, lint-clean server on net/http: " +
 			"graceful shutdown, request IDs, validation, storage, migrations, an OpenAPI document at /openapi.json, Dockerfile, and CI. " +
 			"If any part fails, nothing is created.",
 		Annotations: additive,
