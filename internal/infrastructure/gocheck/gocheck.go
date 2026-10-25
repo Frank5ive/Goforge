@@ -4,6 +4,7 @@ package gocheck
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Frank5ive/goforge/internal/domain"
+	"github.com/Frank5ive/goforge/internal/infrastructure/proc"
 )
 
 // maxMessage caps a problem's message, so one runaway failure can't flood the
@@ -25,7 +27,7 @@ const maxMessage = 2000
 
 // runFunc runs name with args in dir and returns its stdout, its stderr, and
 // the error from running it (an *exec.ExitError when it exits non-zero).
-type runFunc func(dir, name string, args ...string) (stdout, stderr []byte, err error)
+type runFunc func(ctx context.Context, dir, name string, args ...string) (stdout, stderr []byte, err error)
 
 // Checker implements domain.ProjectChecker with the go toolchain.
 type Checker struct {
@@ -38,8 +40,8 @@ func New() *Checker {
 	return &Checker{run: runCommand, lookPath: exec.LookPath}
 }
 
-func runCommand(dir, name string, args ...string) ([]byte, []byte, error) {
-	cmd := exec.Command(name, args...)
+func runCommand(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
+	cmd := proc.Command(ctx, name, args...)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -50,7 +52,7 @@ func runCommand(dir, name string, args ...string) ([]byte, []byte, error) {
 // Check implements domain.ProjectChecker. It runs gofmt, go vet, go test, and
 // golangci-lint (when installed). Tests and lint are skipped when the code does
 // not compile, since they would only repeat the compile errors.
-func (c *Checker) Check(dir string, opts domain.CheckOptions) (domain.CheckReport, error) {
+func (c *Checker) Check(ctx context.Context, dir string, opts domain.CheckOptions) (domain.CheckReport, error) {
 	goMod, err := readFile(filepath.Join(dir, "go.mod"))
 	if err != nil {
 		return domain.CheckReport{}, domain.WithCode(domain.CodeNotAProject, fmt.Errorf("%s is not a Go module: %w", dir, err))
@@ -66,8 +68,15 @@ func (c *Checker) Check(dir string, opts domain.CheckOptions) (domain.CheckRepor
 
 	report := domain.CheckReport{Steps: []domain.CheckStep{}, Problems: []domain.CheckProblem{}}
 	step := func(name string, run func() ([]domain.CheckProblem, error)) {
+		if ctx.Err() != nil {
+			return
+		}
 		start := time.Now()
 		problems, err := run()
+		if ctx.Err() != nil {
+			// The tool was stopped, so its output says nothing about the project
+			return
+		}
 		if err != nil {
 			problems = append(problems, domain.CheckProblem{Step: name, Message: truncate(err.Error())})
 		}
@@ -84,47 +93,47 @@ func (c *Checker) Check(dir string, opts domain.CheckOptions) (domain.CheckRepor
 		report.Steps = append(report.Steps, domain.CheckStep{Name: name, Status: domain.StepSkipped, Note: note})
 	}
 
-	step(domain.CheckFormat, func() ([]domain.CheckProblem, error) { return c.format(dir) })
+	step(domain.CheckFormat, func() ([]domain.CheckProblem, error) { return c.format(ctx, dir) })
 
 	var compileFailed bool
 	step(domain.CheckVet, func() ([]domain.CheckProblem, error) {
-		problems, failed, err := c.vet(dir)
+		problems, failed, err := c.vet(ctx, dir)
 		compileFailed = failed
 		return problems, err
 	})
 	if compileFailed {
 		skip(domain.CheckTest, "the code does not compile; fix the vet problems first")
 		skip(domain.CheckLint, "the code does not compile; fix the vet problems first")
-		return report, nil
+		return report, ctx.Err()
 	}
 
-	step(domain.CheckTest, func() ([]domain.CheckProblem, error) { return c.test(dir, absDir, module, opts.Race) })
+	step(domain.CheckTest, func() ([]domain.CheckProblem, error) { return c.test(ctx, dir, absDir, module, opts.Race) })
 
 	if _, err := c.lookPath("golangci-lint"); err != nil {
 		skip(domain.CheckLint, "golangci-lint is not installed (https://golangci-lint.run)")
-		return report, nil
+		return report, ctx.Err()
 	}
-	step(domain.CheckLint, func() ([]domain.CheckProblem, error) { return c.lint(dir) })
+	step(domain.CheckLint, func() ([]domain.CheckProblem, error) { return c.lint(ctx, dir) })
 
-	return report, nil
+	return report, ctx.Err()
 }
 
-func (c *Checker) format(dir string) ([]domain.CheckProblem, error) {
+func (c *Checker) format(ctx context.Context, dir string) ([]domain.CheckProblem, error) {
 	gofmt, err := c.lookPath("gofmt")
 	if err != nil {
 		// gofmt ships with Go, next to the go command
 		goPath, _ := c.lookPath("go")
 		gofmt = filepath.Join(filepath.Dir(goPath), "gofmt")
 	}
-	stdout, stderr, err := c.run(dir, gofmt, "-l", ".")
+	stdout, stderr, err := c.run(ctx, dir, gofmt, "-l", ".")
 	if err != nil {
 		return nil, fmt.Errorf("gofmt: %w: %s", err, stderr)
 	}
 	return parseGofmt(stdout), nil
 }
 
-func (c *Checker) vet(dir string) ([]domain.CheckProblem, bool, error) {
-	_, stderr, err := c.run(dir, "go", "vet", "./...")
+func (c *Checker) vet(ctx context.Context, dir string) ([]domain.CheckProblem, bool, error) {
+	_, stderr, err := c.run(ctx, dir, "go", "vet", "./...")
 	problems, compileFailed := parseVet(stderr)
 	if err != nil && len(problems) == 0 {
 		return nil, false, fmt.Errorf("go vet: %w: %s", err, stderr)
@@ -132,12 +141,12 @@ func (c *Checker) vet(dir string) ([]domain.CheckProblem, bool, error) {
 	return problems, compileFailed, nil
 }
 
-func (c *Checker) test(dir, absDir, module string, race bool) ([]domain.CheckProblem, error) {
+func (c *Checker) test(ctx context.Context, dir, absDir, module string, race bool) ([]domain.CheckProblem, error) {
 	args := []string{"test", "-json"}
 	if race {
 		args = append(args, "-race")
 	}
-	stdout, stderr, err := c.run(dir, "go", append(args, "./...")...)
+	stdout, stderr, err := c.run(ctx, dir, "go", append(args, "./...")...)
 	problems := parseTestJSON(stdout, absDir, module)
 	if err != nil && len(problems) == 0 {
 		return nil, fmt.Errorf("go test: %w: %s", err, stderr)
@@ -145,8 +154,8 @@ func (c *Checker) test(dir, absDir, module string, race bool) ([]domain.CheckPro
 	return problems, nil
 }
 
-func (c *Checker) lint(dir string) ([]domain.CheckProblem, error) {
-	stdout, stderr, err := c.run(dir, "golangci-lint", "run",
+func (c *Checker) lint(ctx context.Context, dir string) ([]domain.CheckProblem, error) {
+	stdout, stderr, err := c.run(ctx, dir, "golangci-lint", "run",
 		"--output.json.path=stdout", "--output.text.path=stderr", "--show-stats=false", "./...")
 	problems, parseErr := parseLintJSON(stdout)
 	if parseErr != nil {

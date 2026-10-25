@@ -65,7 +65,7 @@ func TestExtendProjectsFromEarlierReleases(t *testing.T) {
 	t.Run("v0.2.0 projects take new resources and a database", func(t *testing.T) {
 		project := newProject(t, "v0.2.0")
 		addResource(t, container, category(project))
-		if _, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: project, Engine: domain.DatabaseSQLite}); err != nil {
+		if _, err := container.DatabaseGeneratorUsecase.Add(t.Context(), &domain.DatabaseConfig{ProjectDir: project, Engine: domain.DatabaseSQLite}); err != nil {
 			t.Fatalf("adding a database to a v0.2.0 project: %v", err)
 		}
 
@@ -129,7 +129,7 @@ func TestHandEditsSurvive(t *testing.T) {
 	}
 
 	addResource(t, container, &domain.ResourceConfig{ProjectDir: project, Name: "category", Fields: []domain.Field{{Name: "title", Type: domain.FieldString}}})
-	if _, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: project, Engine: domain.DatabaseSQLite}); err != nil {
+	if _, err := container.DatabaseGeneratorUsecase.Add(t.Context(), &domain.DatabaseConfig{ProjectDir: project, Engine: domain.DatabaseSQLite}); err != nil {
 		t.Fatalf("adding a database: %v", err)
 	}
 
@@ -188,7 +188,7 @@ func TestMissingMarkerChangesNothing(t *testing.T) {
 			return err
 		}},
 		{"add db", func(project string) error {
-			_, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: project, Engine: domain.DatabaseSQLite})
+			_, err := container.DatabaseGeneratorUsecase.Add(t.Context(), &domain.DatabaseConfig{ProjectDir: project, Engine: domain.DatabaseSQLite})
 			return err
 		}},
 	}

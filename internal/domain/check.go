@@ -1,5 +1,7 @@
 package domain
 
+import "context"
+
 // Steps of `goforge check`, in the order they run.
 const (
 	CheckFormat = "format"
@@ -65,5 +67,6 @@ type CheckOptions struct {
 
 // ProjectChecker formats, vets, tests, and lints Go projects.
 type ProjectChecker interface {
-	Check(dir string, opts CheckOptions) (CheckReport, error)
+	// Check runs the tools in dir; cancelling ctx stops them.
+	Check(ctx context.Context, dir string, opts CheckOptions) (CheckReport, error)
 }

@@ -539,7 +539,7 @@ func testAddDatabase(t *testing.T, engine, databaseURL string) {
 	if _, err := container.ResourceGeneratorUsecase.Add(product); err != nil {
 		t.Fatalf("Failed to add resource: %v", err)
 	}
-	if _, err := container.DatabaseGeneratorUsecase.Add(&domain.DatabaseConfig{ProjectDir: project, Engine: engine}); err != nil {
+	if _, err := container.DatabaseGeneratorUsecase.Add(t.Context(), &domain.DatabaseConfig{ProjectDir: project, Engine: engine}); err != nil {
 		t.Fatalf("Failed to add database: %v", err)
 	}
 

@@ -69,12 +69,12 @@ func TestInitGitRepo(t *testing.T) {
 		t.Skip("git not found in PATH")
 	}
 
-	if err := initGitRepo(filepath.Join(t.TempDir(), "missing")); err == nil || !strings.Contains(err.Error(), "git init") {
+	if err := initGitRepo(t.Context(), filepath.Join(t.TempDir(), "missing")); err == nil || !strings.Contains(err.Error(), "git init") {
 		t.Errorf("initGitRepo() in a missing directory error = %v, want a git init error", err)
 	}
 
 	dir := t.TempDir()
-	if err := initGitRepo(dir); err != nil {
+	if err := initGitRepo(t.Context(), dir); err != nil {
 		t.Fatalf("initGitRepo() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
@@ -82,7 +82,7 @@ func TestInitGitRepo(t *testing.T) {
 	}
 
 	t.Setenv("PATH", t.TempDir())
-	if err := initGitRepo(dir); err == nil || !strings.Contains(err.Error(), "git not found") {
+	if err := initGitRepo(t.Context(), dir); err == nil || !strings.Contains(err.Error(), "git not found") {
 		t.Errorf("initGitRepo() without git error = %v, want %q", err, "git not found")
 	}
 }

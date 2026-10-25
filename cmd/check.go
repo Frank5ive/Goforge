@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,7 +50,7 @@ for scripts and AI agents.`,
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cmd.SilenceUsage = true
-			return runCheck(cmd.OutOrStdout(), opts)
+			return runCheck(commandContext(cmd), cmd.OutOrStdout(), opts)
 		},
 	}
 
@@ -69,7 +70,7 @@ type checkResult struct {
 	domain.CheckReport
 }
 
-func runCheck(out io.Writer, opts *checkOptions) error {
+func runCheck(ctx context.Context, out io.Writer, opts *checkOptions) error {
 	container, err := di.BuildContainer(templatesFS, di.Options{})
 	if err != nil {
 		return err
@@ -83,7 +84,7 @@ func runCheck(out io.Writer, opts *checkOptions) error {
 		fmt.Fprintf(out, "🔍 Checking %s\n", project)
 	}
 
-	report, err := container.ProjectChecker.Check(opts.dir, domain.CheckOptions{Race: opts.race})
+	report, err := container.ProjectChecker.Check(ctx, opts.dir, domain.CheckOptions{Race: opts.race})
 	if err != nil {
 		return err
 	}

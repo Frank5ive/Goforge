@@ -1,6 +1,7 @@
 package gocheck
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -125,7 +126,7 @@ type fakeTools struct {
 	ran       []string
 }
 
-func (f *fakeTools) run(_, name string, args ...string) ([]byte, []byte, error) {
+func (f *fakeTools) run(_ context.Context, _, name string, args ...string) ([]byte, []byte, error) {
 	f.ran = append(f.ran, filepath.Base(name)+" "+args[0])
 	if len(args) > 0 && args[0] == "vet" && f.vetStderr != "" {
 		return nil, []byte(f.vetStderr), errors.New("exit status 1")
@@ -157,7 +158,7 @@ func TestCheck_SkipsTestsAndLintWhenTheCodeDoesNotCompile(t *testing.T) {
 		vetStderr: "vet: main.go:3:1: undefined: x\n",
 		installed: map[string]bool{"go": true, "gofmt": true, "golangci-lint": true},
 	}
-	report, err := (&Checker{run: tools.run, lookPath: tools.lookPath}).Check(project(t), domain.CheckOptions{})
+	report, err := (&Checker{run: tools.run, lookPath: tools.lookPath}).Check(t.Context(), project(t), domain.CheckOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +180,7 @@ func TestCheck_SkipsTestsAndLintWhenTheCodeDoesNotCompile(t *testing.T) {
 
 func TestCheck_SkipsLintWithoutGolangciLint(t *testing.T) {
 	tools := &fakeTools{installed: map[string]bool{"go": true, "gofmt": true}}
-	report, err := (&Checker{run: tools.run, lookPath: tools.lookPath}).Check(project(t), domain.CheckOptions{Race: true})
+	report, err := (&Checker{run: tools.run, lookPath: tools.lookPath}).Check(t.Context(), project(t), domain.CheckOptions{Race: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +195,7 @@ func TestCheck_SkipsLintWithoutGolangciLint(t *testing.T) {
 }
 
 func TestCheck_NotAModule(t *testing.T) {
-	_, err := New().Check(t.TempDir(), domain.CheckOptions{})
+	_, err := New().Check(t.Context(), t.TempDir(), domain.CheckOptions{})
 	if domain.ErrorCode(err) != domain.CodeNotAProject {
 		t.Errorf("Check() error = %v, want a not_a_goforge_project error", err)
 	}

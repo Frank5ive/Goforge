@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -58,7 +59,7 @@ type databaseData struct {
 // Add implements domain.DatabaseGenerator. Every edit is computed before anything
 // is written, and all files plus go.mod and go.sum are restored if any step
 // fails, so a failed run leaves the project unchanged.
-func (u *DatabaseGeneratorUsecase) Add(config *domain.DatabaseConfig) (domain.Changes, error) {
+func (u *DatabaseGeneratorUsecase) Add(ctx context.Context, config *domain.DatabaseConfig) (domain.Changes, error) {
 	if err := config.Validate(); err != nil {
 		return domain.Changes{}, domain.NewGenerationError("validation", "database validation failed", err)
 	}
@@ -112,7 +113,7 @@ func (u *DatabaseGeneratorUsecase) Add(config *domain.DatabaseConfig) (domain.Ch
 
 	goFiles := []string{filepath.Join(dir, "go.mod"), filepath.Join(dir, "go.sum")}
 	err = cs.apply(goFiles, func() error {
-		if err := u.modules.Require(dir, eng.module, eng.version); err != nil {
+		if err := u.modules.Require(ctx, dir, eng.module, eng.version); err != nil {
 			return fmt.Errorf("adding %s: %w", eng.module, err)
 		}
 		return nil
