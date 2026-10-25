@@ -21,7 +21,9 @@ Don't use it for gRPC, GraphQL, server-rendered web apps, or Go projects GoForge
 
 If the `goforge` MCP server is connected (`goforge mcp`), call its tools: `goforge_generate`,
 `goforge_add_resource`, `goforge_add_db`, `goforge_inspect`, and `goforge_check` take the arguments
-below and return the same JSON as the commands. Otherwise run the commands in a shell.
+below and return the same JSON as the commands. `goforge_generate` takes `output`, the parent
+directory, and creates `<output>/<name>`; the others take `dir`, the project's own directory.
+Otherwise run the commands in a shell.
 
 ## Check it is installed
 

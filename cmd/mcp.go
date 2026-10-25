@@ -9,6 +9,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+
+	"github.com/Frank5ive/goforge/internal/domain"
 )
 
 // mcpInstructions is what an MCP client shows an agent about the server.
@@ -45,8 +47,9 @@ func runGoforge(args ...string) *mcp.CallToolResult {
 	text := out.String()
 	if !json.Valid(out.Bytes()) {
 		// Not a JSON result, so something went wrong before one was built
-		quoted, _ := json.Marshal(text)
-		text = `{"ok": false, "error": {"code": "internal_error", "message": ` + string(quoted) + `}}`
+		message, _ := json.Marshal(text)
+		hint, _ := json.Marshal(hints[domain.CodeInternal])
+		text = `{"ok": false, "error": {"code": "internal_error", "message": ` + string(message) + `, "hint": ` + string(hint) + `}}`
 	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: text}},
@@ -73,7 +76,7 @@ func boolFlag(name string, value *bool) []string {
 type generateInput struct {
 	Name      string   `json:"name" jsonschema:"the application name, which is also its directory: lowercase letters, numbers, hyphens and underscores"`
 	Module    string   `json:"module,omitempty" jsonschema:"the Go module path, e.g. github.com/acme/shop (default: the name)"`
-	Output    string   `json:"output,omitempty" jsonschema:"the directory to create the project in (default: the server's working directory)"`
+	Output    string   `json:"output,omitempty" jsonschema:"the parent directory: the project is created in <output>/<name> (default: the server's working directory)"`
 	Database  string   `json:"database,omitempty" jsonschema:"store data in postgres, mysql, sqlite, or mongo; leave out to keep data in memory"`
 	Resources []string `json:"resources,omitempty" jsonschema:"resources to create, each as name:fields or name/plural:fields, e.g. product:name:string(1..100),price:float(0..)"`
 	Port      int      `json:"port,omitempty" jsonschema:"the default port (default 8080)"`
@@ -196,6 +199,12 @@ func newMCPServer(version string) *mcp.Server {
 	return server
 }
 
+// serveMCP serves the tools over transport until the client disconnects or
+// ctx is cancelled.
+func serveMCP(ctx context.Context, version string, transport mcp.Transport) error {
+	return newMCPServer(version).Run(ctx, transport)
+}
+
 func newMCPCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
@@ -217,7 +226,7 @@ or to any MCP client by running "goforge mcp" as a stdio server.`,
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			return newMCPServer(cmd.Root().Version).Run(ctx, &mcp.StdioTransport{})
+			return serveMCP(ctx, cmd.Root().Version, &mcp.StdioTransport{})
 		},
 	}
 }

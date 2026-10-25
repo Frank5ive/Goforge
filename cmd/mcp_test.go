@@ -3,8 +3,10 @@ package cmd
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -218,6 +220,113 @@ func TestRunGoforgeReportsOutputThatIsNotJSON(t *testing.T) {
 	res := runGoforge("no-such-command")
 	text := res.Content[0].(*mcp.TextContent).Text
 	if !res.IsError || !json.Valid([]byte(text)) {
-		t.Errorf("runGoforge(no-such-command) = error %t, %q; want a JSON error result", res.IsError, text)
+		t.Fatalf("runGoforge(no-such-command) = error %t, %q; want a JSON error result", res.IsError, text)
 	}
+	var r result
+	if err := json.Unmarshal([]byte(text), &r); err != nil || r.Error == nil || r.Error.Hint == "" {
+		t.Errorf("result = %+v (%v), want an error with a hint, as the docs promise for every failure", r, err)
+	}
+}
+
+func TestEveryErrorCodeHasAHint(t *testing.T) {
+	for _, code := range []string{codeUsage, codeCancelled, "invalid_input", "not_a_goforge_project", "already_exists",
+		"marker_missing", "outdated_project", "dependency_failed", "write_failed", "internal_error"} {
+		if hints[code] == "" {
+			t.Errorf("the error code %s has no hint", code)
+		}
+	}
+}
+
+func TestServeMCPUntilTheClientLeaves(t *testing.T) {
+	SetTemplatesFS(os.DirFS(filepath.Join("..", "templates")))
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	done := make(chan error, 1)
+	go func() { done <- serveMCP(t.Context(), "test", serverTransport) }()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "1"}, nil)
+	session, err := client.Connect(t.Context(), clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil || len(tools.Tools) != 5 {
+		t.Fatalf("ListTools() = %d tools, %v; want 5", len(tools.Tools), err)
+	}
+	_ = session.Close()
+
+	if err := <-done; err != nil {
+		t.Errorf("serveMCP() after the client left = %v, want nil", err)
+	}
+}
+
+func TestMCPAddDBAndCheckAndOptions(t *testing.T) {
+	session := connect(t)
+	dir := t.TempDir()
+
+	// Port and git are passed through to the command
+	r, isError := call(t, session, "goforge_generate", map[string]any{"name": "shop", "output": dir, "port": 3000, "git": true})
+	if isError || !r.OK {
+		t.Fatalf("generate = %+v (error %t)", r, isError)
+	}
+	project := filepath.Join(dir, "shop")
+	if config, err := os.ReadFile(filepath.Join(project, "config", "config.go")); err != nil || !strings.Contains(string(config), "3000") {
+		t.Errorf("the port was not passed through: %v", err)
+	}
+	if _, err := exec.LookPath("git"); err == nil {
+		if _, err := os.Stat(filepath.Join(project, ".git")); err != nil {
+			t.Errorf("git was not initialized: %v", err)
+		}
+	}
+
+	// A plural and a dry run are passed through to add resource
+	r, isError = call(t, session, "goforge_add_resource", map[string]any{
+		"dir": project, "name": "person", "fields": "name:string", "plural": "people", "dry_run": true,
+	})
+	if isError || !r.DryRun || !slices.Contains(r.Created, "people/service.go") {
+		t.Errorf("add_resource dry run = %+v (error %t), want people/service.go planned", r, isError)
+	}
+	if _, err := os.Stat(filepath.Join(project, "people")); !os.IsNotExist(err) {
+		t.Error("a dry run created the resource")
+	}
+
+	// A dry run of add_db shows what a database would change, and changes nothing
+	before := snapshotFiles(t, project)
+	r, isError = call(t, session, "goforge_add_db", map[string]any{"dir": project, "engine": "sqlite", "dry_run": true})
+	if isError || !r.OK || !r.DryRun || len(r.Created)+len(r.Updated) == 0 {
+		t.Errorf("add_db dry run = %+v (error %t)", r, isError)
+	}
+	if after := snapshotFiles(t, project); !slices.Equal(before, after) {
+		t.Errorf("a dry run changed the project:\nbefore %v\nafter  %v", before, after)
+	}
+	if r, isError = call(t, session, "goforge_add_db", map[string]any{"dir": project, "engine": "oracle"}); !isError || r.Error == nil || r.Error.Code != "invalid_input" {
+		t.Errorf("add_db with an unknown engine = %+v (error %t), want invalid_input", r, isError)
+	}
+
+	// A new project passes its own checks
+	text := callText(t, session, "goforge_check", map[string]any{"dir": project})
+	var report struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal([]byte(text), &report); err != nil || !report.OK {
+		t.Errorf("check = %s (%v), want ok", text, err)
+	}
+}
+
+// snapshotFiles lists every file under dir with its size, sorted.
+func snapshotFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || strings.Contains(path, string(filepath.Separator)+".git"+string(filepath.Separator)) {
+			return err
+		}
+		info, err := d.Info()
+		files = append(files, path+" "+strconv.FormatInt(info.Size(), 10))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(files)
+	return files
 }

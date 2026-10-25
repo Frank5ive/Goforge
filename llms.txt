@@ -35,7 +35,7 @@ Each resource serves `GET /<plural>?limit=&offset=`, `POST /<plural>`, `GET /<pl
 
 ## MCP server
 
-`goforge mcp` runs an MCP server over stdio. Claude Code: `claude mcp add goforge -- goforge mcp`. Tools: `goforge_generate` (a whole project with resources and database, in one call), `goforge_add_resource`, `goforge_add_db`, `goforge_inspect` and `goforge_check` (both read-only). Each returns the same JSON as the command with `--json`; a failure is a tool error with the `code` and `hint`. Tools take the project directory as an argument.
+`goforge mcp` runs an MCP server over stdio. Claude Code: `claude mcp add goforge -- goforge mcp`. Tools: `goforge_generate` (a whole project with resources and database, in one call), `goforge_add_resource`, `goforge_add_db`, `goforge_inspect` and `goforge_check` (both read-only). Each returns the same JSON as the command with `--json`; a failure is a tool error with the `code` and `hint`. `goforge_generate` takes `output`, the parent directory, and creates `<output>/<name>`; the tools for an existing project (`goforge_add_resource`, `goforge_add_db`, `goforge_inspect`, `goforge_check`) take `dir`, the project's own directory.
 
 ## Agent skill
 

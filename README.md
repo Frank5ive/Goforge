@@ -276,7 +276,8 @@ each returns the same JSON as the command with `--json`:
 | `goforge_check` | Run gofmt, vet, the tests, and golangci-lint, and report each problem (read-only) |
 
 A failed call is a tool error whose text is the JSON result, with its stable `code` and a `hint`.
-Tools take the project directory as an argument, so the server needs no working directory. It runs
+`goforge_generate` takes `output`, the parent directory, and creates `<output>/<name>`; the tools for
+an existing project take `dir`, the project's own directory. Neither needs a working directory. It runs
 with your permissions and writes where the tools are told to, so connect it only to clients you
 trust.
 
