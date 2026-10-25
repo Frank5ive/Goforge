@@ -85,6 +85,10 @@ three conditions and only what the agent has installed differs. Every run passed
 - **The skill gets agents to use GoForge** (6 of 6 runs, against 0 of 6 with the prompt alone).
   The MCP server alone barely did (1 of 6): the five tools were connected and visible, and agents
   still wrote the API by hand. Tools need to be paired with instructions on when to use them.
+- **Telling the MCP server's agents when to use the tools helped.** After rewriting the server
+  instructions to open with when to use GoForge (commit `aff5138`), agents used the tools in 4 of
+  6 runs (`goforge-mcp@aff51383eb74`), up from 1 of 6, all fully correct. Still short of the
+  skill's 6 of 6.
 - **Using GoForge via the skill was cheaper on `products` and `store`** (`store`: $0.08 against
   $0.15) and about equal on `blog`, with more tokens read (a larger project). Two runs per cell:
   indicative, not conclusive.

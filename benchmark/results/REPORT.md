@@ -11,6 +11,7 @@ Model: sonnet. Values are means per run unless noted.
 | products | goforge@08741df0046e | 2 | 100% | 2/2 | $0.09 | 58,182 | 3 | 1.7 | 0.0 | 2/2 | 0/2 |
 | products | goforge-skill@08741df0046e | 2 | 100% | 2/2 | $0.05 | 115,196 | 7 | 1.3 | 0.0 | 2/2 | 2/2 |
 | products | goforge-mcp@08741df0046e | 2 | 100% | 2/2 | $0.08 | 50,330 | 2 | 1.6 | 0.0 | 2/2 | 0/2 |
+| products | goforge-mcp@aff51383eb74 | 2 | 100% | 2/2 | $0.10 | 132,984 | 6 | 1.4 | 1.0 | 2/2 | 1/2 |
 | products | goforge@b632824cf8a7 | 2 | 100% | 2/2 | $0.08 | 58,244 | 3 | 0.9 | 0.0 | 2/2 | 0/2 |
 | products | goforge-required@b632824cf8a7 | 2 | 92% | 0/2 | $0.07 | 175,675 | 8 | 0.8 | 0.0 | 2/2 | 2/2 |
 | products-sqlite | scratch | 3 | 100% | 3/3 | $0.11 | 75,796 | 4 | 2.1 | 0.0 | 3/3 | 0/3 |
@@ -24,6 +25,7 @@ Model: sonnet. Values are means per run unless noted.
 | blog | goforge@08741df0046e | 2 | 100% | 2/2 | $0.12 | 63,181 | 3 | 1.5 | 0.0 | 2/2 | 0/2 |
 | blog | goforge-skill@08741df0046e | 2 | 100% | 2/2 | $0.13 | 210,028 | 10 | 1.5 | 0.5 | 2/2 | 2/2 |
 | blog | goforge-mcp@08741df0046e | 2 | 100% | 2/2 | $0.10 | 62,086 | 3 | 1.4 | 0.0 | 2/2 | 0/2 |
+| blog | goforge-mcp@aff51383eb74 | 2 | 100% | 2/2 | $0.12 | 65,883 | 3 | 1.5 | 0.0 | 2/2 | 1/2 |
 | blog | goforge@b632824cf8a7 | 2 | 100% | 2/2 | $0.11 | 65,933 | 3 | 0.9 | 0.5 | 2/2 | 0/2 |
 | blog | goforge-required@b632824cf8a7 | 2 | 100% | 2/2 | $0.16 | 326,313 | 12 | 1.0 | 1.0 | 2/2 | 2/2 |
 | orders | scratch | 3 | 100% | 3/3 | $0.13 | 92,897 | 4 | 1.5 | 1.0 | 3/3 | 0/3 |
@@ -38,6 +40,7 @@ Model: sonnet. Values are means per run unless noted.
 | store | goforge@08741df0046e | 2 | 100% | 2/2 | $0.15 | 96,258 | 4 | 2.4 | 0.5 | 2/2 | 0/2 |
 | store | goforge-skill@08741df0046e | 2 | 100% | 2/2 | $0.08 | 130,283 | 8 | 1.9 | 0.5 | 2/2 | 2/2 |
 | store | goforge-mcp@08741df0046e | 2 | 100% | 2/2 | $0.15 | 249,909 | 11 | 3.2 | 2.0 | 2/2 | 1/2 |
+| store | goforge-mcp@aff51383eb74 | 2 | 100% | 2/2 | $0.10 | 156,728 | 8 | 2.0 | 0.5 | 2/2 | 2/2 |
 | store | goforge@b632824cf8a7 | 2 | 100% | 2/2 | $0.12 | 128,042 | 6 | 1.4 | 0.5 | 2/2 | 1/2 |
 | store | goforge-required@b632824cf8a7 | 2 | 100% | 2/2 | $0.11 | 219,416 | 10 | 1.3 | 0.5 | 2/2 | 2/2 |
 | **all tasks** | scratch | 15 | 100% | 15/15 | $0.12 | 90,832 | 4 | 1.4 | 0.5 | 15/15 | 0/15 |
@@ -47,6 +50,7 @@ Model: sonnet. Values are means per run unless noted.
 | **all tasks** | goforge@08741df0046e | 6 | 100% | 6/6 | $0.12 | 72,540 | 4 | 1.8 | 0.2 | 6/6 | 0/6 |
 | **all tasks** | goforge-skill@08741df0046e | 6 | 100% | 6/6 | $0.08 | 151,836 | 8 | 1.6 | 0.3 | 6/6 | 6/6 |
 | **all tasks** | goforge-mcp@08741df0046e | 6 | 100% | 6/6 | $0.11 | 120,775 | 6 | 2.1 | 0.7 | 6/6 | 1/6 |
+| **all tasks** | goforge-mcp@aff51383eb74 | 6 | 100% | 6/6 | $0.10 | 118,532 | 6 | 1.6 | 0.5 | 6/6 | 4/6 |
 | **all tasks** | goforge@b632824cf8a7 | 10 | 100% | 10/10 | $0.11 | 113,274 | 5 | 1.4 | 0.5 | 10/10 | 3/10 |
 | **all tasks** | goforge-required@b632824cf8a7 | 10 | 98% | 8/10 | $0.12 | 205,664 | 9 | 1.3 | 0.4 | 10/10 | 10/10 |
 
@@ -68,6 +72,8 @@ Model: sonnet. Values are means per run unless noted.
 | blog | goforge-skill@08741df0046e | 2 | success | 23/23 | $0.14 | 264,115 | 12 | 1.5 | 1 | 0 |
 | blog | goforge-mcp@08741df0046e | 1 | success | 23/23 | $0.11 | 62,134 | 3 | 1.5 | 0 | 0 |
 | blog | goforge-mcp@08741df0046e | 2 | success | 23/23 | $0.10 | 62,038 | 3 | 1.4 | 0 | 0 |
+| blog | goforge-mcp@aff51383eb74 | 1 | success | 23/23 | $0.13 | 67,413 | 3 | 1.6 | 0 | 0 |
+| blog | goforge-mcp@aff51383eb74 | 2 | success | 23/23 | $0.10 | 64,354 | 3 | 1.4 | 0 | 0 |
 | blog | goforge@b632824cf8a7 | 1 | success | 23/23 | $0.11 | 69,161 | 3 | 1.0 | 1 | 0 |
 | blog | goforge@b632824cf8a7 | 2 | success | 23/23 | $0.10 | 62,706 | 3 | 0.9 | 0 | 0 |
 | blog | goforge-required@b632824cf8a7 | 1 | success | 23/23 | $0.18 | 317,059 | 12 | 1.1 | 1 | 0 |
@@ -99,6 +105,8 @@ Model: sonnet. Values are means per run unless noted.
 | products | goforge-skill@08741df0046e | 2 | success | 25/25 | $0.04 | 113,086 | 7 | 1.3 | 0 | 0 |
 | products | goforge-mcp@08741df0046e | 1 | success | 25/25 | $0.10 | 59,475 | 3 | 1.3 | 0 | 0 |
 | products | goforge-mcp@08741df0046e | 2 | success | 25/25 | $0.07 | 41,186 | 2 | 1.8 | 0 | 0 |
+| products | goforge-mcp@aff51383eb74 | 1 | success | 25/25 | $0.10 | 180,933 | 8 | 1.3 | 1 | 0 |
+| products | goforge-mcp@aff51383eb74 | 2 | success | 25/25 | $0.10 | 85,036 | 4 | 1.5 | 1 | 0 |
 | products | goforge@b632824cf8a7 | 1 | success | 25/25 | $0.08 | 58,149 | 3 | 0.9 | 0 | 0 |
 | products | goforge@b632824cf8a7 | 2 | success | 25/25 | $0.08 | 58,340 | 3 | 0.9 | 0 | 0 |
 | products | goforge-required@b632824cf8a7 | 1 | success | 23/25 | $0.06 | 179,441 | 9 | 0.7 | 0 | 0 |
@@ -130,6 +138,8 @@ Model: sonnet. Values are means per run unless noted.
 | store | goforge-skill@08741df0046e | 2 | success | 46/46 | $0.07 | 119,913 | 8 | 1.9 | 1 | 0 |
 | store | goforge-mcp@08741df0046e | 1 | success | 46/46 | $0.16 | 169,170 | 7 | 3.3 | 1 | 0 |
 | store | goforge-mcp@08741df0046e | 2 | success | 46/46 | $0.13 | 330,649 | 15 | 3.2 | 3 | 0 |
+| store | goforge-mcp@aff51383eb74 | 1 | success | 46/46 | $0.09 | 128,588 | 7 | 1.9 | 0 | 0 |
+| store | goforge-mcp@aff51383eb74 | 2 | success | 46/46 | $0.11 | 184,869 | 9 | 2.2 | 1 | 0 |
 | store | goforge@b632824cf8a7 | 1 | success | 46/46 | $0.09 | 144,165 | 7 | 1.2 | 0 | 0 |
 | store | goforge@b632824cf8a7 | 2 | success | 46/46 | $0.16 | 111,920 | 5 | 1.7 | 1 | 0 |
 | store | goforge-required@b632824cf8a7 | 1 | success | 46/46 | $0.14 | 321,556 | 13 | 1.5 | 1 | 0 |
